@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh api *)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "PowerShell(docker --version 2>&1)",
+      "PowerShell(git lfs version 2>&1)",
+      "PowerShell(docker info 2>&1)",
+      "PowerShell(docker --version)",
+      "PowerShell(docker info --format '{{.ServerVersion}}' 2>&1)",
+      "PowerShell(git clone https://github.com/NVIDIA-Omniverse/kit-usd-agents C:\\\\Users\\\\krngr\\\\Downloads\\\\Omniverse\\\\kit-usd-agents)",
+      "PowerShell(python -m pip install poetry)",
+      "PowerShell(poetry --version 2>&1)",
+      "Bash(test -f ~/.claude.json && grep -o '\"mcpServers\"[^}]*}' ~/.claude.json | head -c 500 || echo \"no ~/.claude.json or no mcpServers key found\")",
+      "Bash(claude mcp *)",
+      "mcp__usd-code-mcp__search_usd_code_examples",
+      "PowerShell(Get-Process -Id 33608 -ErrorAction SilentlyContinue)",
+      "mcp__usd-code-mcp__get_usd_class_detail",
+      "PowerShell(python -m pip install bowerbot)",
+      "PowerShell(C:\\\\Users\\\\krngr\\\\Downloads\\\\Omniverse\\\\bowerbot-venv\\\\Scripts\\\\python.exe -m pip install bowerbot)",
+      "PowerShell(C:\\\\Users\\\\krngr\\\\Downloads\\\\Omniverse\\\\bowerbot-venv\\\\Scripts\\\\python.exe -m pip install --only-binary=:all: \"litellm==1.93.0\" 2>&1)",
+      "PowerShell(C:\\\\Users\\\\krngr\\\\Downloads\\\\Omniverse\\\\bowerbot-venv\\\\Scripts\\\\python.exe -m pip install --only-binary=:all: \"litellm==1.90.6\" 2>&1)",
+      "PowerShell(C:\\\\Users\\\\krngr\\\\Downloads\\\\Omniverse\\\\bowerbot-venv\\\\Scripts\\\\python.exe -m pip install bowerbot \"litellm==1.90.6\")",
+      "PowerShell(C:\\\\Users\\\\krngr\\\\Downloads\\\\Omniverse\\\\bowerbot-venv\\\\Scripts\\\\bowerbot.exe --version 2>&1)",
+      "PowerShell(C:\\\\Users\\\\krngr\\\\Downloads\\\\Omniverse\\\\bowerbot-venv\\\\Scripts\\\\bowerbot.exe --help 2>&1)",
+      "PowerShell(C:\\\\Users\\\\krngr\\\\Downloads\\\\Omniverse\\\\bowerbot-venv\\\\Scripts\\\\bowerbot.exe onboard --help 2>&1)",
+      "WebFetch(domain:pypi.org)",
+      "PowerShell(C:\\\\Users\\\\krngr\\\\Downloads\\\\Omniverse\\\\bowerbot-venv\\\\Scripts\\\\python.exe -m pip index versions bowerbot-skill-sketchfab 2>&1)",
+      "PowerShell(C:\\\\Users\\\\krngr\\\\Downloads\\\\Omniverse\\\\bowerbot-venv\\\\Scripts\\\\python.exe -m pip install bowerbot-skill-sketchfab)",
+      "Bash(curl -s -X POST http://127.0.0.1:8181/mcp -H \"Content-Type: application/json\" -H \"Accept: application/json, text/event-stream\" -d '{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}},\"id\":1}')",
+      "Bash(curl -sv -X POST http://127.0.0.1:8181/mcp -H \"Content-Type: application/json\" -H \"Accept: application/json, text/event-stream\" -d '{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}},\"id\":1}')"
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "omniverse-router": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "-m",
+        "omniverse_scene_mcp",
+        "serve",
+        "--transport",
+        "stdio"
+      ],
+      "cwd": "C:/Users/krngr/Downloads/Omniverse/omniverse_scene_mcp",
+      "env": {
+        "OMNIVERSE_SCENE_MCP_MODE": "fake",
+        "OMNIVERSE_USD_MCP_ENDPOINT": "http://127.0.0.1:9903/mcp",
+        "OMNIVERSE_KIT_MCP_ENDPOINT": "http://127.0.0.1:9902/mcp",
+        "OMNIVERSE_OMNI_UI_MCP_ENDPOINT": "http://127.0.0.1:9901/mcp",
+        "OMNIVERSE_ISAAC_SIM_MCP_ENDPOINT": "http://127.0.0.1:9904/mcp",
+        "OMNIVERSE_BOWERBOT_MCP_ENDPOINT": "http://127.0.0.1:8181/mcp"
+      }
+    }
+  }
+}

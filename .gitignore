@@ -1,0 +1,89 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+site/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+bowerbot-venv/
+
+# Logs
+*.log
+logs/
+log/
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Temporary files
+tmp/
+temp/
+.cache/
+*.tmp
+*.temp
+
+# Omniverse / Kit generated output
+_build/
+_compiler/
+_repo/
+kit-app-template/_build/
+kit-app-template/_compiler/
+kit-app-template/_repo/
+kit-app-template/.omniverse_eula_accepted.txt
+
+# Common package manager caches
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+
+# Local env files
+.env
+.env.*
+*.local
+
+# Test/report artifacts
+test-results/
+reports/
+*.testresult
+
+# Generated assets and exports, if you do not want them tracked
+*.usd.tmp
+*.usda.tmp
+*.usdc.tmp
+*.usdz.tmp
+*.fbx.tmp
+*.glb.tmp
+
+# Optional generated trees
+# bowerbot-scenes/
+# factory-viewer/_build/
+# factory-viewer/_compiler/
+# factory-viewer/_repo/

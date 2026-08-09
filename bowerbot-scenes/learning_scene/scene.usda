@@ -1,0 +1,70 @@
+#usda 1.0
+(
+    defaultPrim = "Scene"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Scene" (
+    kind = "assembly"
+)
+{
+    def "Lighting"
+    {
+        def DistantLight "Sun"
+        {
+            color3f inputs:color = (1, 0.9, 0)
+            float inputs:intensity = 3000
+            float3 xformOp:rotateXYZ = (-45, 0, 30)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def DomeLight "Environment"
+        {
+            color3f inputs:color = (0.6, 0.7, 0.9)
+            float inputs:intensity = 1000
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+    }
+
+    def "Cameras"
+    {
+        def Camera "Hero_Cam"
+        {
+            float2 clippingRange = (0.01, 100000)
+            float3 xformOp:rotateXYZ = (67.01023, -0, 45)
+            double3 xformOp:translate = (500, -500, 300)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+    }
+
+    def Cube "MyCube" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Scene/Looks/RedMaterial>
+        double size = 100
+        double3 xformOp:translate = (0, 0, 150)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def "Looks"
+    {
+        def Material "RedMaterial"
+        {
+            token outputs:surface.connect = </Scene/Looks/RedMaterial/PreviewSurface.outputs:surface>
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.9, 0.05, 0.05)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.4
+                token outputs:surface
+            }
+        }
+    }
+}
+
