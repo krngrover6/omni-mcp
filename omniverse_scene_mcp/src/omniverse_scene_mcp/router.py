@@ -7,6 +7,43 @@ from typing import Any, Protocol
 
 from .service import OperationResult, SceneMCPService
 
+_LEARNING_PHRASES = (
+    "teach me",
+    "learn",
+    "explain",
+    "lesson",
+    "tutorial",
+    "cheat sheet",
+    "cheatsheet",
+    "practice",
+    "drill",
+    "hands on",
+    "hands-on",
+    "study",
+    "next step",
+    "what should i do next",
+    "suggest",
+    "recommend",
+)
+
+# Whole words, so "kitchen" or "toolkit" do not match and file names such as scene.usd or app.kit stay paths;
+# a bare extension (".usd file") still counts.
+_USD_WORD = re.compile(r"(?<!\w)(?<!\w\.)usd\b")
+_KIT_WORD = re.compile(r"(?<!\w)(?<!\w\.)kit\b")
+
+# Questions about the open stage keep their scene-aware routing instead of going to a docs backend.
+_LIVE_SCENE = re.compile(r"(?:^|\s)/\w|\bselect(?:ed|ion)\b|\bmy\b|\b(?:this|current) (?:scene|stage)\b|\bhow many\b")
+
+# Whole-word lesson topics for the fallback, so "remove" is not "move" and "lightweight" is not "light".
+_FALLBACK_TOPICS = (
+    ("schemas", re.compile(r"\b(?:schemas?|subtypes?)\b")),
+    ("prims", re.compile(r"\b(?:prims?|stages?|scene graph|hierarchy)\b")),
+    ("selection", re.compile(r"\b(?:select(?:ed|ion)?|focus|highlight)\b")),
+    ("transforms", re.compile(r"\b(?:move|moving|rotat(?:e|ion|ing)|scal(?:e|ing)|transforms?)\b")),
+    ("materials", re.compile(r"\b(?:materials?|shade|shaders?)\b")),
+    ("lights", re.compile(r"\b(?:lights?|lighting)\b")),
+)
+
 
 class RouteTarget(str, Enum):
     SCENE = "scene"
@@ -17,6 +54,22 @@ class RouteTarget(str, Enum):
     ISAAC_SIM = "isaac_sim"
     BOWERBOT = "bowerbot"
     UNKNOWN = "unknown"
+
+
+# Explicit domain names that let a question outrank a lesson topic. Generic words ("layout", "extension",
+# "robot") do not count, "USD Composer" is the app rather than the USD API, and Bowerbot is left out
+# because its selector can create or package projects.
+_NAMED_DOMAINS = (
+    (RouteTarget.ISAAC_SIM, re.compile(r"\bisaac|\bphysx\b|\bros ?2\b")),
+    (RouteTarget.OMNI_UI, re.compile(r"\bomni\.ui\b")),
+    (RouteTarget.KIT, re.compile(r"(?<!\w)(?<!\w\.)kit\b|\bomni\.kit\b")),
+    (RouteTarget.USD, re.compile(r"(?<!\w)(?<!\w\.)usd[acz]?\b|\bopenusd\b|\bomni\.usd\b|\bpxr\b|\w\.usd[acz]?\b")),
+)
+
+
+def _detect_named_knowledge_domain(request: str) -> RouteTarget:
+    text = request.replace("usd composer", "composer")
+    return next((target for target, pattern in _NAMED_DOMAINS if pattern.search(text)), RouteTarget.UNKNOWN)
 
 
 @dataclass(slots=True)
@@ -106,28 +159,17 @@ class OmniverseRouter:
         if self._looks_like_targeted_scene_command(normalized):
             return RoutingDecision(RouteTarget.SCENE, 0.97, "Scene command verb with a target detected", normalized)
         learning_topic = self._detect_learning_topic(normalized)
-        learning_style = self._detect_learning_style(normalized)
-        if learning_topic is not None or learning_style != "lesson" or any(
-            phrase in normalized
-            for phrase in (
-                "teach me",
-                "learn",
-                "explain",
-                "lesson",
-                "tutorial",
-                "cheat sheet",
-                "cheatsheet",
-                "practice",
-                "drill",
-                "hands on",
-                "hands-on",
-                "study",
-                "next step",
-                "what should i do next",
-                "suggest",
-                "recommend",
-            )
-        ):
+        explicit_learning = self._detect_learning_style(normalized) != "lesson" or any(
+            phrase in normalized for phrase in _LEARNING_PHRASES
+        )
+        # Questions that name a knowledge domain go to its MCP even when they mention a lesson topic such as
+        # "prim"; _dispatch attaches the built-in lesson if that backend cannot answer.
+        if not explicit_learning and self._is_question(normalized) and not _LIVE_SCENE.search(normalized):
+            target = _detect_named_knowledge_domain(normalized)
+            if target is not RouteTarget.UNKNOWN:
+                return RoutingDecision(target, 0.92, f"Question names the {target.value} domain", normalized)
+
+        if learning_topic is not None or explicit_learning:
             return RoutingDecision(RouteTarget.LEARN, 0.91, "Learning keywords detected", normalized)
 
         if self._is_question(normalized):
@@ -174,7 +216,12 @@ class OmniverseRouter:
             return self._dispatch_learning(request)
 
         if decision.target in self._backends:
-            return await self.ask_backend(decision.target, request)
+            payload = await self.ask_backend(decision.target, request)
+            if not payload.get("ok"):
+                fallback = self._fallback_lesson(request)
+                if fallback is not None:
+                    payload = {**payload, "fallback": fallback}
+            return payload
 
         return {
             "ok": False,
@@ -281,6 +328,24 @@ class OmniverseRouter:
             "key_points": guide["key_points"],
             "practice": guide["practice"],
             "scene_context": self.scene_summary(),
+        }
+
+    def _fallback_lesson(self, request: str) -> dict[str, Any] | None:
+        """Built-in lesson for a knowledge question whose backend failed; reads no scene and records no history."""
+        normalized = self._normalize(request)
+        topic = next((name for name, pattern in _FALLBACK_TOPICS if pattern.search(normalized)), None)
+        if topic is None:
+            return None
+        guide = self._build_learning_guide(topic)
+        return {
+            "target": "learn",
+            "topic": topic,
+            "style": "lesson",
+            "title": guide["title"],
+            "explanation": guide["explanation"],
+            "key_points": guide["key_points"],
+            "practice": guide["practice"],
+            "note": "Offline built-in lesson; the knowledge backend could not answer.",
         }
 
     def translate_command(self, request: str) -> dict[str, Any]:
@@ -494,13 +559,27 @@ class OmniverseRouter:
         return bool(re.match(prefix + verbs + r"\b.*(?:/|\b(?:this|that|it|selected)\b|\d)", request))
 
     def _is_question(self, request: str) -> bool:
-        return request.startswith(("what ", "how ", "why ", "when ", "where ", "which ")) or request.endswith("?")
+        if request.startswith(("what ", "how ", "why ", "when ", "where ", "which ")):
+            return True
+        # "find cube in usd?" is still a scene command, despite the question mark.
+        return request.endswith("?") and not self._looks_like_explicit_scene_command(request)
 
     def _detect_knowledge_target(self, request: str) -> RouteTarget:
-        kit_words = ("kit ", "extension", "app template", "window", "ui layout", "omniverse kit")
+        kit_words = ("extension", "app template", "window", "ui layout", "omniverse kit", "omni.kit")
         omni_ui_words = ("omni.ui", "widget", "ui class", "ui api", "style docs", "layout")
         isaac_words = ("isaac", "robot", "simulation", "physx", "articulation", "sensor", "ros 2")
-        usd_words = ("usd ", "openusd", "prim definition", "sdf", "usda", "usdz", "schema", "reference", "payload")
+        usd_words = (
+            "openusd",
+            "omni.usd",
+            "pxr.usd",
+            "prim definition",
+            "sdf",
+            "usda",
+            "usdz",
+            "schema",
+            "reference",
+            "payload",
+        )
         bowerbot_words = (
             "bowerbot",
             "asset assembly",
@@ -521,9 +600,9 @@ class OmniverseRouter:
             return RouteTarget.ISAAC_SIM
         if any(word in request for word in omni_ui_words):
             return RouteTarget.OMNI_UI
-        if any(word in request for word in kit_words):
+        if any(word in request for word in kit_words) or _KIT_WORD.search(request):
             return RouteTarget.KIT
-        if any(word in request for word in usd_words):
+        if any(word in request for word in usd_words) or _USD_WORD.search(request):
             return RouteTarget.USD
         return RouteTarget.UNKNOWN
 

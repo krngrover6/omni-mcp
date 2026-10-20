@@ -124,6 +124,25 @@ def _extract_name(query: str) -> str:
     return ""
 
 
+_USD_NAME = re.compile(
+    r"\b(?:pxr\.)?((?:Usd|Sdf|Gf|Tf|Vt|Pcp|Ar|Kind|Sdr|Ndr)(?:[A-Z][A-Za-z0-9_]*)?(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\b"
+)
+
+
+def _extract_usd_name(query: str) -> str:
+    """Return a pxr module or class name such as UsdGeom, Sdf.Layer or UsdGeom.Xform, or "" if none is named.
+
+    Qualified names win over bare module words, and the last bare word wins, so an English "Kind of ..." or a
+    leading "Usd" does not hide the name the user is asking about.
+    """
+    names = [match.group(1) for match in _USD_NAME.finditer(query)]
+    bare = {"Usd", "Sdf", "Gf", "Tf", "Vt", "Pcp", "Ar", "Kind", "Sdr", "Ndr"}
+    qualified = [name for name in names if name not in bare]
+    if qualified:
+        return qualified[0]
+    return names[-1] if names else ""
+
+
 def _extract_instruction_sets(query: str) -> str | list[str] | None:
     lowered = query.lower()
     for keyword in ("kit_system", "omni_ui_system", "isaacsim_system", "extensions", "testing", "ui"):

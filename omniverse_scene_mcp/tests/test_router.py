@@ -21,6 +21,76 @@ def test_router_routes_usd_questions_to_knowledge_backend():
     assert result.payload["ok"] is False
 
 
+def test_router_attaches_builtin_lesson_when_knowledge_backend_fails():
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
+    payload = asyncio.run(router.handle("What is a USD prim?")).payload
+    assert payload["ok"] is False
+    assert payload["message"] == "Knowledge backend is not connected yet."
+    assert payload["fallback"]["topic"] == "prims"
+    assert payload["fallback"]["title"] == "What a Prim Is"
+    assert router.learning_history()["history"] == []
+
+
+def test_router_returns_knowledge_answer_without_fallback_when_backend_answers():
+    class AnsweringBackend:
+        async def ask(self, query):
+            return {"ok": True, "backend": "usd", "query": query, "content": "A prim is a scene graph node."}
+
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()), usd_backend=AnsweringBackend())
+    payload = asyncio.run(router.handle("What is a USD prim?")).payload
+    assert payload["ok"] is True
+    assert "fallback" not in payload
+
+
+def test_router_keeps_explicit_learning_requests_in_learning_mode():
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
+    for request in ("can you explain usd schemas?", "quiz me on usd schemas?", "teach me prims", "What is a prim?"):
+        assert router.route(request).target is RouteTarget.LEARN, request
+
+
+def test_router_matches_usd_and_kit_as_whole_words():
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
+    assert router.route("How do materials work in USD?").target is RouteTarget.USD
+    assert router.route("How do I add a light in Kit?").target is RouteTarget.KIT
+    assert router.route("open scene.usd").target is RouteTarget.SCENE
+    assert router.route("what is in the kitchen scene?").target is not RouteTarget.KIT
+
+
+def test_router_routes_extensions_and_module_names_to_their_domain():
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
+    expected = {
+        "what is a .usd file?": RouteTarget.USD,
+        "what does omni.usd do?": RouteTarget.USD,
+        "how do i open scene.usd in composer?": RouteTarget.USD,
+        "what is a .kit file?": RouteTarget.KIT,
+        "what does omni.kit do?": RouteTarget.KIT,
+        "what file extension does a usd stage use?": RouteTarget.USD,
+    }
+    for request, target in expected.items():
+        assert router.route(request).target is target, request
+
+
+def test_router_keeps_scene_aware_and_weak_keyword_questions_on_their_old_routes():
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
+    for request in (
+        "what is selected in usd composer?",
+        "how many prims are in my usd stage?",
+        "what is the schema of /World/Props/Cube?",
+        "how do i add a light in usd composer?",
+        "what's a good layout for my stage hierarchy?",
+        "how do i start a new project with a dome light?",
+    ):
+        assert router.route(request).target is RouteTarget.LEARN, request
+    assert router.route("find cube in usd?").target is RouteTarget.SCENE
+
+
+def test_router_fallback_lesson_matches_whole_topic_words():
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
+    assert "fallback" not in asyncio.run(router.handle("Are USD references lightweight?")).payload
+    assert "fallback" not in asyncio.run(router.handle("How do I remove a payload in USD?")).payload
+    assert asyncio.run(router.handle("What is a USD schema?")).payload["fallback"]["topic"] == "schemas"
+
+
 def test_router_understands_plain_english_scene_summary():
     router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
     result = asyncio.run(router.handle("show me the scene"))

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import asyncio
 import sys
+from dataclasses import asdict
 
 from .runtime import build_router
 from .server import main as serve_main
@@ -17,7 +18,7 @@ def main() -> int:
     if args:
         request = " ".join(args)
         result = asyncio.run(router.handle(request, dry_run=False))
-        print(json.dumps({"decision": result.decision.__dict__, "payload": result.payload}, indent=2, default=str))
+        print(json.dumps({"decision": asdict(result.decision), "payload": result.payload}, indent=2, default=str))
     else:
         print(json.dumps(router.scene_summary(), indent=2))
     return 0
