@@ -160,6 +160,50 @@ class SceneMCPService:
         updated = self._bridge.set_material(path, material_path)
         return OperationResult(True, False, changes, {"prim": asdict(updated)})
 
+    def get_variant_selections(self, path: str) -> dict[str, Any]:
+        self._require_prim(path)
+        return {"path": path, "selections": self._bridge.get_variant_selections(path)}
+
+    def set_variant_selection(
+        self,
+        path: str,
+        variant_set: str,
+        selection: str,
+        dry_run: bool = False,
+    ) -> OperationResult:
+        self._require_prim(path)
+        before = self._bridge.get_variant_selections(path)
+        changes = [
+            ChangeRecord(
+                "variant",
+                path,
+                f"Set {variant_set}={selection} on {path}",
+                before={"selections": before},
+                after={"variant_set": variant_set, "selection": selection},
+            )
+        ]
+        if dry_run:
+            return OperationResult(
+                True,
+                True,
+                changes,
+                {"path": path, "variant_set": variant_set, "selection": selection},
+            )
+        selections = self._bridge.set_variant_selection(path, variant_set, selection)
+        return OperationResult(True, False, changes, {"path": path, "selections": selections})
+
+    def get_timeline_state(self) -> dict[str, object]:
+        return self._bridge.get_timeline_state()
+
+    def set_timeline_time(self, time_code: float) -> dict[str, object]:
+        return self._bridge.set_timeline_time(time_code)
+
+    def play_timeline(self, start_time_code: float, end_time_code: float) -> dict[str, object]:
+        return self._bridge.play_timeline(start_time_code, end_time_code)
+
+    def stop_timeline(self) -> dict[str, object]:
+        return self._bridge.stop_timeline()
+
     def find_prims(self, query: str, scope_path: str | None = None) -> dict[str, Any]:
         matches = self._bridge.find_prims(query, scope_path=scope_path)
         return {
@@ -168,6 +212,10 @@ class SceneMCPService:
             "count": len(matches),
             "prims": [asdict(prim) for prim in matches],
         }
+
+    def save_scene(self, path: str) -> dict[str, Any]:
+        saved_path = self._bridge.save_scene(path)
+        return {"saved_path": saved_path}
 
     def preview_changes(self, result: OperationResult) -> dict[str, Any]:
         return {

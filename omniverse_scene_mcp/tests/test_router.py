@@ -74,6 +74,18 @@ def test_router_can_find_prims_by_text():
     assert result.payload["result"]["count"] >= 1
 
 
+def test_router_keeps_learning_phrases_with_scene_words_in_learning_mode():
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
+    for request in ("move on to the next lesson", "explain how to select a prim", "translate this to a command"):
+        assert router.route(request).target is RouteTarget.LEARN, request
+
+
+def test_router_routes_save_with_usd_path_to_scene():
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
+    decision = router.route("save C:/Temp/scene_copy.usda")
+    assert decision.target is RouteTarget.SCENE
+
+
 def test_router_routes_learning_questions_to_learning_mode():
     router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
     result = asyncio.run(router.handle("teach me schemas"))

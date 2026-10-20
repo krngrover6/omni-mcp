@@ -102,6 +102,9 @@ class OmniverseRouter:
         normalized = self._normalize(request)
         if self._practice_session is not None and normalized in {"done", "next", "continue", "ok", "finished"}:
             return RoutingDecision(RouteTarget.LEARN, 0.99, "Active practice session advance request", normalized)
+        # Checked before learning topics, which also match words such as "move", "select" and "prim".
+        if self._looks_like_targeted_scene_command(normalized):
+            return RoutingDecision(RouteTarget.SCENE, 0.97, "Scene command verb with a target detected", normalized)
         learning_topic = self._detect_learning_topic(normalized)
         learning_style = self._detect_learning_style(normalized)
         if learning_topic is not None or learning_style != "lesson" or any(
@@ -232,6 +235,16 @@ class OmniverseRouter:
                 "target": "scene",
                 "result": self._scene.find_prims(parsed["query"], scope_path=parsed.get("scope_path")),
             }
+        if action == "save":
+            if dry_run:
+                return {
+                    "ok": True,
+                    "dry_run": True,
+                    "target": "scene",
+                    "result": {"path": parsed["path"]},
+                    "message": f"Would save the current scene to {parsed['path']}",
+                }
+            return {"ok": True, "target": "scene", "result": self._scene.save_scene(parsed["path"])}
 
         return {"ok": False, "message": f"Unsupported scene action: {action}"}
 
@@ -467,10 +480,18 @@ class OmniverseRouter:
     def _looks_like_explicit_scene_command(self, request: str) -> bool:
         return bool(
             re.match(
-                r"^(?:scene\s+)?(?:ping|status|summary|inspect|children|create|delete|duplicate|reparent|move|material|select|rename|find)\b",
+                r"^(?:scene\s+)?(?:ping|status|summary|inspect|children|create|delete|duplicate|reparent|move|material|select|rename|find|save)\b",
                 request,
             )
         )
+
+    def _looks_like_targeted_scene_command(self, request: str) -> bool:
+        """An imperative scene verb aimed at a path, the selection or numbers, or 'add a <thing>'."""
+        prefix = r"^(?:scene\s+)?(?:can you\s+)?(?:please\s+)?"
+        if re.match(prefix + r"(?:add|create|spawn|place)\s+(?:a|an)\s+\w", request):
+            return True
+        verbs = r"(?:inspect|children|delete|remove|duplicate|reparent|move|shift|nudge|material|select|focus|highlight|rename|save)"
+        return bool(re.match(prefix + verbs + r"\b.*(?:/|\b(?:this|that|it|selected)\b|\d)", request))
 
     def _is_question(self, request: str) -> bool:
         return request.startswith(("what ", "how ", "why ", "when ", "where ", "which ")) or request.endswith("?")
@@ -1280,7 +1301,7 @@ class OmniverseRouter:
                 return {"action": "reparent", "path": child_path, "new_parent": reparent_natural.group(2)}
 
         move_match = re.match(
-            r"^(?:scene\s+)?move\s+(\S+)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$",
+            r"^(?:scene\s+)?move\s+(/\S*)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$",
             text,
             re.IGNORECASE,
         )
@@ -1354,6 +1375,13 @@ class OmniverseRouter:
             query_text = find_match.group(1).strip()
             query, scope_path = self._split_query_and_scope(query_text)
             return {"action": "find", "query": query, "scope_path": scope_path}
+
+        save_match = re.match(r"^(?:scene\s+)?save(?:\s+as)?\s+(.+)$", text, re.IGNORECASE)
+        if save_match:
+            return {"action": "save", "path": save_match.group(1).strip()}
+        save_natural = re.match(r"^(?:can you\s+)?(?:please\s+)?save(?:\s+this)?\s+scene(?:\s+as)?\s+(.+)$", text, re.IGNORECASE)
+        if save_natural:
+            return {"action": "save", "path": save_natural.group(1).strip()}
 
         return None
 

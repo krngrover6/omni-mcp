@@ -23,3 +23,39 @@ def test_move_prim_updates_fake_scene():
     result = service.move_prim("/World/Props/Cube", translation=(1.0, 2.0, 3.0))
     prim = result.payload["prim"]
     assert prim["translation"] == (1.0, 2.0, 3.0)
+
+
+def test_variant_selection_updates_fake_scene():
+    bridge = FakeSceneBridge()
+    service = SceneMCPService(bridge)
+
+    result = service.set_variant_selection("/World/Props", "color", "blue")
+
+    assert result.payload["selections"] == {"color": "blue"}
+    assert service.get_variant_selections("/World/Props")["selections"] == {"color": "blue"}
+
+
+def test_variant_selection_dry_run_does_not_change_scene():
+    bridge = FakeSceneBridge()
+    service = SceneMCPService(bridge)
+
+    result = service.set_variant_selection("/World/Props", "trim", "sport", dry_run=True)
+
+    assert result.dry_run is True
+    assert service.get_variant_selections("/World/Props")["selections"] == {}
+
+
+def test_timeline_pose_and_clip_controls_fake_scene():
+    service = SceneMCPService(FakeSceneBridge())
+
+    pose = service.set_timeline_time(480)
+    assert pose["current_time_code"] == 480
+    assert pose["playing"] is False
+
+    playing = service.play_timeline(960, 1200)
+    assert playing["start_time_code"] == 960
+    assert playing["end_time_code"] == 1200
+    assert playing["playing"] is True
+
+    stopped = service.stop_timeline()
+    assert stopped["playing"] is False

@@ -12,6 +12,14 @@ class FakeSceneBridge:
         self._stage_name = "FakeStage"
         self._root_path = "/World"
         self._selection: list[str] = []
+        self._variant_selections: dict[str, dict[str, str]] = {}
+        self._timeline_state: dict[str, object] = {
+            "current_time_code": 0.0,
+            "start_time_code": 0.0,
+            "end_time_code": 1200.0,
+            "time_codes_per_second": 24.0,
+            "playing": False,
+        }
         self._prims: dict[str, PrimRecord] = {
             "/World": PrimRecord(path="/World", type_name="Xform"),
             "/World/Props": PrimRecord(path="/World/Props", type_name="Xform", parent="/World"),
@@ -161,6 +169,41 @@ class FakeSceneBridge:
         prim.material = material_path
         return deepcopy(prim)
 
+    def get_variant_selections(self, path: str) -> dict[str, str]:
+        self._require_prim(path)
+        return dict(self._variant_selections.get(path, {}))
+
+    def set_variant_selection(self, path: str, variant_set: str, selection: str) -> dict[str, str]:
+        self._require_prim(path)
+        selections = self._variant_selections.setdefault(path, {})
+        selections[variant_set] = selection
+        return dict(selections)
+
+    def get_timeline_state(self) -> dict[str, object]:
+        return dict(self._timeline_state)
+
+    def set_timeline_time(self, time_code: float) -> dict[str, object]:
+        self._timeline_state["current_time_code"] = float(time_code)
+        self._timeline_state["playing"] = False
+        return self.get_timeline_state()
+
+    def play_timeline(self, start_time_code: float, end_time_code: float) -> dict[str, object]:
+        if end_time_code <= start_time_code:
+            raise ValueError("Timeline end must be greater than its start")
+        self._timeline_state.update(
+            {
+                "current_time_code": float(start_time_code),
+                "start_time_code": float(start_time_code),
+                "end_time_code": float(end_time_code),
+                "playing": True,
+            }
+        )
+        return self.get_timeline_state()
+
+    def stop_timeline(self) -> dict[str, object]:
+        self._timeline_state["playing"] = False
+        return self.get_timeline_state()
+
     def find_prims(self, query: str, scope_path: str | None = None) -> list[PrimRecord]:
         query_lower = query.lower().strip()
         scope_prefix = f"{scope_path.rstrip('/')}/" if scope_path else None
@@ -172,6 +215,10 @@ class FakeSceneBridge:
             if query_lower in haystack:
                 matches.append(deepcopy(prim))
         return matches
+
+    def save_scene(self, path: str) -> str:
+        self._stage_name = path.rsplit("/", 1)[-1] or self._stage_name
+        return path
 
     def _require_prim(self, path: str) -> PrimRecord:
         prim = self._prims.get(path)
