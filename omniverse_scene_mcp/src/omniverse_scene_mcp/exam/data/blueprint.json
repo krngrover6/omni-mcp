@@ -1,0 +1,342 @@
+{
+  "schema_version": 1,
+  "exam": {
+    "name": "NVIDIA-Certified Professional: OpenUSD Development",
+    "code": "NCP-OUSD",
+    "level": "professional",
+    "format": {
+      "questions": "60-70",
+      "question_types": ["single-select", "multi-select"],
+      "notes": "Many items are scenarios built around short USDA layer snippets; multi-select items state how many options to pick."
+    },
+    "delivery": "Online, remotely proctored through Certiverse.",
+    "price_usd": 200,
+    "language": "English",
+    "scoring": {
+      "type": "pass/fail",
+      "passing_score_published": false,
+      "notes": "NVIDIA does not publish a passing score; any readiness target in this tool is self-set."
+    },
+    "time_limit_minutes": 120,
+    "time_limit_notes": "The US exam page lists 120 minutes; some UK/EU pages mention 90 minutes. Confirm the duration when you register.",
+    "retake_policy": {
+      "wait_days": 14,
+      "max_attempts_per_12_months": 5
+    },
+    "validity_years": 2,
+    "scope_note": "USD Composer is not examined; answers are at the OpenUSD/USDA/API level.",
+    "study_guide": {
+      "url": "https://dam-cdn.nvd.orangelogic.com/AssetLink/sjrg2vjhic7285sph487x53f5e54erf7.pdf",
+      "version": "OCT25",
+      "notes": "The older nvdam.widen.net study-guide link is dead; use this one."
+    },
+    "official_prep": {
+      "name": "Learn OpenUSD curriculum",
+      "url": "https://docs.nvidia.com/learn-openusd/latest/index.html"
+    },
+    "facts_notes": "Exam facts were gathered from NVIDIA pages in 2025-2026 and can change; re-check price, duration and policies at registration."
+  },
+  "domains": [
+    {
+      "id": 1,
+      "name": "Composition",
+      "weight": 23,
+      "description": "Every composition arc (local opinions, sublayers, inherits, variants, relocates, references, payloads, specializes): what each one does, when to reach for it, and how to reason through layered USDA files to predict which opinion wins.",
+      "objectives": [
+        {"id": "1.1", "text": "Make a value win or lose by moving its opinion to a stronger or weaker layer, arc, or edit target.", "keywords": ["opinion", "strength", "edit target", "layer", "override", "stronger"]},
+        {"id": "1.2", "text": "Pick between scenegraph (native) instancing and point instancing based on copy count and how much each copy must vary.", "keywords": ["instancing", "instanceable", "pointinstancer", "prototype", "scale"]},
+        {"id": "1.3", "text": "Tell sublayers, references, and payloads apart and match each one to the situations it suits.", "keywords": ["sublayer", "reference", "payload", "composition arc", "load"]},
+        {"id": "1.4", "text": "Reuse one animated asset on several prims, shifting each copy in time with a layer offset on its reference.", "keywords": ["layer offset", "time offset", "reference", "animation", "timesamples", "timecode"]},
+        {"id": "1.5", "text": "Plan a layer stack (for example one sublayer per department) so several people can author the same scene without clobbering each other.", "keywords": ["layer stack", "sublayer", "multi-user", "collaboration", "department", "edit target"]},
+        {"id": "1.6", "text": "Describe the LIVERPS strength order (local, inherits, variants, relocates, references, payloads, specializes) in plain language.", "keywords": ["liverps", "livrps", "strength ordering", "inherits", "specializes", "relocates"]},
+        {"id": "1.7", "text": "Judge when a variant set is the right way to package asset alternatives and when another structure works better.", "keywords": ["variant", "variant set", "variant selection", "asset structure", "lod"]},
+        {"id": "1.8", "text": "Diagnose why a value authored in some layer is ignored once the stage is composed.", "keywords": ["opinion", "composed stage", "strength", "debugging", "property stack", "override"]},
+        {"id": "1.9", "text": "Package an in-house asset for outside delivery, e.g. by flattening it and removing internal-only paths and dependencies.", "keywords": ["flatten", "export", "delivery", "dependencies", "asset path", "usdz"]},
+        {"id": "1.10", "text": "Remove or block properties on instanced components in an assembly even though prims under an instance cannot be edited in place.", "keywords": ["instance", "instance proxy", "assembly", "component", "property", "instanceable"]},
+        {"id": "1.11", "text": "Break one monolithic asset into separate layers (geometry, shading, rigging...) so different teams can work on it in parallel.", "keywords": ["monolithic", "split", "layers", "workstream", "asset structure", "collaboration"]}
+      ],
+      "readings": [
+        {"kind": "course", "title": "Learn OpenUSD: Creating Composition Arcs", "url": "https://docs.nvidia.com/learn-openusd/latest/creating-composition-arcs/index.html"},
+        {"kind": "tutorial", "title": "Referencing Layers", "url": "https://openusd.org/release/tut_referencing_layers.html"},
+        {"kind": "tutorial", "title": "Authoring Variants", "url": "https://openusd.org/release/tut_authoring_variants.html"},
+        {"kind": "glossary", "title": "LIVERPS", "url": "https://openusd.org/release/glossary.html#liverps-strength-ordering"},
+        {"kind": "glossary", "title": "Sublayers", "url": "https://openusd.org/release/glossary.html#usdglossary-sublayers"},
+        {"kind": "glossary", "title": "Variant Set", "url": "https://openusd.org/release/glossary.html#usdglossary-variantset"},
+        {"kind": "glossary", "title": "Reference", "url": "https://openusd.org/release/glossary.html#usdglossary-references"},
+        {"kind": "glossary", "title": "Payload", "url": "https://openusd.org/release/glossary.html#usdglossary-payload"},
+        {"kind": "glossary", "title": "Timesample", "url": "https://openusd.org/release/glossary.html#usdglossary-timesample"},
+        {"kind": "glossary", "title": "Value Clips", "url": "https://openusd.org/release/glossary.html#usdglossary-valueclips"},
+        {"kind": "glossary", "title": "Layer Offset", "url": "https://openusd.org/release/glossary.html#layer-offset"},
+        {"kind": "glossary", "title": "Edit Target", "url": "https://openusd.org/release/glossary.html#edittarget"},
+        {"kind": "glossary", "title": "Change Processing", "url": "https://openusd.org/release/glossary.html#change-processing"},
+        {"kind": "glossary", "title": "Flatten", "url": "https://openusd.org/release/glossary.html#flatten"},
+        {"kind": "api", "title": "Scenegraph Instancing", "url": "https://openusd.org/release/api/_usd__page__scenegraph_instancing.html"},
+        {"kind": "api", "title": "Basic Datatypes for Scene Description Provided by Sdf", "url": "https://openusd.org/release/api/_usd__page__datatypes.html"},
+        {"kind": "api", "title": "Edit Target - Detailed Description", "url": "https://openusd.org/release/api/class_usd_edit_target.html#details"},
+        {"kind": "api", "title": "UsdStage::Flatten()", "url": "https://openusd.org/release/api/class_usd_stage.html#ae3271778fa2ceeb82fbd51296610820a"},
+        {"kind": "api", "title": "UsdReference - Expressing References Without Prim Paths", "url": "https://openusd.org/release/api/class_usd_references.html#Usd_DefaultPrim_References"},
+        {"kind": "additional", "title": "USD Composition - SIGGRAPH 2019", "url": "https://openusd.org/files/Siggraph2019_USD%20Composition.pdf"},
+        {"kind": "additional", "title": "USD Book - Default Prim", "url": "https://remedy-entertainment.github.io/USDBook/terminology/default_prim.html"},
+        {"kind": "additional", "title": "OpenUSD Code Samples - Add a Payload", "url": "https://docs.omniverse.nvidia.com/dev-guide/latest/programmer_ref/usd/references-payloads/add-payload.html"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Content Aggregation",
+      "weight": 10,
+      "description": "Assembling large scenes from modular, reusable models: using native and point instancing to keep memory and load times down, and choosing how to customize instanced assets without giving up those savings.",
+      "objectives": [
+        {"id": "2.1", "text": "Register an extra prototype on a UsdGeomPointInstancer and point protoIndices at it.", "keywords": ["pointinstancer", "prototype", "protoindices", "prototypes relationship"]},
+        {"id": "2.2", "text": "Recolor a mesh reached through an instance proxy while keeping its instanceable state intact.", "keywords": ["instance proxy", "displaycolor", "instanceable", "material", "override"]},
+        {"id": "2.3", "text": "Hide selected point-instancer instances cheaply (via invisibleIds) instead of rewriting the instance arrays.", "keywords": ["pointinstancer", "invisibleids", "visibility", "hide", "instances"]},
+        {"id": "2.4", "text": "Set up and maintain scenegraph instances so repeated assets share one prototype in very large scenes.", "keywords": ["instancing", "instanceable", "prototype", "reuse", "large scene", "performance"]},
+        {"id": "2.5", "text": "Remove or block properties on instanced components in an assembly even though prims under an instance cannot be edited in place.", "keywords": ["instance", "instance proxy", "assembly", "component", "property", "instanceable"]}
+      ],
+      "readings": [
+        {"kind": "course", "title": "Learn OpenUSD: Understanding Model Kinds", "url": "https://docs.nvidia.com/learn-openusd/latest/beyond-basics/model-kinds.html"},
+        {"kind": "course", "title": "Learn OpenUSD: Asset Structure Principles and Content Aggregation", "url": "https://docs.nvidia.com/learn-openusd/latest/asset-structure/index.html"},
+        {"kind": "course", "title": "Learn OpenUSD: Asset Modularity and Instancing", "url": "https://docs.nvidia.com/learn-openusd/latest/asset-modularity-instancing/index.html"},
+        {"kind": "api", "title": "Scenegraph Instancing", "url": "https://openusd.org/release/api/_usd__page__scenegraph_instancing.html"},
+        {"kind": "api", "title": "Kind: Extensible Categorization - The Core Kind Hierarchy", "url": "https://openusd.org/release/api/kind_page_front.html#kind_coreKinds"},
+        {"kind": "api", "title": "Important Properties of Scene Description - Model Hierarchy: Meaning and Purpose", "url": "https://openusd.org/release/api/_usd__page__properties_of_scene_description.html#Usd_ModelHierarchy"},
+        {"kind": "api", "title": "UsdShadeNodeGraph - Detailed Description", "url": "https://openusd.org/release/api/class_usd_shade_node_graph.html#details"},
+        {"kind": "api", "title": "UsdGeomPointInstancer - Detailed Description", "url": "https://openusd.org/release/api/class_usd_geom_point_instancer.html#details"}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Customizing USD",
+      "weight": 6,
+      "description": "Extending USD with plugins: custom IsA and API schemas, file format plugins, asset resolvers, project-specific model kinds, and fallback variant selections.",
+      "objectives": [
+        {"id": "3.1", "text": "Compile a plugin so it links against one specific USD release and is discovered through its plugInfo.json.", "keywords": ["plugin", "build", "pluginfo", "cmake", "version", "plugregistry"]},
+        {"id": "3.2", "text": "Compile OpenUSD from source with your own choice of dependencies (for example through build_usd.py options).", "keywords": ["build", "source", "dependencies", "build_usd", "cmake"]},
+        {"id": "3.3", "text": "Decide when a project-specific model kind is justified and register it through plugInfo.", "keywords": ["kind", "model kind", "custom kind", "pluginfo", "model hierarchy"]},
+        {"id": "3.4", "text": "Design IsA or API schemas (generated with usdGenSchema or codeless) to represent in-house data models.", "keywords": ["schema", "usdgenschema", "isa schema", "api schema", "codeless", "custom"]},
+        {"id": "3.5", "text": "Plug in a custom Ar resolver so asset paths are resolved on the fly (URIs, versions, databases).", "keywords": ["resolver", "ar", "asset path", "resolution", "uri", "context"]},
+        {"id": "3.6", "text": "Carry non-standard attributes and structures through import and export by relying on custom or applied API schemas.", "keywords": ["schema", "custom attributes", "import", "export", "applied api", "namespace"]},
+        {"id": "3.7", "text": "Author a Hydra scene index plugin that emits renderable prims procedurally, without matching USD scene data.", "keywords": ["hydra", "scene index", "procedural", "plugin", "renderable"]},
+        {"id": "3.8", "text": "Write an asset resolver whose resolved results become renderable prims generated in memory.", "keywords": ["asset resolver", "in-memory", "file format plugin", "procedural", "anonymous layer"]}
+      ],
+      "readings": [
+        {"kind": "course", "title": "Learn OpenUSD: Understanding Model Kinds", "url": "https://docs.nvidia.com/learn-openusd/latest/beyond-basics/model-kinds.html"},
+        {"kind": "tutorial", "title": "Generating New Schema Classes", "url": "https://openusd.org/release/tut_generating_new_schema.html"},
+        {"kind": "glossary", "title": "Model Hierarchy", "url": "https://openusd.org/release/glossary.html#usdglossary-modelhierarchy"},
+        {"kind": "whitepaper", "title": "What Are OpenUSD Schemas?", "url": "https://aousd.org/blog/explainer-series-for-developers-what-are-openusd-schemas/"},
+        {"kind": "video", "title": "Universal Scene Description (OpenUSD): Custom Schemas", "url": "https://www.youtube.com/watch?v=-iCUjNk2aiA"},
+        {"kind": "video", "title": "USD in Production", "url": "https://dl.acm.org/doi/10.1145/3587423.3595531"},
+        {"kind": "technical_reference", "title": "USD FAQ - Isn't USD Just Another File Format?", "url": "https://openusd.org/release/usdfaq.html", "note": "The guide links this title to the 'USD in Production' ACM page; the FAQ entry itself lives on the USD FAQ page."},
+        {"kind": "api", "title": "Creating a File Format Plug-in", "url": "https://openusd.org/release/api/_sdf__page__file_format_plugin.html"},
+        {"kind": "api", "title": "Creating New Schema Classes With usdGenSchema", "url": "https://openusd.org/release/api/_usd__page__generating_schemas.html"},
+        {"kind": "api", "title": "Kind: Extensible Categorization", "url": "https://openusd.org/release/api/kind_page_front.html"},
+        {"kind": "api", "title": "PlugRegistry - Registering Plug-ins", "url": "https://openusd.org/release/api/class_plug_registry.html#plug_RegisteringPlugins"},
+        {"kind": "api", "title": "Ar: Asset Resolution", "url": "https://openusd.org/release/api/ar_page_front.html"}
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Data Exchange",
+      "weight": 15,
+      "description": "Moving data in and out of OpenUSD: writing down how another data model maps onto USD concepts, building importers, exporters and converters, and checking that exported assets are sound.",
+      "objectives": [
+        {"id": "4.1", "text": "Export USD content to other widely used formats like glTF and verify what survives the conversion.", "keywords": ["gltf", "convert", "export", "fidelity", "format"]},
+        {"id": "4.2", "text": "Write down how the concepts of another data model (MaterialX, a DCC scene graph...) map onto USD.", "keywords": ["mapping", "materialx", "data model", "conceptual", "document"]},
+        {"id": "4.3", "text": "Weigh binary crate (.usdc) against text (.usda) for load speed, size, readability, diffing, and archiving.", "keywords": ["usda", "usdc", "crate", "binary", "text", "performance", "archival"]},
+        {"id": "4.4", "text": "Build a DCC-to-USD-and-back workflow that keeps data intact on every pass.", "keywords": ["round-trip", "dcc", "import", "export", "fidelity"]},
+        {"id": "4.5", "text": "Carry non-standard attributes and structures through import and export by relying on custom or applied API schemas.", "keywords": ["schema", "custom attributes", "import", "export", "applied api", "namespace"]},
+        {"id": "4.6", "text": "Create usdchecker-style rules confirming that a DCC export produced a well-formed asset.", "keywords": ["validator", "usdchecker", "validation", "integrity", "compliance"]},
+        {"id": "4.7", "text": "Implement an exporter or converter that writes USD layers from another source format.", "keywords": ["exporter", "converter", "author", "sdf", "layer"]},
+        {"id": "4.8", "text": "Build a new USD importer for a content creation tool, or grow an existing one.", "keywords": ["importer", "dcc", "traverse", "import", "read"]}
+      ],
+      "readings": [
+        {"kind": "course", "title": "Learn OpenUSD: Developing Data Exchange Pipelines", "url": "https://docs.nvidia.com/learn-openusd/latest/data-exchange/index.html"},
+        {"kind": "tutorial", "title": "Traversing a Stage", "url": "https://openusd.org/release/tut_traversing_stage.html"},
+        {"kind": "tutorial", "title": "Converting Between Layer Formats", "url": "https://openusd.org/release/tut_converting_between_layer_formats.html"},
+        {"kind": "glossary", "title": "Over", "url": "https://openusd.org/release/glossary.html#usdglossary-over"},
+        {"kind": "glossary", "title": "Stage Traversal", "url": "https://openusd.org/release/glossary.html?highlight=traverse#stage-traversal"},
+        {"kind": "technical_reference", "title": "Conceptual Data Mapping", "url": "https://docs.omniverse.nvidia.com/usd/latest/technical_reference/conceptual_data_mapping/index.html"},
+        {"kind": "technical_reference", "title": "USD Toolset - usdchecker", "url": "https://openusd.org/release/toolset.html#usdchecker"},
+        {"kind": "technical_reference", "title": "USD Toolset - usdcat", "url": "https://openusd.org/release/toolset.html#usdcat"},
+        {"kind": "technical_reference", "title": "USD Toolset - usdzip", "url": "https://openusd.org/release/toolset.html#usdzip"},
+        {"kind": "technical_reference", "title": "USD FAQ - What File Format Is My .usd File?", "url": "https://openusd.org/release/usdfaq.html#what-file-format-is-my-usd-file"},
+        {"kind": "technical_reference", "title": "USDZ File Format Specification", "url": "https://openusd.org/release/spec_usdz.html"},
+        {"kind": "technical_reference", "title": "Maximizing USD Performance", "url": "https://openusd.org/release/maxperf.html"},
+        {"kind": "api", "title": "Encoding Stage UpAxis", "url": "https://openusd.org/release/api/group___usd_geom_up_axis__group.html"},
+        {"kind": "api", "title": "Creating New Schema Classes With usdGenSchema", "url": "https://openusd.org/release/api/_usd__page__generating_schemas.html"},
+        {"kind": "api", "title": "Common Idioms and Examples", "url": "https://openusd.org/release/api/_usd__page__common_idioms.html"},
+        {"kind": "api", "title": "UsdGeomPoints - Detailed Description", "url": "https://openusd.org/release/api/class_usd_geom_points.html#details"},
+        {"kind": "api", "title": "UsdProperty::GetNamespace()", "url": "https://openusd.org/release/api/class_usd_property.html#a914ef5e6cffe6c3c85f7b1085bea0cf2"},
+        {"kind": "api", "title": "UsdGeomModelAPI::GetExtentsHint()", "url": "https://openusd.org/release/api/class_usd_geom_model_a_p_i.html#a4aa8b1f29a3097fe08da868bd2b8b259"},
+        {"kind": "api", "title": "UsdGeomBoundable::ComputeExtentFromPlugins()", "url": "https://openusd.org/release/api/class_usd_geom_boundable.html#a413c9eb5b4e1d8fddd627cf33ed4a106"},
+        {"kind": "api", "title": "UsdGeomBoundable::GetExtentAttr()", "url": "https://openusd.org/release/api/class_usd_geom_boundable.html#abecc87b5433fec139295a78b439b0531"}
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Data Modeling",
+      "weight": 13,
+      "description": "The building blocks of scene description at the Usd and Sdf level: prims with their attributes and relationships, primvars and interpolation, picking value types (token vs string, float vs double, matrices), time-sampled data, and the standard schemas.",
+      "objectives": [
+        {"id": "5.1", "text": "Create a primvar on a mesh with a suitable type and interpolation (constant, uniform, vertex, faceVarying...).", "keywords": ["primvar", "interpolation", "mesh", "displaycolor", "primvarsapi"]},
+        {"id": "5.2", "text": "Select fitting value types for attribute data (token vs string, float vs double, color3f, matrix4d, arrays).", "keywords": ["value type", "sdf type", "token", "float", "matrix4d", "array"]},
+        {"id": "5.3", "text": "Store custom metadata on layers, prims, or properties (customData, assetInfo, or registered metadata fields).", "keywords": ["metadata", "customdata", "assetinfo", "custom", "sdf"]},
+        {"id": "5.4", "text": "Query a prim's attributes and relationships, including authored versus fallback values and namespaces.", "keywords": ["property", "attribute", "relationship", "getproperties", "namespace"]},
+        {"id": "5.5", "text": "Explain typical causes of surprising renders: stale extents, purpose, visibility, flipped orientation, or unit and up-axis mismatches.", "keywords": ["visual", "render", "extent", "purpose", "visibility", "orientation", "metersperunit"]},
+        {"id": "5.6", "text": "Recompute and author a mesh's extent after its points change.", "keywords": ["extent", "points", "boundable", "computeextent", "bounds"]}
+      ],
+      "readings": [
+        {"kind": "course", "title": "Learn OpenUSD: Setting the Stage", "url": "https://docs.nvidia.com/learn-openusd/latest/stage-setting/index.html"},
+        {"kind": "course", "title": "Learn OpenUSD: Scene Description Blueprints", "url": "https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/index.html"},
+        {"kind": "course", "title": "Learn OpenUSD: Beyond the Basics", "url": "https://docs.nvidia.com/learn-openusd/latest/beyond-basics/index.html"},
+        {"kind": "tutorial", "title": "Transformations, Time-Sampled Animation, and Layer Offsets", "url": "https://openusd.org/release/tut_xforms.html"},
+        {"kind": "tutorial", "title": "Generating New Schema Classes", "url": "https://openusd.org/release/tut_generating_new_schema.html"},
+        {"kind": "user_guide", "title": "Rendering User Guide - Working With Primvars", "url": "https://openusd.org/release/user_guides/render_user_guide.html#working-with-primvars"},
+        {"kind": "glossary", "title": "TimeCode", "url": "https://openusd.org/release/glossary.html#usdglossary-timecode"},
+        {"kind": "glossary", "title": "Layer Offset", "url": "https://openusd.org/release/glossary.html#layer-offset"},
+        {"kind": "glossary", "title": "List Editing", "url": "https://openusd.org/release/glossary.html#list-editing"},
+        {"kind": "glossary", "title": "Primvar", "url": "https://openusd.org/release/glossary.html#usdglossary-primvar"},
+        {"kind": "technical_reference", "title": "USD Proposals - Spline Animation in USD", "url": "https://github.com/PixarAnimationStudios/OpenUSD-proposals/tree/main/proposals/spline-animation#spline-animation-in-usd"},
+        {"kind": "technical_reference", "title": "Maximizing USD Performance", "url": "https://openusd.org/release/maxperf.html"},
+        {"kind": "api", "title": "Basic Datatypes for Scene Description Provided by Sdf", "url": "https://openusd.org/release/api/_usd__page__datatypes.html"},
+        {"kind": "api", "title": "Encoding Stage Linear Units", "url": "https://openusd.org/release/api/group___usd_geom_linear_units__group.html"},
+        {"kind": "api", "title": "UsdAttribute - Attribute Interpolation", "url": "https://openusd.org/release/api/class_usd_attribute.html#Usd_AttributeInterpolation"},
+        {"kind": "api", "title": "UsdGeomPrimvar - Detailed Description", "url": "https://openusd.org/release/api/class_usd_geom_primvar.html#details"},
+        {"kind": "api", "title": "UsdGeomPrimvar - Interpolation of Geometric Primitive Variables", "url": "https://openusd.org/release/api/class_usd_geom_primvar.html#Usd_InterpolationVals"},
+        {"kind": "api", "title": "Sdf: Scene Description Foundations - Types", "url": "https://openusd.org/release/api/sdf_page_front.html#sdf_metadata_types"},
+        {"kind": "api", "title": "Creating New Schema Classes With usdGenSchema", "url": "https://openusd.org/release/api/_usd__page__generating_schemas.html"},
+        {"kind": "api", "title": "UsdGeomBoundable", "url": "https://openusd.org/release/api/class_usd_geom_boundable.html"},
+        {"kind": "api", "title": "UsdGeomXformable", "url": "https://openusd.org/release/api/class_usd_geom_xformable.html"},
+        {"kind": "api", "title": "UsdGeomXformCache", "url": "https://openusd.org/release/api/class_usd_geom_xform_cache.html"},
+        {"kind": "api", "title": "UsdStage::SetInterpolationType()", "url": "https://openusd.org/release/api/class_usd_stage.html#ad29a9aaba12c36407936a21abf514ea4"}
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Debugging and Troubleshooting",
+      "weight": 11,
+      "description": "Inspecting stages to correct wrong composition results, track down badly authored data, and cut load and render times.",
+      "objectives": [
+        {"id": "6.1", "text": "Recognize when batching many edits inside an Sdf.ChangeBlock cuts change-processing cost: notifications are queued and sent in one round when the outermost block closes.", "keywords": ["changeblock", "sdf", "performance", "notification", "batch"]},
+        {"id": "6.2", "text": "Diagnose why a value authored in some layer is ignored once the stage is composed.", "keywords": ["opinion", "composed stage", "strength", "debugging", "property stack", "override"]},
+        {"id": "6.3", "text": "Fix asset-management problems such as unresolved paths, missing layers, resolver contexts, and unloaded payloads.", "keywords": ["asset path", "resolver", "unresolved", "missing layer", "payload"]},
+        {"id": "6.4", "text": "Explain typical causes of surprising renders: stale extents, purpose, visibility, flipped orientation, or unit and up-axis mismatches.", "keywords": ["visual", "render", "extent", "purpose", "visibility", "orientation", "metersperunit"]},
+        {"id": "6.5", "text": "Use USD's diagnostic and profiling tools: TfDebug flags, diagnostic delegates, Trace, and TfMallocTag.", "keywords": ["tfdebug", "diagnostic", "trace", "profiling", "malloctag", "delegate"]}
+      ],
+      "readings": [
+        {"kind": "course", "title": "Learn OpenUSD: Creating Composition Arcs", "url": "https://docs.nvidia.com/learn-openusd/latest/creating-composition-arcs/index.html"},
+        {"kind": "tutorial", "title": "Inspecting and Authoring Properties", "url": "https://openusd.org/release/tut_inspect_and_author_props.html"},
+        {"kind": "tutorial", "title": "Traversing a Stage", "url": "https://openusd.org/release/tut_traversing_stage.html"},
+        {"kind": "glossary", "title": "LIVERPS", "url": "https://openusd.org/release/glossary.html#liverps-strength-ordering"},
+        {"kind": "glossary", "title": "Reference", "url": "https://openusd.org/release/glossary.html#usdglossary-references"},
+        {"kind": "glossary", "title": "Visibility", "url": "https://openusd.org/release/glossary.html#usdglossary-visibility"},
+        {"kind": "glossary", "title": "IsA Schema", "url": "https://openusd.org/release/glossary.html#isa-schema"},
+        {"kind": "glossary", "title": "Inherits", "url": "https://openusd.org/release/glossary.html#usdglossary-inherits"},
+        {"kind": "technical_reference", "title": "Maximizing USD Performance", "url": "https://openusd.org/release/maxperf.html"},
+        {"kind": "technical_reference", "title": "USD Toolset - usdcat", "url": "https://openusd.org/release/toolset.html#usdcat"},
+        {"kind": "technical_reference", "title": "USD FAQ - What's the Difference Between an \"Over\" and a \"Typeless Def\"?", "url": "https://openusd.org/release/usdfaq.html#what-s-the-difference-between-an-over-and-a-typeless-def"},
+        {"kind": "technical_reference", "title": "usdview LayerStack tab", "url": "https://docs.omniverse.nvidia.com/usd/latest/usdview/panel_composition.html#layer-stack"},
+        {"kind": "api", "title": "UsdPrim", "url": "https://openusd.org/release/api/class_usd_prim.html"},
+        {"kind": "api", "title": "UsdReference - Expressing References Without Prim Paths", "url": "https://openusd.org/release/api/class_usd_references.html#Usd_DefaultPrim_References"},
+        {"kind": "api", "title": "UsdGeomModelAPI - Draw Modes", "url": "https://openusd.org/release/api/class_usd_geom_model_a_p_i.html#UsdGeomModelAPI_drawMode"},
+        {"kind": "api", "title": "UsdProperty::GetPropertyStack()", "url": "https://openusd.org/release/api/class_usd_property.html#a2159d3d651cd66e4fb1c724be90ed5e0"},
+        {"kind": "api", "title": "UsdUtilsCoalescingDiagnosticDelegate", "url": "https://openusd.org/release/api/class_usd_utils_coalescing_diagnostic_delegate.html"},
+        {"kind": "api", "title": "TfDiagnosticMgr::Delegate", "url": "https://openusd.org/release/api/class_tf_diagnostic_mgr_1_1_delegate.html"},
+        {"kind": "api", "title": "UsdStage::Open() - pathResolverContext", "url": "https://openusd.org/release/api/class_usd_stage.html#ad3e185c150ee38ae13fb76115863d108"},
+        {"kind": "api", "title": "UsdStage - Variant Management", "url": "https://openusd.org/release/api/class_usd_stage.html#Usd_variantManagement"},
+        {"kind": "api", "title": "UsdStage - Working Set Management", "url": "https://openusd.org/release/api/class_usd_stage.html#Usd_workingSetManagement"},
+        {"kind": "api", "title": "UsdStage::MuteLayer()", "url": "https://openusd.org/release/api/class_usd_stage.html#a8af4162fe11cc6a5f21a39e770d397c2"},
+        {"kind": "api", "title": "UsdReferences - Reasons Why Adding a Reference May Fail", "url": "https://openusd.org/release/api/class_usd_references.html#Usd_Failing_References"},
+        {"kind": "api", "title": "Pcp: PrimCache Population (Composition) - Errors", "url": "https://openusd.org/release/api/pcp_page_front.html#pcp_Errors"}
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Pipeline Development",
+      "weight": 14,
+      "description": "Big-picture work for a USD developer or architect: pipeline design, asset management and versioning, diagrams and documentation, tool UX, export hooks that reshape data into the studio's layout, build setups, and shipping flattened assets free of in-house dependencies.",
+      "objectives": [
+        {"id": "7.1", "text": "Export USD content to other widely used formats like glTF and verify what survives the conversion.", "keywords": ["gltf", "convert", "export", "fidelity", "format"]},
+        {"id": "7.2", "text": "Write guidelines for how assets are structured: hierarchy, kinds, layer split, and naming.", "keywords": ["asset structure", "guidelines", "documentation", "kind", "naming"]},
+        {"id": "7.3", "text": "Weigh binary crate (.usdc) against text (.usda) for load speed, size, readability, diffing, and archiving.", "keywords": ["usda", "usdc", "crate", "binary", "text", "performance", "archival"]},
+        {"id": "7.4", "text": "Build a DCC-to-USD-and-back workflow that keeps data intact on every pass.", "keywords": ["round-trip", "dcc", "import", "export", "fidelity"]},
+        {"id": "7.5", "text": "Plug in a custom Ar resolver so asset paths are resolved on the fly (URIs, versions, databases).", "keywords": ["resolver", "ar", "asset path", "resolution", "uri", "context"]},
+        {"id": "7.6", "text": "Store custom metadata on layers, prims, or properties (customData, assetInfo, or registered metadata fields).", "keywords": ["metadata", "customdata", "assetinfo", "custom", "sdf"]},
+        {"id": "7.7", "text": "Check that asset paths are well formed and resolvable (relative vs absolute, anchoring, search paths).", "keywords": ["asset path", "validate", "anchored", "relative", "resolve"]},
+        {"id": "7.8", "text": "Build a new USD importer for a content creation tool, or grow an existing one.", "keywords": ["importer", "dcc", "traverse", "import", "read"]}
+      ],
+      "readings": [
+        {"kind": "course", "title": "Learn OpenUSD: Setting the Stage", "url": "https://docs.nvidia.com/learn-openusd/latest/stage-setting/index.html"},
+        {"kind": "course", "title": "Learn OpenUSD: Scene Description Blueprints", "url": "https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/index.html"},
+        {"kind": "course", "title": "Learn OpenUSD: Composition Basics", "url": "https://docs.nvidia.com/learn-openusd/latest/composition-basics/index.html"},
+        {"kind": "course", "title": "Learn OpenUSD: Beyond the Basics", "url": "https://docs.nvidia.com/learn-openusd/latest/beyond-basics/index.html"},
+        {"kind": "course", "title": "Learn OpenUSD: Creating Composition Arcs", "url": "https://docs.nvidia.com/learn-openusd/latest/creating-composition-arcs/index.html"},
+        {"kind": "course", "title": "Learn OpenUSD: Asset Structure Principles and Content Aggregation", "url": "https://docs.nvidia.com/learn-openusd/latest/asset-structure/index.html"},
+        {"kind": "tutorial", "title": "Authoring Variants", "url": "https://openusd.org/release/tut_authoring_variants.html"},
+        {"kind": "glossary", "title": "Subcomponent", "url": "https://openusd.org/release/glossary.html#usdglossary-subcomponent"},
+        {"kind": "glossary", "title": "Crate File Format", "url": "https://openusd.org/release/glossary.html#crate-file-format"},
+        {"kind": "glossary", "title": "TimeCode", "url": "https://openusd.org/release/glossary.html#usdglossary-timecode"},
+        {"kind": "glossary", "title": "Flatten", "url": "https://openusd.org/release/glossary.html#flatten"},
+        {"kind": "glossary", "title": "Edit Target", "url": "https://openusd.org/release/glossary.html#edittarget"},
+        {"kind": "technical_reference", "title": "USD FAQ - I Have Some Layers I Want to Combine: Should I Use SubLayers or References?", "url": "https://openusd.org/release/usdfaq.html#i-have-some-layers-i-want-to-combine-should-i-use-sublayers-or-references"},
+        {"kind": "technical_reference", "title": "Principles of Scalable Asset Structure in OpenUSD", "url": "https://docs.omniverse.nvidia.com/usd/latest/learn-openusd/independent/asset-structure-principles.html"},
+        {"kind": "technical_reference", "title": "ASWF Asset Structure Guidelines", "url": "https://github.com/usd-wg/assets/blob/main/docs/asset-structure-guidelines.md"},
+        {"kind": "api", "title": "UsdStage::Flatten()", "url": "https://openusd.org/release/api/class_usd_stage.html#ae3271778fa2ceeb82fbd51296610820a"},
+        {"kind": "api", "title": "Edit Target - Detailed Description", "url": "https://openusd.org/release/api/class_usd_edit_target.html#details"},
+        {"kind": "api", "title": "UsdStage::Traverse()", "url": "https://openusd.org/release/api/class_usd_stage.html#adba675b55f41cc1b305bed414fc4f178"},
+        {"kind": "api", "title": "UsdPhysics: USD Physics Schema", "url": "https://openusd.org/release/api/usd_physics_page_front.html"},
+        {"kind": "api", "title": "Encoding Stage Linear Units", "url": "https://openusd.org/release/api/group___usd_geom_linear_units__group.html"},
+        {"kind": "api", "title": "Encoding Stage UpAxis", "url": "https://openusd.org/release/api/group___usd_geom_up_axis__group.html"},
+        {"kind": "api", "title": "SdfChangeBlock", "url": "https://openusd.org/release/api/class_sdf_change_block.html"},
+        {"kind": "api", "title": "UsdNotice", "url": "https://openusd.org/release/api/class_usd_notice.html"},
+        {"kind": "api", "title": "UsdGeom: USD Geometry Schema - Applying Timesampled Velocities to Geometry", "url": "https://openusd.org/release/api/usd_geom_page_front.html#UsdGeom_VelocityInterpolation"}
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Visualization",
+      "weight": 8,
+      "description": "Day-to-day UsdGeom, UsdShade, and UsdLux work (meshes, cameras, materials, lights), which shows up in nearly every USD project and should feel routine.",
+      "objectives": [
+        {"id": "8.1", "text": "Create a primvar on a mesh with a suitable type and interpolation (constant, uniform, vertex, faceVarying...).", "keywords": ["primvar", "interpolation", "mesh", "displaycolor", "primvarsapi"]},
+        {"id": "8.2", "text": "Set up UsdPreviewSurface materials so assets look consistent across renderers and viewers.", "keywords": ["usdpreviewsurface", "material", "shader", "preview"]},
+        {"id": "8.3", "text": "Bind materials to meshes or GeomSubsets with UsdShadeMaterialBindingAPI, including binding strength and purpose.", "keywords": ["material binding", "materialbindingapi", "geomsubset", "bind", "binding strength"]},
+        {"id": "8.4", "text": "Wire a UsdPreviewSurface network that pulls its diffuse color from a primvar through a primvar reader node.", "keywords": ["usdprimvarreader", "primvar", "diffusecolor", "shading network", "usdpreviewsurface"]}
+      ],
+      "readings": [
+        {"kind": "course", "title": "Learn OpenUSD: Setting the Stage", "url": "https://docs.nvidia.com/learn-openusd/latest/stage-setting/index.html"},
+        {"kind": "course", "title": "Learn OpenUSD: Scene Description Blueprints", "url": "https://docs.nvidia.com/learn-openusd/latest/scene-description-blueprints/index.html"},
+        {"kind": "course", "title": "Learn OpenUSD: Beyond the Basics", "url": "https://docs.nvidia.com/learn-openusd/latest/beyond-basics/index.html"},
+        {"kind": "user_guide", "title": "Rendering With USD", "url": "https://openusd.org/release/user_guides/render_user_guide.html"},
+        {"kind": "glossary", "title": "Gprim", "url": "https://openusd.org/release/glossary.html#usdglossary-gprim"},
+        {"kind": "api", "title": "UsdShadeMaterial - Detailed Description", "url": "https://openusd.org/release/api/class_usd_shade_material.html#details"},
+        {"kind": "api", "title": "UsdGeomSubset - Detailed Description", "url": "https://openusd.org/release/api/class_usd_geom_subset.html#details"},
+        {"kind": "api", "title": "UsdShadeMaterialBindingAPI - Detailed Description", "url": "https://openusd.org/release/api/class_usd_shade_material_binding_a_p_i.html#details"},
+        {"kind": "api", "title": "UsdGeomMesh - Detailed Description", "url": "https://openusd.org/release/api/class_usd_geom_mesh.html#details"},
+        {"kind": "api", "title": "UsdLuxLightAPI", "url": "https://openusd.org/release/api/class_usd_lux_light_a_p_i.html"},
+        {"kind": "api", "title": "UsdLuxShadowAPI", "url": "https://openusd.org/release/api/class_usd_lux_shadow_a_p_i.html"},
+        {"kind": "api", "title": "UsdLuxDistantLight", "url": "https://openusd.org/release/api/class_usd_lux_distant_light.html"},
+        {"kind": "api", "title": "UsdLuxShapingAPI", "url": "https://openusd.org/release/api/class_usd_lux_shaping_a_p_i.html"},
+        {"kind": "api", "title": "UsdGeom: USD Geometry Schema - Imageable Purpose", "url": "https://openusd.org/release/api/usd_geom_page_front.html#UsdGeom_ImageablePurpose"}
+      ]
+    }
+  ],
+  "shared_objectives": [
+    ["1.8", "6.2"],
+    ["1.10", "2.5"],
+    ["4.3", "7.3"],
+    ["5.3", "7.6"],
+    ["5.5", "6.4"],
+    ["5.1", "8.1"],
+    ["4.1", "7.1"],
+    ["4.4", "7.4"],
+    ["4.8", "7.8"],
+    ["3.6", "4.5"],
+    ["3.5", "7.5"]
+  ],
+  "high_yield": ["1.8", "6.2", "1.10", "2.5", "4.3", "7.3", "5.3", "7.6", "5.5", "6.4", "5.1", "8.1", "4.1", "7.1", "4.4", "7.4", "4.8", "7.8", "3.6", "4.5", "3.5", "7.5"],
+  "high_yield_notes": "Objectives listed in more than one domain; they are likely to come up more often, so study them first. This is an estimate, not an NVIDIA weighting.",
+  "notes": [
+    "Domain names, weights, objective numbers and reading-list links come from the NVIDIA study guide (version OCT25); descriptions and objective texts are paraphrased study notes, not NVIDIA wording.",
+    "The guide numbers 55 objectives across 8 domains; 11 of them repeat across two domains, leaving 44 distinct topics."
+  ]
+}

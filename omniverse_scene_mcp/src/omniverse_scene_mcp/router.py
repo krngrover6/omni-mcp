@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from enum import Enum
+import os
 import re
 from typing import Any, Protocol
+from urllib.parse import unquote
 
 from .service import OperationResult, SceneMCPService
 
@@ -32,29 +34,102 @@ _USD_WORD = re.compile(r"(?<!\w)(?<!\w\.)usd\b")
 _KIT_WORD = re.compile(r"(?<!\w)(?<!\w\.)kit\b")
 
 # "can you move the cube up in kit?" -> "move the cube up": polite wrappers and app names around a scene request.
-_POLITE_PREFIX = re.compile(r"^(?:hey\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?")
+_POLITE_PREFIX = re.compile(r"^(?:hey\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:(?:please|pls|plz|kindly)\s+)*")
 _POLITE_SUFFIX = re.compile(
     r"(?:\s+(?:in|inside|using)\s+(?:usd composer|composer|omniverse kit|kit|usd|isaac sim|isaac))?"
-    r"(?:\s+(?:please|for me))?\s*[?.!]*$"
+    r"(?:\s+(?:please|pls|plz|for me))?\s*[?.!]*$"
 )
 _SCENE_VERB = re.compile(
     r"^(?:move|shift|nudge|rotate|scale|make|select|focus|highlight|inspect|delete|remove|duplicate|"
-    r"rename|reparent|find|search|add|create|spawn|place|save|bind|assign|paint)\b"
+    r"rename|reparent|put|nest|find|search|add|create|spawn|place|save|bind|assign|paint)\b"
 )
-_TARGET_STOP_WORDS = {"up", "down", "left", "right", "by", "to", "in", "on", "under", "with", "into", "onto", "from", "bigger", "smaller"}
+_TARGET_STOP_WORDS = {
+    "up", "down", "upward", "upwards", "downward", "downwards", "left", "right", "forward", "forwards", "back",
+    "backward", "backwards", "by", "to", "as", "in", "on", "under", "with", "into", "onto", "inside", "from",
+    "bigger", "larger", "smaller", "twice", "half", "double",
+}
+_NAME_ARTICLES = {"the", "a", "an", "this", "that", "it", "selected", "my", "our"}
+_PRONOUN = re.compile(r"\b(?:selected|this|that|it)\b")
+# A whole target phrase that means "the selection" ("this", "it", "the selected light"). Edits use this, not
+# _PRONOUN.search, so "the cube that is red" or "the sphere next to it" never retargets the selected prim.
+_SELECTION_REF = re.compile(r"(?:the\s+)?(?:selected|this|that|it)(?:\s+[\w-]+)?", re.IGNORECASE)
 
 # Questions about the open stage keep their scene-aware routing instead of going to a docs backend.
 _LIVE_SCENE = re.compile(r"(?:^|\s)/\w|\bselect(?:ed|ion)\b|\bmy\b|\b(?:this|current) (?:scene|stage)\b|\bhow many\b")
 
-# Whole-word lesson topics for the fallback, so "remove" is not "move" and "lightweight" is not "light".
+# Whole-word lesson topics, so "remove" is not "move", "lightweight" is not "light" and "primvars" is not "prims".
 _FALLBACK_TOPICS = (
     ("schemas", re.compile(r"\b(?:schemas?|subtypes?)\b")),
-    ("prims", re.compile(r"\b(?:prims?|stages?|scene graph|hierarchy)\b")),
-    ("selection", re.compile(r"\b(?:select(?:ed|ion)?|focus|highlight)\b")),
-    ("transforms", re.compile(r"\b(?:move|moving|rotat(?:e|ion|ing)|scal(?:e|ing)|transforms?)\b")),
-    ("materials", re.compile(r"\b(?:materials?|shade|shaders?)\b")),
+    ("prims", re.compile(r"\b(?:prims?|stages?|scene graph|hierarch(?:y|ies))\b")),
+    ("selection", re.compile(r"\b(?:select(?:s|ed|ing|ion)?|focus|highlight)\b")),
+    ("transforms", re.compile(r"\b(?:mov(?:e|es|ed|ing)|rotat(?:e|es|ed|ing|ions?)|scal(?:e|es|ed|ing)|transform(?:s|ations?)?)\b")),
+    ("materials", re.compile(r"\b(?:materials?|shade|shaders?|shading)\b")),
     ("lights", re.compile(r"\b(?:lights?|lighting)\b")),
 )
+_WORKFLOW_TOPIC = re.compile(r"\b(?:workflows?|cheat ?sheets?|quickstart|commands|how do i start)\b")
+
+# NCP-OUSD exam vocabulary: a question using these terms is an OpenUSD concept question. "kind of" is English.
+_USD_EXAM_TERMS = re.compile(
+    r"\b(?:inherits?|speciali[sz]es|sub-?layers?|variants?|variant ?sets?|payloads?|live?rps|primvars?|"
+    r"kinds?(?! of\b)|model hierarch(?:y|ies)|instanceable|instancing|meters ?per ?unit|up ?axis|"
+    r"flatten(?:s|ed|ing)?|edit ?targets?|layer ?offsets?|opinion strength|strength order(?:ing)?|value resolution)\b"
+)
+
+# "how many prims are in this stage?" asks for the open stage's total; per-type or per-subtree counts do not.
+_PRIM_COUNT = re.compile(r"^how many (?:usd )?prims?\b(.*)$")
+_NOT_A_TOTAL = re.compile(
+    r"/|\b(?:types?|kinds?|of|under|below|inside|within|with|named|called|layers?|can|could|should|max(?:imum)?|limit)\b"
+)
+
+# "set intensity of X to 500" / "set X's intensity to 500": attribute edits, not material bindings.
+_SET_ATTRIBUTE = (
+    re.compile(
+        r"^(?:set|change|adjust)\s+(?:the\s+)?(?P<attr>[\w:.]+(?:\s+[\w:.]+)?)\s+of\s+(?P<target>.+?)\s+to\s+(?P<value>.+)$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:set|change|adjust)\s+(?P<target>.+?)'s\s+(?P<attr>[\w:.]+(?:\s+[\w:.]+)?)\s+to\s+(?P<value>.+)$",
+        re.IGNORECASE,
+    ),
+)
+
+_NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
+_VECTOR = rf"({_NUMBER})[,\s]+({_NUMBER})[,\s]+({_NUMBER})"
+_SCALE_WORDS = {"twice": 2.0, "double": 2.0, "thrice": 3.0, "half": 0.5}
+_EDIT_ACTIONS = {"move", "rename", "delete", "duplicate", "reparent", "material"}
+_NAME_ACTIONS = _EDIT_ACTIONS | {"inspect", "children", "select"}
+# Objects after these verbs are new things or search text, never an existing prim to resolve by name.
+_NAME_CREATE_VERBS = {"add", "create", "spawn", "place", "find", "search", "save"}
+_DEFAULT_TARGET = "/World/Props/Cube"
+_PRACTICE_TOPICS = ("schemas", "prims", "selection", "transforms", "materials", "lights", "workflow")
+_USD_SUFFIXES = (".usd", ".usda", ".usdc", ".usdz")
+
+_QUIZZES: dict[str, dict[str, list[str]]] = {
+    "schemas": {
+        "questions": [
+            "What is the difference between a typed schema and an applied schema?",
+            "Does renaming a prim change its schema type?",
+            "Which stage tree column helps you spot the prim's main type?",
+        ],
+        "answers": [
+            "Typed schema is the prim's main type; applied schema adds extra capability.",
+            "No, rename changes the path or name, not the prim's schema type.",
+            "The Type column.",
+        ],
+    },
+    "prims": {
+        "questions": [
+            "What does a prim path represent?",
+            "What is the relationship between a parent prim and a child prim?",
+            "Name one thing a prim can represent in a USD scene.",
+        ],
+        "answers": [
+            "It is the prim's address in the scene hierarchy.",
+            "The parent contains or organizes the child in the scene graph.",
+            "A transform, mesh, camera, light, or many other scene concepts.",
+        ],
+    },
+}
 
 
 class RouteTarget(str, Enum):
@@ -76,12 +151,66 @@ _NAMED_DOMAINS = (
     (RouteTarget.OMNI_UI, re.compile(r"\bomni\.ui\b")),
     (RouteTarget.KIT, re.compile(r"(?<!\w)(?<!\w\.)kit\b|\bomni\.kit\b")),
     (RouteTarget.USD, re.compile(r"(?<!\w)(?<!\w\.)usd[acz]?\b|\bopenusd\b|\bomni\.usd\b|\bpxr\b|\w\.usd[acz]?\b")),
+    (RouteTarget.USD, _USD_EXAM_TERMS),
 )
 
 
 def _detect_named_knowledge_domain(request: str) -> RouteTarget:
     text = request.replace("usd composer", "composer")
     return next((target for target, pattern in _NAMED_DOMAINS if pattern.search(text)), RouteTarget.UNKNOWN)
+
+
+def _is_prim_count_question(text: str) -> bool:
+    match = _PRIM_COUNT.match(text)
+    return bool(match) and not _NOT_A_TOTAL.search(match.group(1))
+
+
+def _name_key(name: str) -> str:
+    return re.sub(r"[\s_\-]", "", name.lower())
+
+
+def _format_number(value: float) -> str:
+    text = f"{float(value) + 0.0:.6f}".rstrip("0").rstrip(".")
+    return "0" if text == "-0" else text
+
+
+def _local_usd_file(stage_name: str) -> str | None:
+    """Local file behind a stage identifier such as 'C:/x/scene.usda' or 'file:/C:/x/scene.usda'."""
+    name = stage_name.strip()
+    if name.lower().startswith("file:"):
+        name = re.sub(r"^/+(?=[A-Za-z]:[\\/])", "", unquote(name[5:]))
+        if name.startswith("//"):
+            name = "/" + name.lstrip("/")
+    if not name.lower().endswith(_USD_SUFFIXES) or not os.path.isabs(name) or not os.path.isfile(name):
+        return None
+    return name
+
+
+def _saved_up_axis(stage_name: str) -> dict[str, str] | None:
+    """upAxis of the saved root layer, read from its metadata only; nothing is composed or saved.
+
+    Mirrors UsdGeom.GetStageUpAxis for a file: the root layer's authored value, else the UsdGeom fallback.
+    None when the stage is not a readable local USD file or pxr is unavailable.
+    """
+    path = _local_usd_file(stage_name)
+    if path is None:
+        return None
+    try:
+        from pxr import Sdf, UsdGeom
+    except ImportError:
+        return None
+    try:
+        layer = Sdf.Layer.OpenAsAnonymous(path, True)
+        if layer is None:
+            return None
+        root = layer.pseudoRoot
+        authored = bool(root.HasInfo(UsdGeom.Tokens.upAxis))
+        axis = str(root.GetInfo(UsdGeom.Tokens.upAxis) if authored else UsdGeom.GetFallbackUpAxis())
+    except Exception:  # noqa: BLE001 - an unreadable layer just means the up axis is unknown
+        return None
+    if axis not in {"Y", "Z"}:
+        return None
+    return {"axis": axis, "source": "authored" if authored else "fallback", "layer": path}
 
 
 @dataclass(slots=True)
@@ -167,10 +296,12 @@ class OmniverseRouter:
         normalized = self._normalize(request)
         if self._practice_session is not None and normalized in {"done", "next", "continue", "ok", "finished"}:
             return RoutingDecision(RouteTarget.LEARN, 0.99, "Active practice session advance request", normalized)
-        # Checked before learning topics, which also match words such as "move", "select" and "prim".
-        if self._looks_like_targeted_scene_command(normalized):
-            return RoutingDecision(RouteTarget.SCENE, 0.97, "Scene command verb with a target detected", normalized)
         core = self._strip_politeness(normalized)
+        if _is_prim_count_question(core):
+            return RoutingDecision(RouteTarget.SCENE, 0.95, "Prim count question about the open stage", normalized)
+        # Checked before learning topics, which also match words such as "move", "select" and "prim".
+        if self._looks_like_targeted_scene_command(normalized) or any(pattern.match(core) for pattern in _SET_ATTRIBUTE):
+            return RoutingDecision(RouteTarget.SCENE, 0.97, "Scene command verb with a target detected", normalized)
         if (
             core != normalized
             and _SCENE_VERB.match(core)
@@ -235,6 +366,20 @@ class OmniverseRouter:
                 return self.next_practice_step()
             return self._dispatch_learning(request)
 
+        if decision.target is RouteTarget.BOWERBOT and dry_run:
+            # Bowerbot's project tools write to disk, so a dry run previews them instead of calling the backend.
+            selector = getattr(self._backends.get(RouteTarget.BOWERBOT), "selector", None)
+            selection = selector(request) if selector else None
+            if selection is not None and selection.tool_name in {"create_project", "open_project", "package_scene"}:
+                return {
+                    "ok": True,
+                    "dry_run": True,
+                    "target": "bowerbot",
+                    "would_call": selection.tool_name,
+                    "arguments": selection.arguments,
+                    "message": "Preview only: Bowerbot was not called.",
+                }
+
         if decision.target in self._backends:
             payload = await self.ask_backend(decision.target, request)
             if not payload.get("ok"):
@@ -251,27 +396,69 @@ class OmniverseRouter:
 
     def _dispatch_scene(self, request: str, dry_run: bool) -> dict[str, Any]:
         parsed = self._parse_scene_command(request)
+        candidates: list[str] = []
+        if parsed is None:
+            parsed, candidates = self._resolve_by_name(request)
         if parsed is None:
             failure = {
                 "ok": False,
                 "message": "Scene routing selected, but I could not parse the command.",
-                "hint": "Try phrases like 'inspect /World', 'create /World/NewPrim', 'select /World/Cube', 'rename /World/Cube to HeroCube', or 'find cube'.",
+                "hint": (
+                    "Try phrases like 'inspect /World', 'create /World/NewPrim', 'select /World/Cube', "
+                    "'move /World/Cube by 0 0 1', 'rotate /World/Cube 0 90 0', 'rename /World/Cube to HeroCube', "
+                    "or 'find cube'."
+                ),
             }
-            candidates = self._candidate_prims(request)
             if candidates:
                 failure["candidates"] = candidates
                 failure["hint"] = (
                     "Name the prim by path (or select it and say 'this') and give exact values, "
-                    f"for example 'move {candidates[0]} 0 0 1'. Nothing was changed."
+                    f"for example 'move {candidates[0]} by 0 0 1'. Nothing was changed."
                 )
             return failure
 
+        named = parsed.pop("resolved_from_name", None)
+        action = parsed["action"]
+        if action == "unsupported":
+            return {"ok": False, "target": "scene", "message": parsed["message"], "hint": parsed["hint"]}
+        if action == "set_attribute":
+            return self._attribute_not_supported(parsed)
+        if action == "move":
+            failure = self._make_transform_absolute(parsed)
+            if failure is not None:
+                return failure
+        target_path = parsed.get("path") or parsed.get("source_path")
+        if named is not None and action in _EDIT_ACTIONS:
+            # A name is not an exact target: show what would change and the explicit command, never apply it.
+            command = self._explicit_command(parsed)
+            result = self._run_scene_action(parsed, dry_run=True)
+            result["command"] = command
+            result["message"] = (
+                f"'{named}' matched only {target_path}, but a name is not an exact target, so this is a preview "
+                f"and nothing was changed. Run '{command}' to apply it."
+            )
+        else:
+            result = self._run_scene_action(parsed, dry_run=dry_run)
+        if named is not None:
+            result["resolved_from_name"] = {"name": named, "path": target_path}
+        if parsed.get("relative"):
+            result["relative"] = parsed["relative"]
+        return result
+
+    def _run_scene_action(self, parsed: dict[str, Any], dry_run: bool) -> dict[str, Any]:
         action = parsed["action"]
         if action == "summary":
-            return {"ok": True, "target": "scene", "result": self._scene.scene_summary()}
+            summary = self._scene.scene_summary()
+            payload = {"ok": True, "target": "scene", "result": summary}
+            if parsed.get("question") == "prim_count":
+                payload["message"] = f"The open stage has {summary.get('prim_count')} prims."
+            return payload
         if action == "ping":
             return {"ok": True, "target": "scene", "result": self._scene.ping()}
         if action == "select":
+            if dry_run:
+                # Selection steers later "this/it" edits, so a preview must not change it.
+                return {"ok": True, "dry_run": True, "target": "scene", "would_select": list(parsed["paths"])}
             return {"ok": True, "target": "scene", "result": self._scene.set_selection(parsed["paths"])}
         if action == "inspect":
             return {"ok": True, "target": "scene", "result": self._scene.inspect_prim(parsed["path"])}
@@ -323,19 +510,126 @@ class OmniverseRouter:
 
         return {"ok": False, "message": f"Unsupported scene action: {action}"}
 
+    def _make_transform_absolute(self, parsed: dict[str, Any]) -> dict[str, Any] | None:
+        """Turn 'by', 'up' and 'N times' requests into absolute values read from the prim (read-only).
+
+        Returns a failure payload, and changes nothing, when 'up' cannot be resolved to a stage axis.
+        """
+        if not {"offset", "up_offset", "scale_factor"} & parsed.keys():
+            return None
+        path = parsed["path"]
+        relative: dict[str, Any] = {}
+        if "up_offset" in parsed:
+            amount = parsed.pop("up_offset")
+            up = self._stage_up_axis()
+            if up is None:
+                value = _format_number(amount)
+                return {
+                    "ok": False,
+                    "target": "scene",
+                    "path": path,
+                    "message": (
+                        "I could not read the stage up axis (upAxis) from a saved USD file, so I will not guess "
+                        "which way is up. Nothing was changed."
+                    ),
+                    "hint": (
+                        f"Give an explicit offset: 'move {path} by 0 0 {value}' on a Z-up stage or "
+                        f"'move {path} by 0 {value} 0' on a Y-up stage."
+                    ),
+                }
+            offset = [0.0, 0.0, 0.0]
+            offset[1 if up["axis"] == "Y" else 2] = amount
+            parsed["offset"] = tuple(offset)
+            relative["up_axis"] = up
+        current = self._scene.inspect_prim(path)
+        if "offset" in parsed:
+            offset = parsed.pop("offset")
+            relative.update(from_translation=list(current["translation"]), offset=list(offset))
+            parsed["translation"] = tuple(
+                round(float(value) + delta, 9) + 0.0 for value, delta in zip(current["translation"], offset)
+            )
+        if "scale_factor" in parsed:
+            factor = parsed.pop("scale_factor")
+            relative.update(from_scale=list(current["scale"]), factor=list(factor))
+            parsed["scale"] = tuple(round(float(value) * ratio, 9) + 0.0 for value, ratio in zip(current["scale"], factor))
+        parsed["relative"] = relative
+        return None
+
+    def _stage_up_axis(self) -> dict[str, str] | None:
+        try:
+            stage_name = str(self._scene.scene_summary().get("stage_name") or "")
+        except Exception:  # noqa: BLE001 - an unreachable scene means the up axis is unknown
+            return None
+        return _saved_up_axis(stage_name)
+
+    @staticmethod
+    def _explicit_command(parsed: dict[str, Any]) -> str:
+        """The exact path-based command that performs a parsed edit; it parses back to the same action."""
+        action, path = parsed["action"], parsed.get("path")
+        if action == "move":
+            parts = [
+                f"{verb} {path} " + " ".join(_format_number(value) for value in parsed[key])
+                for key, verb in (("translation", "move"), ("rotation", "rotate"), ("scale", "scale"))
+                if parsed.get(key) is not None
+            ]
+            return "; ".join(parts)
+        if action == "rename":
+            return f"rename {path} to {parsed['new_name']}"
+        if action == "delete":
+            return f"delete {path}"
+        if action == "duplicate":
+            return f"duplicate {parsed['source_path']} to {parsed['target_path']}"
+        if action == "reparent":
+            return f"reparent {path} to {parsed['new_parent']}"
+        if action == "material":
+            return f"bind {parsed['material_path']} to {path}"
+        return ""
+
+    def _attribute_not_supported(self, parsed: dict[str, Any]) -> dict[str, Any]:
+        path = parsed.get("path")
+        payload: dict[str, Any] = {
+            "ok": False,
+            "target": "scene",
+            "action": "set_attribute",
+            "path": path,
+            "attribute": parsed["attribute"],
+            "value": parsed["value"],
+            "message": (
+                f"Setting '{parsed['attribute']}' is attribute editing, which arrives in a later tier. "
+                "Nothing was changed."
+            ),
+        }
+        if path is None:
+            payload["candidates"] = parsed.get("candidates", [])
+            payload["hint"] = "Name the prim by path to see its current values, for example 'inspect /World/Props/Cube'."
+            return payload
+        try:
+            payload["prim"] = self._scene.inspect_prim(path)
+        except ValueError as exc:
+            payload["error"] = str(exc)
+        return payload
+
     def _dispatch_learning(self, request: str) -> dict[str, Any]:
-        topic = self._detect_learning_topic(request) or "schemas"
         style = self._detect_learning_style(request)
+        topic = (
+            self._detect_learning_topic(request)
+            or (self._named_topic(request) if style == "quiz" else None)
+            or "schemas"
+        )
         self._record_learning_event("request", topic=topic, style=style, request=request)
-        guide = self._build_learning_guide(topic)
         if style == "practice":
             return self.start_practice(topic)
         if style == "quiz":
-            return {"ok": True, "target": "learn", "topic": topic, "style": style, "quiz": self._build_scene_aware_quiz(topic)}
+            quiz = self._build_scene_aware_quiz(topic)
+            payload = {"ok": bool(quiz["questions"]), "target": "learn", "topic": topic, "style": style, "quiz": quiz}
+            if "message" in quiz:
+                payload["message"] = quiz["message"]
+            return payload
         if style == "study":
             return self._build_study_mode(topic)
         if style == "translate":
             return self.translate_command(request)
+        guide = self._build_learning_guide(topic)
         if style == "cheatsheet":
             return {
                 "ok": True,
@@ -344,7 +638,8 @@ class OmniverseRouter:
                 "style": style,
                 "title": guide["title"],
                 "cheatsheet": guide["cheatsheet"],
-                "scene_context": self.scene_summary(),
+                "commands": guide["commands"],
+                "scene_context": self._scene_context(),
             }
         return {
             "ok": True,
@@ -355,7 +650,8 @@ class OmniverseRouter:
             "explanation": guide["explanation"],
             "key_points": guide["key_points"],
             "practice": guide["practice"],
-            "scene_context": self.scene_summary(),
+            "commands": guide["commands"],
+            "scene_context": self._scene_context(),
         }
 
     def _fallback_lesson(self, request: str) -> dict[str, Any] | None:
@@ -373,6 +669,7 @@ class OmniverseRouter:
             "explanation": guide["explanation"],
             "key_points": guide["key_points"],
             "practice": guide["practice"],
+            "commands": guide["commands"],
             "note": "Offline built-in lesson; the knowledge backend could not answer.",
         }
 
@@ -396,7 +693,7 @@ class OmniverseRouter:
                 "reason": route.reason,
             },
             "suggestion": suggestion,
-            "scene_context": self.scene_summary(),
+            "scene_context": self._scene_context(),
         }
 
     def learning_history(self, limit: int = 20) -> dict[str, Any]:
@@ -410,12 +707,16 @@ class OmniverseRouter:
         }
 
     def cheat_sheet(self) -> dict[str, Any]:
-        scene = self.scene_summary()
+        scene = self._scene_context()
+        target = self._example_target(scene)
+        root = self._example_root(scene)
         commands = {
             "scene": [
-                "inspect /World/Props/Cube",
-                "children /Environment",
-                "select /Environment/Cube",
+                f"inspect {target}",
+                f"children {root}",
+                f"select {target}",
+                "inspect this",
+                f"move {target} by 0 0 1",
                 "rename this to HeroCube",
                 "find cube",
             ],
@@ -443,17 +744,24 @@ class OmniverseRouter:
             "target": "learn",
             "progress": progress,
             "roadmap": roadmap,
-            "scene_context": self.scene_summary(),
+            "scene_context": self._scene_context(),
         }
 
     def _record_learning_event(self, event: str, **details: Any) -> None:
-        entry = {
-            "event": event,
-            "details": details,
-            "scene": self.scene_summary(),
-        }
-        self._learning_history.append(entry)
+        try:
+            summary = self._scene.scene_summary()
+            scene = {"stage_name": summary.get("stage_name"), "prim_count": summary.get("prim_count")}
+        except Exception:  # noqa: BLE001 - learning history must not depend on the scene bridge
+            scene = {"stage_name": None, "prim_count": None}
+        self._learning_history.append({"event": event, "details": details, "scene": scene})
         self._learning_history = self._learning_history[-100:]
+
+    def _scene_context(self) -> dict[str, Any]:
+        """Scene summary for learning payloads; lessons still work when the scene bridge is unreachable."""
+        try:
+            return self._scene.scene_summary()
+        except Exception as exc:  # noqa: BLE001 - learning content does not need a live scene
+            return {"available": False, "error": str(exc), "selection": []}
 
     def _learning_progress_snapshot(self) -> dict[str, Any]:
         topics = {
@@ -505,20 +813,51 @@ class OmniverseRouter:
     @staticmethod
     def _suggest_command_from_request(request: str) -> dict[str, Any]:
         lower = request.lower()
-        if any(word in lower for word in ("bigger", "scale up", "10x", "ten times", "larger")):
-            return {"kind": "scene_action", "action": "move", "arguments": {"scale": [10.0, 10.0, 10.0]}, "message": "Try scaling the selected prim up."}
-        if any(word in lower for word in ("red", "paint", "color it red")):
-            return {"kind": "scene_action", "action": "material", "arguments": {"material_path": "/World/Looks/RedMaterial"}, "message": "Try binding the red material."}
-        if any(word in lower for word in ("up", "higher", "raise")):
-            return {"kind": "scene_action", "action": "move", "arguments": {"translation": [0.0, 2.0, 0.0]}, "message": "Try moving the selected prim upward."}
-        if any(word in lower for word in ("rename", "call it", "name it")):
-            return {"kind": "scene_action", "action": "rename", "arguments": {"new_name": "PracticeTarget"}, "message": "Try renaming the selected prim."}
-        if any(word in lower for word in ("under environment", "move under", "parent it", "nest it")):
-            return {"kind": "scene_action", "action": "reparent", "arguments": {"new_parent": "/Environment"}, "message": "Try reparenting the selected prim under /Environment."}
+        if re.search(r"\b(?:bigger|larger|scale up|10x|ten times)\b", lower):
+            return {
+                "kind": "scene_action",
+                "action": "move",
+                "command": "make this 10x bigger",
+                "arguments": {"scale_factor": [10.0, 10.0, 10.0]},
+                "message": "Try scaling the selected prim up; this multiplies its current scale.",
+            }
+        if re.search(r"\b(?:red|paint|color it red)\b", lower):
+            return {
+                "kind": "scene_action",
+                "action": "material",
+                "command": "bind /World/Looks/RedMaterial to this",
+                "arguments": {"material_path": "/World/Looks/RedMaterial"},
+                "message": "Try binding a red material; it must exist first ('find material' lists yours).",
+            }
+        if re.search(r"\b(?:up|higher|raise)\b", lower):
+            return {
+                "kind": "scene_action",
+                "action": "move",
+                "command": "move this up by 2",
+                "arguments": {"up_offset": 2.0},
+                "message": "Try moving the selected prim 2 units along the stage up axis (upAxis).",
+            }
+        if re.search(r"\b(?:rename|call it|name it)\b", lower):
+            return {
+                "kind": "scene_action",
+                "action": "rename",
+                "command": "rename this to PracticeTarget",
+                "arguments": {"new_name": "PracticeTarget"},
+                "message": "Try renaming the selected prim.",
+            }
+        if re.search(r"\b(?:under environment|move under|parent it|nest it)\b", lower):
+            new_parent = "/Environment" if "environment" in lower else "/World"
+            return {
+                "kind": "scene_action",
+                "action": "reparent",
+                "command": f"reparent this to {new_parent}",
+                "arguments": {"new_parent": new_parent},
+                "message": f"Try reparenting the selected prim under {new_parent}.",
+            }
         return {
             "kind": "explain",
             "message": "I could not map that to one exact scene command yet. Try saying it with the prim path or selection.",
-            "examples": ["move this 0 2 0", "make it red", "rename this to HeroCube"],
+            "examples": ["move this by 0 0 1", "bind /World/Looks/RedMaterial to this", "rename this to HeroCube"],
         }
 
     def _wrap_operation_result(self, target: str, result: OperationResult) -> dict[str, Any]:
@@ -579,11 +918,27 @@ class OmniverseRouter:
         )
 
     def _looks_like_targeted_scene_command(self, request: str) -> bool:
-        """An imperative scene verb aimed at a path, the selection or numbers, or 'add a <thing>'."""
+        """An imperative scene verb aimed at a path, the selection or numbers, 'add a <thing>' or 'find <word>'."""
         prefix = r"^(?:scene\s+)?(?:can you\s+)?(?:please\s+)?"
-        if re.match(prefix + r"(?:add|create|spawn|place)\s+(?:a|an)\s+\w", request):
+        if re.match(prefix + r"(?:add|create|spawn|place)\s+(?:a|an)\s+\w", request) or re.match(prefix + r"create\s+/", request):
             return True
-        verbs = r"(?:inspect|children|delete|remove|duplicate|reparent|move|shift|nudge|material|select|focus|highlight|rename|save)"
+        # "find light" searches the stage; "find out how lights work" or "find docs" do not.
+        find = re.match(
+            prefix + r"find\s+(?:all\s+|every\s+|the\s+)?[\w-]+(?:\s+(?:in|under|inside|within)\s+/\S*)?$",
+            request.rstrip("?.! "),
+        )
+        if find and not re.search(r"\b(?:docs?|documentation|examples?|api|tutorials?)\b", request):
+            return True
+        # "make" is ordinary English, so it needs a path, the selection or a size factor and no learning wording.
+        if re.match(
+            prefix + r"make\b.*(?:/|\b(?:this|that|it|selected)\b|\b(?:twice|half|double|thrice)\b|\d+\s*(?:x|times)\b)",
+            request,
+        ) and not any(phrase in request for phrase in _LEARNING_PHRASES):
+            return True
+        verbs = (
+            r"(?:inspect|children|delete|remove|duplicate|reparent|move|shift|nudge|rotate|scale|put|nest|material|"
+            r"bind|assign|paint|select|focus|highlight|rename|save)"
+        )
         return bool(re.match(prefix + verbs + r"\b.*(?:/|\b(?:this|that|it|selected)\b|\d)", request))
 
     def _is_question(self, request: str) -> bool:
@@ -630,28 +985,27 @@ class OmniverseRouter:
             return RouteTarget.OMNI_UI
         if any(word in request for word in kit_words) or _KIT_WORD.search(request):
             return RouteTarget.KIT
-        if any(word in request for word in usd_words) or _USD_WORD.search(request):
+        if any(word in request for word in usd_words) or _USD_WORD.search(request) or _USD_EXAM_TERMS.search(request):
             return RouteTarget.USD
         return RouteTarget.UNKNOWN
 
     @staticmethod
     def _detect_learning_topic(request: str) -> str | None:
         lowered = request.lower()
-        if any(word in lowered for word in ("schema", "schemas", "applied schema", "typed schema", "subtype")):
-            return "schemas"
-        if any(word in lowered for word in ("prim", "prims", "stage", "scene graph", "hierarchy")):
-            return "prims"
-        if any(word in lowered for word in ("select", "selection", "focus", "highlight")):
-            return "selection"
-        if any(word in lowered for word in ("move", "rotate", "scale", "transform")):
-            return "transforms"
-        if any(word in lowered for word in ("material", "materials", "shade", "shader")):
-            return "materials"
-        if any(word in lowered for word in ("light", "lighting", "dome light", "distant light")):
-            return "lights"
-        if any(word in lowered for word in ("workflow", "cheat sheet", "cheatsheet", "quickstart", "commands", "how do i start")):
+        topic = next((name for name, pattern in _FALLBACK_TOPICS if pattern.search(lowered)), None)
+        if topic is None and _WORKFLOW_TOPIC.search(lowered):
             return "workflow"
-        return None
+        return topic
+
+    @staticmethod
+    def _named_topic(request: str) -> str | None:
+        """The subject after 'on' or 'about' in 'quiz me on payloads', for topics without a lesson pattern."""
+        match = re.search(r"\b(?:on|about)\s+(.+)$", request.lower())
+        if not match:
+            return None
+        filler = {"the", "a", "an", "usd", "openusd", "my", "this", "it", "me", "some"}
+        words = [word for word in re.findall(r"[a-z0-9][\w.-]*", match.group(1)) if word not in filler]
+        return " ".join(words) or None
 
     @staticmethod
     def _detect_learning_style(request: str) -> str:
@@ -669,6 +1023,7 @@ class OmniverseRouter:
         return "lesson"
 
     def _build_learning_guide(self, topic: str) -> dict[str, Any]:
+        """Static lesson content; every entry in "commands" is a runnable scene command."""
         guides: dict[str, dict[str, Any]] = {
             "schemas": {
                 "title": "USD Schemas in Plain English",
@@ -694,6 +1049,7 @@ class OmniverseRouter:
                     "Subtype: a more specific variant of a schema family.",
                     "Stage tree Type column: the main type, not every applied schema.",
                 ],
+                "commands": ["inspect /World/Props/Cube", "find cube"],
             },
             "prims": {
                 "title": "What a Prim Is",
@@ -707,14 +1063,15 @@ class OmniverseRouter:
                     "Transforms, materials, and selection are all attached to prims.",
                 ],
                 "practice": [
-                    "Open the stage tree and compare /World, /Environment, and a leaf prim like a Cube.",
-                    "Use scene_children on a parent prim to see the hierarchy.",
+                    "Open the stage tree and compare /World, /World/Props, and the leaf prim /World/Props/Cube.",
+                    "List the children of a parent prim to see the hierarchy.",
                 ],
                 "cheatsheet": [
                     "Path = the prim's address.",
                     "Parent = where it lives in the hierarchy.",
                     "Children = what it contains.",
                 ],
+                "commands": ["inspect /World", "children /World/Props", "find cube"],
             },
             "selection": {
                 "title": "Selection and Focus",
@@ -732,10 +1089,11 @@ class OmniverseRouter:
                     "Select several prims and see how the stage tree and scene summary reflect that.",
                 ],
                 "cheatsheet": [
-                    "select /World/Props/Cube",
-                    "inspect this",
-                    "move it 1 2 3",
+                    "'this', 'it' and 'selected' mean the single selected prim.",
+                    "Selection is app state; it is not authored into a layer.",
+                    "Select first, then inspect, then edit.",
                 ],
+                "commands": ["select /World/Props/Cube", "inspect this", "move it 1 2 3"],
             },
             "transforms": {
                 "title": "Transforms",
@@ -753,9 +1111,18 @@ class OmniverseRouter:
                     "Ask for a dry run first when you're not sure what will change.",
                 ],
                 "cheatsheet": [
+                    "'move X x y z' sets the translate; 'move X by dx dy dz' adds to it.",
+                    "'rotate X rx ry rz' sets absolute XYZ angles in degrees.",
+                    "'make X twice as big' multiplies the current scale.",
+                    "'up' follows the stage upAxis metadata (Y or Z); it is never assumed.",
+                ],
+                "commands": [
                     "move /World/Props/Cube 1 2 3",
-                    "make it 10x bigger",
-                    "rotate it 90 degrees",
+                    "move /World/Props/Cube by 0 0 1",
+                    "move /World/Props/Cube up by 1",
+                    "rotate /World/Props/Cube 0 0 90",
+                    "scale /World/Props/Cube 2 2 2",
+                    "make /World/Props/Cube twice as big",
                 ],
             },
             "materials": {
@@ -773,9 +1140,14 @@ class OmniverseRouter:
                     "Ask what material is currently bound to a prim before changing it.",
                 ],
                 "cheatsheet": [
-                    "material /World/Looks/RedMaterial to /Environment/Cube",
-                    "make it red",
-                    "inspect /Environment/Cube",
+                    "A binding is a relationship (material:binding) from the prim to a Material prim.",
+                    "The Material prim must exist before you bind it.",
+                    "Binding changes appearance, never the prim's type or hierarchy.",
+                ],
+                "commands": [
+                    "inspect /World/Props/Cube",
+                    "find material",
+                    "bind /World/Looks/RedMaterial to /World/Props/Cube",
                 ],
             },
             "lights": {
@@ -788,13 +1160,18 @@ class OmniverseRouter:
                     "Lighting changes the look of the whole scene, not just one asset.",
                 ],
                 "practice": [
-                    "Inspect the Environment prim and note the Sky and DistantLight entries.",
-                    "Compare the scene with stage lights on and off if your workflow supports it.",
+                    "Find the light prims in the stage and note each one's type.",
+                    "Add a DistantLight and rotate it to change where the light comes from.",
                 ],
                 "cheatsheet": [
                     "DomeLight",
                     "DistantLight",
                     "AreaLight",
+                ],
+                "commands": [
+                    "find light",
+                    "create /World/PracticeLight type DistantLight",
+                    "rotate /World/PracticeLight -45 0 0",
                 ],
             },
             "workflow": {
@@ -810,58 +1187,36 @@ class OmniverseRouter:
                     "Use the stage tree to build intuition.",
                 ],
                 "practice": [
-                    "inspect /Environment/Cube",
-                    "move /Environment/Cube 0 2 0",
-                    "rename /Environment/Cube to HeroCube",
+                    "Inspect a prim, change one property, then inspect it again.",
+                    "Repeat the loop with selection, hierarchy, transforms, and materials.",
                 ],
                 "cheatsheet": [
-                    "inspect",
-                    "children",
-                    "select",
-                    "rename",
-                    "find",
-                    "move",
-                    "material",
+                    "Inspect first.",
+                    "Change one thing.",
+                    "Preview with dry_run.",
+                    "Verify the result.",
+                ],
+                "commands": [
+                    "scene summary",
+                    "inspect /World/Props/Cube",
+                    "move /World/Props/Cube by 0 0 1",
+                    "rename /World/Props/Cube to HeroCube",
                 ],
             },
         }
         return guides.get(topic, guides["schemas"])
 
     @staticmethod
-    def _build_quiz(topic: str) -> dict[str, Any]:
-        quizzes: dict[str, dict[str, Any]] = {
-            "schemas": {
-                "questions": [
-                    "What is the difference between a typed schema and an applied schema?",
-                    "Does renaming a prim change its schema type?",
-                    "Which stage tree column helps you spot the prim's main type?",
-                ],
-                "answers": [
-                    "Typed schema is the prim's main type; applied schema adds extra capability.",
-                    "No, rename changes the path or name, not the prim's schema type.",
-                    "The Type column.",
-                ],
-            },
-            "prims": {
-                "questions": [
-                    "What does a prim path represent?",
-                    "What is the relationship between a parent prim and a child prim?",
-                    "Name one thing a prim can represent in a USD scene.",
-                ],
-                "answers": [
-                    "It is the prim's address in the scene hierarchy.",
-                    "The parent contains or organizes the child in the scene graph.",
-                    "A transform, mesh, camera, light, or many other scene concepts.",
-                ],
-            },
-        }
-        return quizzes.get(topic, quizzes["schemas"])
+    def _build_quiz(topic: str) -> dict[str, Any] | None:
+        quiz = _QUIZZES.get(topic)
+        return {key: list(value) for key, value in quiz.items()} if quiz else None
 
     def _build_scene_aware_quiz(self, topic: str) -> dict[str, Any]:
-        scene = self.scene_summary()
+        scene = self._scene_context()
         selection = scene.get("selection", [])
         selected_path = selection[0] if len(selection) == 1 else None
-        selected_prim = self._scene.inspect_prim(selected_path) if selected_path else None
+        selected_prim = self._safe_inspect(selected_path)
+        quiz_topics = sorted(_QUIZZES)
         if selected_prim is not None:
             questions = [
                 f"What is the prim path of the currently selected object?",
@@ -876,26 +1231,46 @@ class OmniverseRouter:
             if selected_prim.get("material"):
                 questions.append("What material is currently bound to the selected prim?")
                 answers.append(selected_prim["material"])
-            return {
+            quiz = {
                 "topic": topic,
                 "scene_context": scene,
                 "selected_prim": selected_prim,
                 "questions": questions,
                 "answers": answers,
             }
+            if topic not in _QUIZZES:
+                quiz["quiz_topics"] = quiz_topics
+                quiz["note"] = (
+                    f"There is no built-in {topic} quiz yet, so this quiz uses the selected prim. "
+                    f"Topic quizzes: {', '.join(quiz_topics)}."
+                )
+            return quiz
 
         base_quiz = self._build_quiz(topic)
+        if base_quiz is None:
+            return {
+                "topic": topic,
+                "questions": [],
+                "answers": [],
+                "quiz_topics": quiz_topics,
+                "scene_context": scene,
+                "message": (
+                    f"There is no built-in quiz for '{topic}' yet. Quizzes exist for: {', '.join(quiz_topics)}. "
+                    "Select a prim for a quiz about the live scene."
+                ),
+            }
         base_quiz["scene_context"] = scene
         base_quiz["hint"] = "Select a prim first if you want a quiz that uses the live scene."
         return base_quiz
 
     def _build_study_mode(self, topic: str | None = None) -> dict[str, Any]:
-        scene = self.scene_summary()
+        scene = self._scene_context()
         selection = scene.get("selection", [])
         selected_path = selection[0] if len(selection) == 1 else None
-        selected_prim = self._scene.inspect_prim(selected_path) if selected_path else None
+        selected_prim = self._safe_inspect(selected_path)
         topic = topic or self._infer_study_topic(scene, selected_prim)
-        suggestion = self._study_suggestion(topic, scene, selected_prim)
+        target = selected_path or self._example_target(scene)
+        suggestion = self._study_suggestion(topic, scene, selected_prim, target)
         return {
             "ok": True,
             "target": "learn",
@@ -909,11 +1284,19 @@ class OmniverseRouter:
             "what_to_look_for": suggestion["what_to_look_for"],
         }
 
+    def _safe_inspect(self, path: str | None) -> dict[str, Any] | None:
+        if not path:
+            return None
+        try:
+            return self._scene.inspect_prim(path)
+        except Exception:  # noqa: BLE001 - a stale selection just means no prim to teach from
+            return None
+
     def start_practice(self, topic: str = "schemas") -> dict[str, Any]:
         session = self._make_practice_session(topic)
         self._practice_session = session
-        self._record_learning_event("practice_start", topic=topic, session_id=session["session_id"])
-        self._learning_progress["topics"][topic] = self._learning_progress["topics"].get(topic, 0) + 1
+        self._record_learning_event("practice_start", topic=session["topic"], session_id=session["session_id"])
+        self._learning_progress["topics"][session["topic"]] = self._learning_progress["topics"].get(session["topic"], 0) + 1
         return self._practice_state_payload(session, started=True)
 
     def next_practice_step(self, feedback: str | None = None) -> dict[str, Any]:
@@ -952,7 +1335,7 @@ class OmniverseRouter:
         quiz = self._build_scene_aware_quiz(topic)
         self._record_learning_event("quiz", topic=topic)
         return {
-            "ok": True,
+            "ok": bool(quiz["questions"]),
             "target": "learn",
             "style": "quiz",
             "topic": topic,
@@ -965,101 +1348,153 @@ class OmniverseRouter:
         return result
 
     def _make_practice_session(self, topic: str) -> dict[str, Any]:
-        scene = self.scene_summary()
-        current_selection = scene.get("selection", [])
-        selected = current_selection[0] if len(current_selection) == 1 else None
-        default_target = selected or ("/Environment/Cube" if topic in {"transforms", "materials", "selection"} else "/World")
-        templates = {
-            "schemas": {
-                "title": "Interactive schema drill",
-                "steps": [
-                    "Inspect a prim and read its Type column.",
-                    "Create or find a Cube and compare its type to the inspected prim.",
-                    "Rename the Cube and confirm the type does not change.",
-                ],
-                "commands": [
-                    f"inspect {selected or '/Environment/Cube'}",
-                    "add a cube",
-                    "rename this to PracticeCube",
-                ],
-            },
-            "prims": {
-                "title": "Interactive prim drill",
-                "steps": [
-                    "Inspect /World and /Environment.",
-                    "List the children of /Environment.",
-                    "Find a Cube and inspect it.",
-                ],
-                "commands": [
-                    "inspect /World",
-                    "children /Environment",
-                    "find cube",
-                ],
-            },
-            "selection": {
-                "title": "Interactive selection drill",
-                "steps": [
-                    "Select one prim.",
-                    "Use a natural-language command that says 'this' or 'it'.",
-                    "Change the selection and repeat.",
-                ],
-                "commands": [
-                    f"select {selected or '/Environment/Cube'}",
-                    "inspect this",
-                    "move it 0 2 0",
-                ],
-            },
-            "transforms": {
-                "title": "Interactive transform drill",
-                "steps": [
-                    "Inspect the target prim.",
-                    "Move it upward by 2 units.",
-                    "Make it 10x bigger.",
-                ],
-                "commands": [
-                    f"inspect {default_target}",
-                    f"move {default_target} 0 2 0",
-                    f"scale {default_target} 10 10 10",
-                ],
-            },
-            "materials": {
-                "title": "Interactive material drill",
-                "steps": [
-                    "Inspect the target prim.",
-                    "Bind a red material.",
-                    "Re-inspect and verify the binding.",
-                ],
-                "commands": [
-                    f"make {default_target} red",
-                    f"inspect {default_target}",
-                ],
-            },
-            "workflow": {
-                "title": "Interactive USD workflow drill",
-                "steps": [
-                    "Inspect the scene.",
-                    "Change one thing.",
-                    "Verify the result.",
-                    "Make a second change.",
-                ],
-                "commands": [
-                    "scene summary",
-                    "inspect /Environment/Cube",
-                    "move /Environment/Cube 0 2 0",
-                ],
-            },
-        }
-        template = templates.get(topic, templates["schemas"])
+        scene = self._scene_context()
+        drill_topic = topic if topic in _PRACTICE_TOPICS else "schemas"
+        template = self._practice_template(drill_topic, scene)
         session = {
-            "session_id": f"practice-{topic}",
-            "topic": topic,
+            "session_id": f"practice-{drill_topic}",
+            "topic": drill_topic,
             "step_index": 0,
             "steps": template["steps"],
             "commands": template["commands"],
             "title": template["title"],
             "scene_context": scene,
         }
+        if drill_topic != topic:
+            session["note"] = (
+                f"There is no '{topic}' drill yet, so this is the schemas drill. Drills: {', '.join(_PRACTICE_TOPICS)}."
+            )
         return session
+
+    def _practice_template(self, topic: str, scene: dict[str, Any]) -> dict[str, Any]:
+        """One command per step, with paths taken from the current scene where possible."""
+        root = self._example_root(scene)
+        if topic == "prims":
+            return {
+                "title": "Interactive prim drill",
+                "steps": [
+                    f"Inspect the root prim {root}.",
+                    f"List the children of {root}.",
+                    "Find every prim whose path or type mentions 'cube'.",
+                ],
+                "commands": [f"inspect {root}", f"children {root}", "find cube"],
+            }
+        if topic == "lights":
+            light = self._free_child_path(root, "PracticeLight")
+            return {
+                "title": "Interactive lighting drill",
+                "steps": [
+                    "List the lights already in the stage.",
+                    f"Add a DistantLight at {light}.",
+                    "Inspect the new light and read its Type.",
+                    "Rotate the light to change the direction its light comes from.",
+                ],
+                "commands": [
+                    "find light",
+                    f"create {light} type DistantLight",
+                    f"inspect {light}",
+                    f"rotate {light} -45 0 0",
+                ],
+            }
+        target = self._example_target(scene)
+        if topic == "selection":
+            return {
+                "title": "Interactive selection drill",
+                "steps": [
+                    "Select one prim.",
+                    "Inspect it through the selection by saying 'this'.",
+                    "Move it by an offset through the selection by saying 'it'.",
+                ],
+                "commands": [f"select {target}", "inspect this", "move it by 1 0 0"],
+            }
+        if topic == "transforms":
+            return {
+                "title": "Interactive transform drill",
+                "steps": [
+                    "Inspect the target prim and note its translation, rotation and scale.",
+                    "Move it 2 units along the stage up axis (upAxis).",
+                    "Rotate it to 0 0 45 degrees (absolute XYZ angles).",
+                    "Make it twice as big (multiplies the current scale).",
+                ],
+                "commands": [
+                    f"inspect {target}",
+                    f"move {target} up by 2",
+                    f"rotate {target} 0 0 45",
+                    f"make {target} twice as big",
+                ],
+            }
+        if topic == "materials":
+            material = self._free_child_path(root, "PracticeMaterial")
+            return {
+                "title": "Interactive material drill",
+                "steps": [
+                    "Inspect the target prim and note its material.",
+                    "Create a Material prim to bind.",
+                    "Bind the new material to the target.",
+                    "Inspect the target again and verify the binding.",
+                ],
+                "commands": [
+                    f"inspect {target}",
+                    f"create {material} type Material",
+                    f"bind {material} to {target}",
+                    f"inspect {target}",
+                ],
+            }
+        if topic == "workflow":
+            return {
+                "title": "Interactive USD workflow drill",
+                "steps": [
+                    "Inspect the scene.",
+                    "Inspect one prim.",
+                    "Change one thing.",
+                    "Verify the result.",
+                ],
+                "commands": [
+                    "scene summary",
+                    f"inspect {target}",
+                    f"make {target} twice as big",
+                    f"inspect {target}",
+                ],
+            }
+        cube = self._free_child_path(root, "SchemaCube")
+        return {
+            "title": "Interactive schema drill",
+            "steps": [
+                "Inspect a prim and read its Type.",
+                "Create a Cube to compare with it.",
+                "Rename the Cube and confirm in the result that its Type is still Cube.",
+            ],
+            "commands": [f"inspect {target}", f"create {cube} type Cube", f"rename {cube} to RenamedCube"],
+        }
+
+    def _example_target(self, scene: dict[str, Any]) -> str:
+        """Drill target: the single selected prim, else /World/Props/Cube or the first Cube in the stage."""
+        selection = scene.get("selection") or []
+        if len(selection) == 1:
+            return selection[0]
+        if scene.get("available") is False:
+            return _DEFAULT_TARGET
+        if self._safe_inspect(_DEFAULT_TARGET) is not None:
+            return _DEFAULT_TARGET
+        try:
+            cubes = [prim["path"] for prim in self._scene.find_prims("cube")["prims"] if prim.get("type_name") == "Cube"]
+        except Exception:  # noqa: BLE001 - examples fall back to the documented default
+            cubes = []
+        return cubes[0] if cubes else _DEFAULT_TARGET
+
+    @staticmethod
+    def _example_root(scene: dict[str, Any]) -> str:
+        root = scene.get("root_path")
+        if root and root != "/":
+            return root
+        top_level = scene.get("top_level_prims") or []
+        return top_level[0] if top_level else "/World"
+
+    def _free_child_path(self, parent: str, name: str) -> str:
+        try:
+            return self._scene.unique_child_path(parent, name)
+        except Exception:  # noqa: BLE001 - a suggestion path does not need a live scene
+            return f"{parent.rstrip('/')}/{name}"
 
     def _practice_state_payload(self, session: dict[str, Any], started: bool) -> dict[str, Any]:
         index = session["step_index"]
@@ -1069,7 +1504,7 @@ class OmniverseRouter:
         current_command = commands[index] if index < len(commands) else None
         next_step = steps[index + 1] if index + 1 < len(steps) else None
         next_command = commands[index + 1] if index + 1 < len(commands) else None
-        return {
+        payload = {
             "ok": True,
             "target": "learn",
             "style": "practice",
@@ -1078,7 +1513,8 @@ class OmniverseRouter:
             "session_id": session["session_id"],
             "topic": session["topic"],
             "title": session["title"],
-            "commands": steps,
+            "steps": steps,
+            "commands": commands,
             "current_step_index": index + 1,
             "step_count": len(steps),
             "current_step": current_step,
@@ -1089,6 +1525,9 @@ class OmniverseRouter:
             "instruction": "Do the current step in USD Composer, then call the next-practice tool or say 'done'.",
             "next_prompt": "Finish the current step, then ask for the next practice step.",
         }
+        if "note" in session:
+            payload["note"] = session["note"]
+        return payload
 
     @staticmethod
     def _infer_study_topic(scene: dict[str, Any], selected_prim: dict[str, Any] | None) -> str:
@@ -1103,202 +1542,55 @@ class OmniverseRouter:
         return "workflow"
 
     @staticmethod
-    def _study_suggestion(topic: str, scene: dict[str, Any], selected_prim: dict[str, Any] | None) -> dict[str, Any]:
+    def _study_suggestion(
+        topic: str, scene: dict[str, Any], selected_prim: dict[str, Any] | None, target: str
+    ) -> dict[str, Any]:
         if selected_prim is None:
             return {
                 "recommendation": "Select a prim in the stage tree first.",
                 "why": "The best next lesson depends on what is currently active in the scene.",
-                "try_next": ["select /Environment/Cube", "inspect this"],
+                "try_next": [f"select {target}", "inspect this"],
                 "what_to_look_for": ["path", "type", "children", "material"],
             }
+        path = selected_prim["path"]
         if topic == "materials":
             return {
-                "recommendation": f"Practice materials on {selected_prim['path']}.",
+                "recommendation": f"Practice materials on {path}; say 'practice materials' for a guided binding drill.",
                 "why": "It is a visible prim with no material bound yet, so the change will be obvious.",
-                "try_next": [f"make {selected_prim['path']} red", f"inspect {selected_prim['path']}"],
+                "try_next": ["find material", f"inspect {path}"],
                 "what_to_look_for": ["material binding", "viewport color", "type staying the same"],
             }
         if topic == "prims":
             return {
-                "recommendation": f"Study the hierarchy around {selected_prim['path']}.",
+                "recommendation": f"Study the hierarchy around {path}.",
                 "why": "Prims make more sense when you inspect parents and children together.",
-                "try_next": [f"children {selected_prim['path']}", f"inspect {selected_prim['path']}"],
+                "try_next": [f"children {path}", f"inspect {path}"],
                 "what_to_look_for": ["parent path", "children", "how the scene is organized"],
             }
         if topic == "transforms":
             return {
-                "recommendation": f"Practice transforms on {selected_prim['path']}.",
+                "recommendation": f"Practice transforms on {path}.",
                 "why": "Transforms are easiest to learn on a visible prim with a clear before/after.",
-                "try_next": [f"move {selected_prim['path']} 0 2 0", f"scale {selected_prim['path']} 10 10 10"],
-                "what_to_look_for": ["position", "size", "orientation"],
+                "try_next": [f"move {path} up by 1", f"make {path} twice as big"],
+                "what_to_look_for": ["position", "size", "orientation", "which axis is up"],
             }
         return {
-            "recommendation": f"Use the current prim {selected_prim['path']} as your study target.",
+            "recommendation": f"Use the current prim {path} as your study target.",
             "why": f"This prim is a good anchor for learning {topic}.",
-            "try_next": [f"inspect {selected_prim['path']}", f"rename {selected_prim['path']} to PracticeTarget"],
+            "try_next": [f"inspect {path}", f"rename {path} to PracticeTarget"],
             "what_to_look_for": ["type", "path", "selection", "what changes versus what stays the same"],
         }
 
-    def _build_practice_session(self, topic: str) -> dict[str, Any]:
-        scene = self.scene_summary()
-        current_selection = scene.get("selection", [])
-        selected = current_selection[0] if len(current_selection) == 1 else None
-        default_target = selected or "/Environment/Cube" if topic in {"transforms", "materials", "selection"} else "/World"
-
-        sessions: dict[str, dict[str, Any]] = {
-            "schemas": {
-                "title": "Practical schema drill",
-                "goal": "Learn how schema/type shows up in the live stage.",
-                "steps": [
-                    "Select a prim in the stage tree.",
-                    "Inspect it and look at the Type field.",
-                    "Create a new Cube and compare its Type to the selected prim.",
-                    "Rename the Cube and notice that the Type stays the same.",
-                ],
-                "commands": [
-                    f"inspect {selected or '/Environment/Cube'}",
-                    "add a cube",
-                    "rename this to PracticeCube",
-                ],
-                "what_to_notice": [
-                    "The Type column tells you what kind of prim it is.",
-                    "Renaming changes the path/name, not the type.",
-                ],
-            },
-            "prims": {
-                "title": "Practical prim drill",
-                "goal": "Learn prims by navigating the live stage graph.",
-                "steps": [
-                    "Inspect /World and /Environment.",
-                    "List their children.",
-                    "Select a leaf prim and rename it.",
-                    "Find every Cube in the stage.",
-                ],
-                "commands": [
-                    "inspect /World",
-                    "children /Environment",
-                    "find cube",
-                ],
-                "what_to_notice": [
-                    "Prims are scene nodes with paths, parents, and children.",
-                    "Hierarchy is what lets you organize content.",
-                ],
-            },
-            "selection": {
-                "title": "Practical selection drill",
-                "goal": "Learn how selection controls natural language commands.",
-                "steps": [
-                    "Select one prim.",
-                    "Say 'inspect this' and 'move it 0 2 0'.",
-                    "Select another prim and repeat.",
-                ],
-                "commands": [
-                    f"select {selected or '/Environment/Cube'}",
-                    "inspect this",
-                    "move this 0 2 0",
-                ],
-                "what_to_notice": [
-                    "This, it, and selected point to the current selection.",
-                    "Selection makes natural language much faster.",
-                ],
-            },
-            "transforms": {
-                "title": "Practical transform drill",
-                "goal": "Learn translation, rotation, and scale by changing a real prim.",
-                "steps": [
-                    "Inspect the target prim.",
-                    "Move it upward.",
-                    "Make it bigger.",
-                    "Try a dry run before a more aggressive change.",
-                ],
-                "commands": [
-                    f"inspect {default_target}",
-                    f"move {default_target} 0 2 0",
-                    f"scale {default_target} 10 10 10",
-                ],
-                "what_to_notice": [
-                    "Translation changes position.",
-                    "Scale changes size.",
-                    "Rotation changes orientation.",
-                ],
-            },
-            "materials": {
-                "title": "Practical material drill",
-                "goal": "Learn how to bind and verify materials in the viewport.",
-                "steps": [
-                    "Inspect the cube or selected prim.",
-                    "Bind a red material.",
-                    "Check the stage tree and viewport for the change.",
-                ],
-                "commands": [
-                    f"make {default_target} red",
-                    f"inspect {default_target}",
-                ],
-                "what_to_notice": [
-                    "Materials affect appearance, not hierarchy.",
-                    "Material bindings can be inspected after the change.",
-                ],
-            },
-            "lights": {
-                "title": "Practical lighting drill",
-                "goal": "Learn how lights affect the scene.",
-                "steps": [
-                    "Inspect the Environment prim.",
-                    "Look at the existing lights.",
-                    "Create or adjust a light if needed and compare the result.",
-                ],
-                "commands": [
-                    "inspect /Environment",
-                    "children /Environment",
-                ],
-                "what_to_notice": [
-                    "Lighting changes how everything is rendered.",
-                    "Light prims are scene objects like everything else.",
-                ],
-            },
-            "workflow": {
-                "title": "Practical USD workflow drill",
-                "goal": "Learn the edit-check-repeat loop you’ll use daily.",
-                "steps": [
-                    "Inspect the scene.",
-                    "Change one thing.",
-                    "Verify the result.",
-                    "Repeat with a second change.",
-                ],
-                "commands": [
-                    "scene summary",
-                    "inspect /Environment/Cube",
-                    "move /Environment/Cube 0 2 0",
-                    "rename /Environment/Cube to PracticeCube",
-                ],
-                "what_to_notice": [
-                    "Practical learning means making a tiny change and observing the effect.",
-                    "Use the scene tree as your feedback loop.",
-                ],
-            },
-        }
-        session = sessions.get(topic, sessions["schemas"])
-        return {
-            "ok": True,
-            "target": "learn",
-            "topic": topic,
-            "style": "practice",
-            "title": session["title"],
-            "goal": session["goal"],
-            "steps": session["steps"],
-            "commands": session["commands"],
-            "what_to_notice": session["what_to_notice"],
-            "scene_context": scene,
-            "next_prompt": "Do the first command, then tell me what changed and I’ll guide the next step.",
-        }
-
     def _parse_scene_command(self, request: str) -> dict[str, Any] | None:
-        text = self._strip_politeness(request.strip(), keep_case=True)
+        # Collapse runs of whitespace so "create  the cube" cannot slip past the (?!the) guard below.
+        text = re.sub(r"\s+", " ", self._strip_politeness(request.strip(), keep_case=True))
         lower = text.lower()
         if lower in {"ping", "scene ping", "status"}:
             return {"action": "ping"}
         if lower in {"summary", "scene summary", "scene status"}:
             return {"action": "summary"}
+        if _is_prim_count_question(lower):
+            return {"action": "summary", "question": "prim_count"}
         if any(phrase in lower for phrase in ("what's selected", "what is selected", "current selection", "show selection")):
             return {"action": "summary"}
 
@@ -1315,104 +1607,105 @@ class OmniverseRouter:
             return {"action": "summary"}
 
         path = self._extract_usd_path(text)
-        selection_hint = bool(re.search(r"\b(selected|this|that|it)\b", lower))
+        # Keyword checks ignore words inside prim paths, so /World/Eraser is not "erase" and /World/It is not "it".
+        words = re.sub(r"/\S*", " ", lower)
         selected_path = self._single_selected_path()
-        target_path = path or (selected_path if selection_hint else None)
-        create_parent = self._extract_create_parent(text) or "/World"
+        target_path = path or (selected_path if _PRONOUN.search(words) else None)
+
+        attribute = self._parse_set_attribute(text, selected_path)
+        if attribute is not None:
+            return attribute
 
         select_match = re.match(r"^(?:scene\s+)?select\s+(.+)$", text, re.IGNORECASE)
         if select_match:
             paths = self._extract_paths(select_match.group(1))
             if paths:
                 return {"action": "select", "paths": paths}
-        if any(word in lower for word in ("select", "focus", "highlight")) and target_path is not None:
+        if re.search(r"\b(?:select|focus|highlight)\b", words) and target_path is not None:
             return {"action": "select", "paths": [target_path]}
 
-        create_match = re.match(r"^(?:scene\s+)?create\s+(\S+)(?:\s+type\s+(\S+))?$", text, re.IGNORECASE)
+        create_match = re.match(r"^(?:scene\s+)?create\s+(/\S*)(?:\s+type\s+(\S+))?$", text, re.IGNORECASE)
         if create_match:
             return {"action": "create", "path": create_match.group(1), "type_name": create_match.group(2) or "Xform"}
-        size_natural = re.match(
-            r"^(?:can you\s+)?(?:please\s+)?(?:make|set|turn)\s+(.+?)\s+(?:bigger|larger|smaller|tiny|small|huge|bigger\s+please)$",
-            text,
-            re.IGNORECASE,
-        )
-        if size_natural:
-            path_candidate = self._extract_usd_path(size_natural.group(1)) or target_path
-            if path_candidate is not None:
-                scale_value = 10.0 if "smaller" not in lower else 0.1
-                return {
-                    "action": "move",
-                    "path": path_candidate,
-                    "scale": (scale_value, scale_value, scale_value),
-                }
-        # "the ..." names something that already exists ("make the light brighter"), so it never creates a prim.
+        transform = self._parse_transform(text, selected_path)
+        if transform is not None:
+            return transform
+        # "the/this/my ..." names something that already exists ("make the light brighter", "add my light to the
+        # scene"), so it never creates a prim.
         create_natural = re.match(
-            r"^(?:can you\s+)?(?:please\s+)?(?:make\s+(?:a|an|another|new)\s+|(?:create|add|spawn|place)\s+(?:a\s+|an\s+|another\s+|new\s+)?(?!the\b))(.+)$",
+            r"^(?:make\s+(?:a|an|another|new)\s+|(?:create|add|spawn|place)\s+(?:a\s+|an\s+|another\s+|new\s+)?"
+            r"(?!(?:the|this|that|these|those|it|its|my|our|your|selected)\b))(.+)$",
             text,
             re.IGNORECASE,
         )
         if create_natural:
-            description = create_natural.group(1)
+            description = re.split(r"\s+(?:under|in|into|inside|at)\s+", create_natural.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
             type_name = self._guess_type_name(description)
             base_name = self._guess_base_name(description, type_name)
-            parent_path = self._normalize_parent_path(create_parent)
-            if target_path is None:
-                target_path = self._scene.unique_child_path(parent_path, base_name)
-            return {"action": "create", "path": target_path, "type_name": type_name}
+            parent_text = self._extract_create_parent(text)
+            parent_path = (
+                self._extract_usd_path(parent_text or "")
+                or (selected_path if parent_text and _PRONOUN.search(parent_text.lower()) else None)
+                or self._normalize_parent_path(parent_text or "/World")
+            )
+            return {"action": "create", "path": self._scene.unique_child_path(parent_path, base_name), "type_name": type_name}
 
-        delete_match = re.match(r"^(?:scene\s+)?delete\s+(\S+)$", text, re.IGNORECASE)
+        delete_match = re.match(r"^(?:scene\s+)?(?:delete|remove|erase)\s+(?:the\s+)?(?:prim\s+)?(.+)$", text, re.IGNORECASE)
         if delete_match:
-            return {"action": "delete", "path": delete_match.group(1)}
-        if any(word in lower for word in ("delete", "remove", "erase")) and target_path is not None:
-            return {"action": "delete", "path": target_path}
+            # Deleting is destructive: only a bare path or the selection, never a path mentioned elsewhere.
+            fragment = delete_match.group(1).strip()
+            if re.fullmatch(r"/\S*", fragment):
+                return {"action": "delete", "path": fragment}
+            if selected_path and re.fullmatch(r"(?:this|that|it|selected)(?:\s+prim)?", fragment, re.IGNORECASE):
+                return {"action": "delete", "path": selected_path}
 
-        inspect_match = re.match(r"^(?:scene\s+)?inspect\s+(\S+)$", text, re.IGNORECASE)
+        inspect_match = re.match(r"^(?:scene\s+)?inspect\s+(/\S*)$", text, re.IGNORECASE)
         if inspect_match:
             return {"action": "inspect", "path": inspect_match.group(1)}
-        if any(word in lower for word in ("inspect", "look at", "tell me about", "describe")) and target_path is not None:
+        if re.search(r"\b(?:inspect|describe|look at|tell me about)\b", words) and target_path is not None:
             return {"action": "inspect", "path": target_path}
 
-        children_match = re.match(r"^(?:scene\s+)?children\s+(\S+)$", text, re.IGNORECASE)
+        # Before the "under" children check, so "move this under /World" reparents instead of listing children.
+        reparent_match = re.match(r"^(?:scene\s+)?reparent\s+(/\S*)\s+to\s+(/\S*)$", text, re.IGNORECASE)
+        if reparent_match:
+            return {"action": "reparent", "path": reparent_match.group(1), "new_parent": reparent_match.group(2)}
+        reparent_natural = re.match(
+            r"^(?:move|put|nest|parent|reparent)\s+(.+?)\s+(?:under|into|inside|to)\s+(/\S*)$",
+            text,
+            re.IGNORECASE,
+        )
+        if reparent_natural:
+            child_path = self._fragment_target(reparent_natural.group(1), selected_path)
+            if child_path is not None:
+                return {"action": "reparent", "path": child_path, "new_parent": reparent_natural.group(2)}
+
+        children_match = re.match(r"^(?:scene\s+)?children\s+(/\S*)$", text, re.IGNORECASE)
         if children_match:
             return {"action": "children", "path": children_match.group(1)}
-        if any(phrase in lower for phrase in ("what's under", "what is under", "children of", "inside", "under")) and target_path is not None:
+        if (
+            re.search(r"\b(?:what's under|what is under|children of|inside|under)\b", words)
+            and not re.match(r"(?:move|put|nest|parent|reparent|shift|nudge)\b", lower)
+            and target_path is not None
+        ):
             return {"action": "children", "path": target_path}
 
-        duplicate_match = re.match(r"^(?:scene\s+)?duplicate\s+(\S+)\s+to\s+(\S+)$", text, re.IGNORECASE)
+        duplicate_match = re.match(r"^(?:scene\s+)?duplicate\s+(/\S*)\s+to\s+(/\S*)$", text, re.IGNORECASE)
         if duplicate_match:
             return {
                 "action": "duplicate",
                 "source_path": duplicate_match.group(1),
                 "target_path": duplicate_match.group(2),
             }
-        duplicate_natural = re.match(r"^(?:can you\s+)?(?:please\s+)?(?:duplicate|copy)\s+(.+?)\s+(?:to|as)\s+(\S+)$", text, re.IGNORECASE)
+        duplicate_natural = re.match(r"^(?:duplicate|copy)\s+(.+?)\s+(?:to|as)\s+(\S+)$", text, re.IGNORECASE)
         if duplicate_natural:
-            source_path = self._extract_usd_path(duplicate_natural.group(1)) or target_path
+            source_path = self._fragment_target(duplicate_natural.group(1), selected_path)
             if source_path is not None:
-                return {
-                    "action": "duplicate",
-                    "source_path": source_path,
-                    "target_path": duplicate_natural.group(2),
-                }
+                copy = duplicate_natural.group(2)
+                # A bare name ("as HeroCube2") becomes a sibling of the source.
+                target = copy if copy.startswith("/") else f"{source_path.rsplit('/', 1)[0]}/{copy}"
+                return {"action": "duplicate", "source_path": source_path, "target_path": target}
 
-        reparent_match = re.match(r"^(?:scene\s+)?reparent\s+(\S+)\s+to\s+(\S+)$", text, re.IGNORECASE)
-        if reparent_match:
-            return {"action": "reparent", "path": reparent_match.group(1), "new_parent": reparent_match.group(2)}
-        reparent_natural = re.match(
-            r"^(?:can you\s+)?(?:please\s+)?(?:move|put|nest|parent)\s+(.+?)\s+(?:under|into|inside|to)\s+(\S+)$",
-            text,
-            re.IGNORECASE,
-        )
-        if reparent_natural:
-            child_path = self._extract_usd_path(reparent_natural.group(1)) or target_path
-            if child_path is not None:
-                return {"action": "reparent", "path": child_path, "new_parent": reparent_natural.group(2)}
-
-        move_match = re.match(
-            r"^(?:scene\s+)?move\s+(/\S*)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$",
-            text,
-            re.IGNORECASE,
-        )
+        move_match = re.match(rf"^(?:scene\s+)?move\s+(/\S*)\s+{_VECTOR}$", text, re.IGNORECASE)
         if move_match:
             return {
                 "action": "move",
@@ -1423,13 +1716,9 @@ class OmniverseRouter:
                     float(move_match.group(4)),
                 ),
             }
-        move_natural = re.match(
-            r"^(?:can you\s+)?(?:please\s+)?(?:move|shift|nudge|translate)\s+(.+?)\s+(?:by|to)?\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$",
-            text,
-            re.IGNORECASE,
-        )
+        move_natural = re.match(rf"^(?:move|shift|nudge|translate)\s+(.+?)\s+(?:to\s+)?{_VECTOR}$", text, re.IGNORECASE)
         if move_natural:
-            move_path = self._extract_usd_path(move_natural.group(1)) or target_path
+            move_path = self._fragment_target(move_natural.group(1), selected_path)
             if move_path is not None:
                 return {
                     "action": "move",
@@ -1441,7 +1730,7 @@ class OmniverseRouter:
                     ),
                 }
 
-        material_match = re.match(r"^(?:scene\s+)?material\s+(\S+)\s+to\s+(\S+)$", text, re.IGNORECASE)
+        material_match = re.match(r"^(?:scene\s+)?material\s+(/\S*)\s+to\s+(/\S*)$", text, re.IGNORECASE)
         if material_match:
             return {
                 "action": "material",
@@ -1449,34 +1738,31 @@ class OmniverseRouter:
                 "material_path": material_match.group(2),
             }
         material_natural = re.match(
-            r"^(?:can you\s+)?(?:please\s+)?(?:bind|assign|set|give|paint)\s+(.+?)\s+(?:to|with|using)\s+(\S+)$",
+            r"^(bind|assign|set|give|paint)\s+(.+?)\s+(to|with|using)\s+(\S+)$",
             text,
             re.IGNORECASE,
         )
         if material_natural:
-            material_path = self._extract_usd_path(material_natural.group(1))
-            path_candidate = target_path or self._extract_usd_path(material_natural.group(2))
-            if path_candidate is not None and material_path is not None:
+            verb, first, connector, second = material_natural.groups()
+            # "bind M to P" names the material first; "paint P with M" and "set P to M" name the prim first.
+            if verb.lower() in {"bind", "assign"} and connector.lower() == "to":
+                material_text, prim_text = first, second
+            else:
+                prim_text, material_text = first, second
+            material_path = self._extract_usd_path(material_text)
+            prim_path = self._fragment_target(prim_text, selected_path)
+            if prim_path is not None and material_path is not None:
                 return {
                     "action": "material",
-                    "path": path_candidate,
+                    "path": prim_path,
                     "material_path": material_path,
                 }
 
-        rename_match = re.match(r"^(?:scene\s+)?rename\s+(.+?)\s+to\s+(\S+)$", text, re.IGNORECASE)
+        rename_match = re.match(r"^(?:scene\s+)?(?:rename|call|name)\s+(.+?)\s+(?:to|as)\s+(\S+)$", text, re.IGNORECASE)
         if rename_match:
-            path_candidate = self._extract_usd_path(rename_match.group(1)) or target_path
+            path_candidate = self._fragment_target(rename_match.group(1), selected_path)
             if path_candidate is not None:
                 return {"action": "rename", "path": path_candidate, "new_name": rename_match.group(2)}
-        rename_natural = re.match(
-            r"^(?:can you\s+)?(?:please\s+)?(?:rename|call|name)\s+(.+?)\s+(?:to|as)\s+(\S+)$",
-            text,
-            re.IGNORECASE,
-        )
-        if rename_natural:
-            path_candidate = self._extract_usd_path(rename_natural.group(1)) or target_path
-            if path_candidate is not None:
-                return {"action": "rename", "path": path_candidate, "new_name": rename_natural.group(2)}
 
         find_match = re.match(r"^(?:scene\s+)?(?:find|search\s+for)\s+(.+)$", text, re.IGNORECASE)
         if find_match:
@@ -1484,18 +1770,145 @@ class OmniverseRouter:
             query, scope_path = self._split_query_and_scope(query_text)
             return {"action": "find", "query": query, "scope_path": scope_path}
 
+        # Only a real USD file path is ever saved to; "save the scene" must not export to a file named "the scene".
+        save_natural = re.match(
+            r"^save\s+(?:(?:this|the|current)\s+)?(?:scene|stage)\s+(?:as|to)\s+(.+)$", text, re.IGNORECASE
+        )
         save_match = re.match(r"^(?:scene\s+)?save(?:\s+as)?\s+(.+)$", text, re.IGNORECASE)
-        if save_match:
-            return {"action": "save", "path": save_match.group(1).strip()}
-        save_natural = re.match(r"^(?:can you\s+)?(?:please\s+)?save(?:\s+this)?\s+scene(?:\s+as)?\s+(.+)$", text, re.IGNORECASE)
-        if save_natural:
-            return {"action": "save", "path": save_natural.group(1).strip()}
+        for found in (save_natural, save_match):
+            if found:
+                candidate = found.group(1).strip()
+                if re.fullmatch(r"\S+\.usd[acz]?", candidate, re.IGNORECASE) or re.fullmatch(
+                    r"(?:[A-Za-z]:[\\/]|[\\/]).*\.usd[acz]?", candidate, re.IGNORECASE
+                ):
+                    return {"action": "save", "path": candidate}
+        if re.match(r"(?:scene\s+)?save\b", text, re.IGNORECASE):
+            return {
+                "action": "unsupported",
+                "path": None,
+                "message": "Saving needs a file path ending in .usd, .usda, .usdc or .usdz. Nothing was saved.",
+                "hint": "For example 'save C:/path/to/scene.usda', or scene_save(path, dry_run=True) to preview.",
+            }
 
         return None
 
+    def _parse_transform(self, text: str, selected_path: str | None) -> dict[str, Any] | None:
+        """Translate/rotate/scale phrasings. Relative values ("by", "up", "twice") are made absolute at dispatch.
+
+        A recognised phrasing whose target is only a name returns None, so name resolution can retry it.
+        """
+
+        def target(fragment: str) -> str | None:
+            return self._fragment_target(fragment, selected_path)
+
+        def vector(match: re.Match[str], first: int) -> tuple[float, float, float]:
+            return (float(match.group(first)), float(match.group(first + 1)), float(match.group(first + 2)))
+
+        def unsupported(fragment: str, message: str, example: str) -> dict[str, Any]:
+            path = target(fragment) or "<prim path>"
+            return {"action": "unsupported", "path": target(fragment), "message": message, "hint": example.format(path=path)}
+
+        move = r"^(?:move|shift|nudge|translate)\s+(.+?)\s+"
+        match = re.match(move + rf"by\s+{_VECTOR}$", text, re.IGNORECASE)
+        if match:
+            path = target(match.group(1))
+            return {"action": "move", "path": path, "offset": vector(match, 2)} if path else None
+        match = re.match(move + rf"(up|down)(?:wards?)?\s+(?:by\s+)?({_NUMBER})(?:\s*units?)?$", text, re.IGNORECASE)
+        if match:
+            path = target(match.group(1))
+            amount = float(match.group(3)) * (1 if match.group(2).lower() == "up" else -1)
+            return {"action": "move", "path": path, "up_offset": amount} if path else None
+        match = re.match(
+            move + rf"(?:left|right|forwards?|backwards?|back)(?:\s+(?:by\s+)?{_NUMBER}(?:\s*units?)?)?$", text, re.IGNORECASE
+        )
+        if match:
+            return unsupported(
+                match.group(1),
+                "USD only defines an up axis (upAxis); left, right, forward and back depend on the camera, "
+                "so I will not guess a direction. Nothing was changed.",
+                "Give an explicit offset, for example 'move {path} by 1 0 0'.",
+            )
+
+        match = re.match(rf"^rotate\s+(.+?)\s+by\s+{_VECTOR}(?:\s*deg(?:rees?)?)?$", text, re.IGNORECASE)
+        if match:
+            return unsupported(
+                match.group(1),
+                "Rotation here sets absolute XYZ angles in degrees (xformOp:rotateXYZ), not an offset. Nothing was changed.",
+                "Inspect the prim for its current angles, then give the final ones, for example 'rotate {path} 0 0 90'.",
+            )
+        match = re.match(rf"^rotate\s+(.+?)\s+(?:to\s+)?{_VECTOR}(?:\s*deg(?:rees?)?)?$", text, re.IGNORECASE)
+        if match:
+            path = target(match.group(1))
+            return {"action": "move", "path": path, "rotation": vector(match, 2)} if path else None
+        match = re.match(
+            rf"^rotate\s+(.+?)\s+(?:by\s+)?{_NUMBER}\s*(?:deg(?:rees?)?)?(?:\s+(?:around|about|on)\s+.+)?$", text, re.IGNORECASE
+        )
+        if match:
+            return unsupported(
+                match.group(1),
+                "Give all three XYZ angles in degrees; one angle does not say which axis to turn. Nothing was changed.",
+                "For example 'rotate {path} 0 0 90'.",
+            )
+
+        match = re.match(rf"^scale\s+(.+?)\s+by\s+(?:{_VECTOR}|({_NUMBER})\s*(?:x|times)?)$", text, re.IGNORECASE)
+        if match:
+            path = target(match.group(1))
+            factor = vector(match, 2) if match.group(2) else (float(match.group(5)),) * 3
+            return {"action": "move", "path": path, "scale_factor": factor} if path else None
+        match = re.match(rf"^scale\s+(.+?)\s+(?:to\s+)?(?:{_VECTOR}|({_NUMBER}))$", text, re.IGNORECASE)
+        if match:
+            path = target(match.group(1))
+            scale = vector(match, 2) if match.group(2) else (float(match.group(5)),) * 3
+            return {"action": "move", "path": path, "scale": scale} if path else None
+        match = re.match(
+            rf"^(?:make|scale)\s+(.+?)\s+(?:(twice|double|thrice|half)|({_NUMBER})\s*(?:x|times))\s+"
+            r"(?:as\s+(?:big|large)|bigger|larger)(?:\s+as\s+(?:it\s+is|now|before))?$",
+            text,
+            re.IGNORECASE,
+        )
+        if match:
+            path = target(match.group(1))
+            value = _SCALE_WORDS[match.group(2).lower()] if match.group(2) else float(match.group(3))
+            return {"action": "move", "path": path, "scale_factor": (value,) * 3} if path else None
+        match = re.match(r"^(?:make|set|turn)\s+(.+?)\s+(bigger|larger|huge|smaller|small|tiny)$", text, re.IGNORECASE)
+        if match:
+            path = target(match.group(1))
+            value = 0.1 if match.group(2).lower() in {"smaller", "small", "tiny"} else 10.0
+            return {"action": "move", "path": path, "scale_factor": (value,) * 3} if path else None
+        return None
+
+    def _parse_set_attribute(self, text: str, selected_path: str | None) -> dict[str, Any] | None:
+        """'set intensity of X to 500' is an attribute edit (not supported yet); 'set material of X to /M' binds."""
+        match = next((found for found in (pattern.match(text) for pattern in _SET_ATTRIBUTE) if found), None)
+        if match is None:
+            return None
+        attribute, fragment, value = (match.group(name).strip() for name in ("attr", "target", "value"))
+        path = self._fragment_target(fragment, selected_path)
+        named: str | None = None
+        candidates: list[str] = []
+        if path is None:
+            words = [word for word in re.findall(r"[\w\-]+", fragment.lower()) if word not in _NAME_ARTICLES]
+            if words:
+                path, candidates = self._unique_prim_named(words)
+                named = " ".join(words) if path else None
+        material_path = self._extract_usd_path(value)
+        if attribute.lower() in {"material", "material binding"} and material_path and path:
+            parsed: dict[str, Any] = {"action": "material", "path": path, "material_path": material_path}
+            if named:
+                parsed["resolved_from_name"] = named
+            return parsed
+        return {"action": "set_attribute", "path": path, "attribute": attribute, "value": value, "candidates": candidates}
+
+    def _fragment_target(self, fragment: str, selected_path: str | None) -> str | None:
+        """The prim a phrase points at: a path inside it, or the selection when the whole phrase is this/that/it/
+        selected (optionally with 'the' and one noun). Any other phrase returns None, so name resolution only previews."""
+        return self._extract_usd_path(fragment) or (
+            selected_path if _SELECTION_REF.fullmatch(fragment.strip()) else None
+        )
+
     @staticmethod
     def _strip_politeness(text: str, keep_case: bool = False) -> str:
-        """Remove "can you / please" and a trailing "in kit?" so the scene parser sees the plain command."""
+        """Remove "can you / please / kindly" and a trailing "in kit?" so the scene parser sees the plain command."""
         lowered = text.lower()
         prefix = _POLITE_PREFIX.match(lowered)
         start = prefix.end() if prefix else 0
@@ -1504,24 +1917,58 @@ class OmniverseRouter:
         core = (text if keep_case else lowered)[start:end].strip()
         return core or (text if keep_case else lowered).strip()
 
-    def _candidate_prims(self, request: str) -> list[str]:
-        """Read-only lookup of prims named like the object in "move the cube up", so the user can pick a path."""
-        words = re.findall(r"[a-z0-9_]+", self._strip_politeness(self._normalize(request)))
-        if not words or not _SCENE_VERB.match(words[0]):
-            return []
-        target: list[str] = []
-        for word in words[1:]:
-            if word in _TARGET_STOP_WORDS or word[0].isdigit():
+    def _resolve_by_name(self, request: str) -> tuple[dict[str, Any] | None, list[str]]:
+        """Parse "move the cube by 0 0 1" when exactly one prim's name is "cube"; the scene is only read.
+
+        Returns (parsed command marked "resolved_from_name", candidate paths). Verbs that create or search never
+        resolve, and an unparseable rewrite still returns the candidates.
+        """
+        text = self._strip_politeness(request.strip(), keep_case=True)
+        named = self._named_target(text)
+        if named is None:
+            return None, []
+        verb, words, start, end = named
+        path, candidates = self._unique_prim_named(words)
+        if path is None or verb in _NAME_CREATE_VERBS:
+            return None, candidates
+        parsed = self._parse_scene_command(f"{text[:start]}{path}{text[end:]}")
+        if parsed is None or parsed["action"] not in _NAME_ACTIONS:
+            return None, candidates
+        parsed["resolved_from_name"] = " ".join(words)
+        return parsed, candidates
+
+    @staticmethod
+    def _named_target(text: str) -> tuple[str, list[str], int, int] | None:
+        """(verb, name words, start, end) of the object named right after a scene verb: 'the cube' in 'move the cube up'."""
+        tokens = list(re.finditer(r"[^\s,]+", text))
+        if len(tokens) < 2 or not _SCENE_VERB.match(tokens[0].group().lower()):
+            return None
+        words: list[str] = []
+        start = end = None
+        for token in tokens[1:]:
+            word = token.group().lower().strip("?!.")
+            if word.startswith("/"):
+                return None
+            if word in _TARGET_STOP_WORDS or re.match(r"[-+]?\.?\d", word):
                 break
-            if word not in {"the", "a", "an", "this", "that", "my", "our"}:
-                target.append(word)
-        if not target:
-            return []
+            start = token.start() if start is None else start
+            end = token.end()
+            if word not in _NAME_ARTICLES:
+                words.append(word)
+        if not words or start is None or end is None:
+            return None
+        return tokens[0].group().lower(), words, start, end
+
+    def _unique_prim_named(self, words: list[str]) -> tuple[str | None, list[str]]:
+        """Read-only: the single prim whose last path component equals the name (case-insensitive), and candidates."""
         try:
-            matches = self._scene.find_prims(target[-1])["prims"]
-        except Exception:  # noqa: BLE001 - candidates are a hint only
-            return []
-        return [prim["path"] for prim in matches][:10]
+            prims = self._scene.find_prims(words[-1])["prims"]
+        except Exception:  # noqa: BLE001 - name lookup is a convenience; failing it changes nothing
+            return None, []
+        wanted = _name_key("".join(words))
+        exact = [prim["path"] for prim in prims if _name_key(prim["path"].rsplit("/", 1)[-1]) == wanted]
+        others = [prim["path"] for prim in prims if prim["path"] not in exact]
+        return (exact[0] if len(exact) == 1 else None), (exact + others)[:10]
 
     def _single_selected_path(self) -> str | None:
         selection = self._scene.current_selection()

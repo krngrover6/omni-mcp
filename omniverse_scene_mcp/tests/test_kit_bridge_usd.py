@@ -297,3 +297,17 @@ def test_save_keeps_composition_arcs_and_reanchors_save_as():
         assert copied.GetPrimAtPath("/World/Ref").GetTypeName() == "Cube"
         assert "../asset.usda" in (root_dir / "copies" / "copy.usda").read_text()
         assert main.GetRootLayer().identifier.endswith("main.usda")
+
+
+def test_save_with_file_uri_to_the_open_root_layer_saves_in_place():
+    with tempfile.TemporaryDirectory() as tmp:
+        root_dir = Path(tmp)
+        main = Usd.Stage.CreateNew(str(root_dir / "scene.usda"))
+        main.GetRootLayer().Save()
+        main.DefinePrim("/World/Added", "Xform")
+        uri = "file:/" + str((root_dir / "scene.usda").resolve()).replace("\\", "/")
+        assert kit_bridge._same_file(main.GetRootLayer().realPath, uri)
+        with _bridge(main) as bridge:
+            assert bridge.save_scene(uri) == uri
+        assert "Added" in (root_dir / "scene.usda").read_text()
+        assert not main.GetRootLayer().dirty

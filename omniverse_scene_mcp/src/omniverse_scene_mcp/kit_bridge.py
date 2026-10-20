@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 from .bridge import PrimRecord, SceneSnapshot
 
@@ -462,6 +463,9 @@ def _quat_for_op(op, quat):
 
 
 def _same_file(first: str, second: str) -> bool:
+    # Accept 'file:/C:/...' style paths the same way the dry-run preview (service._layer_key) does.
+    if second[:5].lower() == "file:":
+        second = re.sub(r"^/+(?=[A-Za-z]:)", "", second[5:])
     return os.path.normcase(os.path.abspath(first)) == os.path.normcase(os.path.abspath(second))
 
 

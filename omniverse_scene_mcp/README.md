@@ -123,6 +123,70 @@ The server exposes these tools:
 - `isaac_sim_knowledge`
 - `bowerbot_knowledge`
 
+Safety and health:
+
+- `router_health` - read-only health report (scene backend choice, 300 ms port
+  probes, router PID, redacted stderr tail); it never restarts anything
+- `scene_save` - `dry_run=True` previews in-place save versus Save As
+
+### Exam prep and USD insight (Tier 1)
+
+Offline USD docs (no network, no docs MCP needed):
+
+- `usd_docs_search(query, top_k=5)` - BM25 search over the bundled USD 25.11
+  API atlas, openusd.org doc chunks, Learn OpenUSD pages and the workspace
+  `OPENUSD_*_ONE_BY_ONE.md` notes; every hit carries a citation
+- `learning_glossary(term=None)` - Learn OpenUSD glossary lookup; no term lists
+  all terms
+- `usd_knowledge` and `router_dispatch` now fall back to the same offline docs
+  when the USD docs MCP (127.0.0.1:9903) is not running; the answer carries
+  `note` and `primary_error`
+
+NCP-OUSD exam prep (one shared progress store per server):
+
+- `learning_exam_blueprint(include_objectives=True)` - domains, weights,
+  objectives, readings and question-bank counts
+- `learning_exam_plan(days_until_exam=None, minutes_per_day=60)` - weighted plan
+  boosted for weak domains, with an optional day-by-day schedule
+- `learning_exam_quiz(domain=None, objective=None, count=5, review_due=False)` -
+  original practice questions, answers withheld; `review_due=True` puts due
+  spaced-repetition cards first
+- `learning_exam_answer(question_id, chosen, seconds=None)` - grades with
+  per-option explanations and records progress
+- `learning_exam_progress()`, `learning_exam_review(limit=10)`
+- `learning_exam_reset(confirm=False)` - does nothing without `confirm=True`;
+  the old file is copied to `progress.json.bak-<timestamp>` first
+
+Progress lives in `<workspace>/exam-prep/progress.json`, or in
+`$OMNIVERSE_EXAM_PREP_DIR/progress.json` when that variable is set. Under
+`OMNIVERSE_SCENE_MCP_TEST` it stays in memory unless `OMNIVERSE_EXAM_PREP_DIR`
+is set.
+
+Composition sandbox (temp folder only, never your scene files):
+
+- `usd_playground_compose(layers, root, queries=None)` - compose USDA strings
+  and explain layer stack, arcs and values (`/Prim`, `/Prim.attr`,
+  `/Prim.attr@24`, `/Prim.rel`)
+- `learning_composition_puzzle(difficulty="easy", seed=None)` and
+  `learning_composition_puzzle_answer(puzzle_id, answer)` - LIVERPS puzzles
+  graded by really composing the layers; answers are recorded under the
+  Composition domain
+
+Saved-file insight and validation. These read the SAVED file read-only, never
+the live unsaved stage; every result has `"mode": "saved_file"` and a note.
+`file` defaults to the live scene's saved root layer; relative paths resolve
+against the workspace root, and explicit paths must be inside the workspace:
+
+- `scene_stage_info(file=None)`
+- `scene_composition(prim_path, file=None)`
+- `scene_explain_value(prim_path, attribute, time=None, file=None)`
+- `scene_properties(prim_path, file=None)`
+- `scene_bounds(prim_path, file=None)`
+- `usd_validate(file=None, profile="exam")` - `exam`, `usd` or `all`
+
+The command-line form `python -m omniverse_scene_mcp <request>` previews
+(dry run) unless `--apply` is given.
+
 ## Next step
 
 Point the optional upstream endpoints at the real Omniverse MCP servers you

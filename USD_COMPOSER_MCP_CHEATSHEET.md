@@ -134,3 +134,77 @@ If you want to learn this in order, study these first:
 - Let the router choose scene vs knowledge MCP
 - Use Bowerbot when you are doing asset assembly or project setup
 
+## 8) Exam prep and USD insight (Tier 1)
+
+Tools for NCP-OUSD study. They work offline: no network and no docs MCP needed.
+
+### Two safety changes first
+
+- The command line now previews by default. `python -m omniverse_scene_mcp delete /World/Props/Cube`
+  only shows what would change. Add `--apply` to really do it:
+  `python -m omniverse_scene_mcp --apply delete /World/Props/Cube`
+- The insight and validation tools read the SAVED file on disk, opened read-only. They never see
+  unsaved edits in the live Composer/Isaac Sim stage, so save first (`scene_save`) when you want those
+  edits included. Every result says `"mode": "saved_file"` and carries a note.
+
+### Offline USD docs
+
+```text
+usd_docs_search(query="payload vs reference", top_k=5)
+learning_glossary(term="LIVERPS")
+learning_glossary()                      # list every glossary term
+```
+
+`usd_knowledge` and `router_dispatch` answer from the same bundled docs when the USD docs MCP
+(127.0.0.1:9903) is not running; the result then has a `note` and a `primary_error`.
+
+### Exam practice loop
+
+```text
+learning_exam_blueprint(include_objectives=False)
+learning_exam_plan(days_until_exam=21, minutes_per_day=60)
+learning_exam_quiz(domain="Composition", count=5)
+learning_exam_quiz(objective="1.6", count=3)
+learning_exam_answer(question_id="comp-020", chosen=[0], seconds=40)
+learning_exam_answer(question_id="comp-006", chosen=["A", "C"])     # multi-select: give every pick
+learning_exam_review(limit=10)
+learning_exam_quiz(review_due=True)      # questions due for spaced repetition come first
+learning_exam_progress()
+learning_exam_reset(confirm=True)        # without confirm=True nothing changes; a .bak copy is kept
+```
+
+Progress is saved in `exam-prep/progress.json`, or in `$OMNIVERSE_EXAM_PREP_DIR/progress.json`
+when that variable is set.
+
+### Composition sandbox and LIVERPS puzzles
+
+These compose layers in a throwaway temp folder, never in your scene files.
+
+```text
+usd_playground_compose(
+    layers={"shot.usda": "#usda 1.0\n(\n    subLayers = [@./anim.usda@]\n)\ndef Xform \"World\" {}\n",
+            "anim.usda": "#usda 1.0\nover \"World\" {\n    double size = 5\n}\n"},
+    root="shot.usda",
+    queries=["/World.size", "/World"])
+learning_composition_puzzle(difficulty="medium", seed=42)
+learning_composition_puzzle_answer(puzzle_id="liverps-medium-42", answer="B")
+```
+
+Puzzle answers are recorded under the Composition domain.
+
+### Saved-file insight and validation
+
+`file` defaults to the live scene's saved root layer. Relative paths start at the workspace folder.
+
+```text
+scene_stage_info()
+scene_stage_info(file="my_project/scene.usda")   # any saved USD file inside the workspace
+scene_composition(prim_path="/World/Car")
+scene_explain_value(prim_path="/World/Car", attribute="visibility", time=24)
+scene_properties(prim_path="/World/Car")
+scene_bounds(prim_path="/World/Car")
+usd_validate(profile="exam")             # or "usd" (OpenUSD validators) or "all"
+```
+
+If the live scene is not saved yet, or the router is on its fake scene, these return `ok: false`
+with a message. Pass `file=...` in that case.

@@ -1,0 +1,4295 @@
+{
+  "version": 1,
+  "title": "Original NCP-OUSD practice questions",
+  "notes": "Original questions written for this workspace and tagged with study-guide objective numbers. They are not taken from the NVIDIA study guide or any exam dump. USDA-based answers are pinned by verify blocks that compose the layers with OpenUSD.",
+  "questions": [
+    {
+      "id": "comp-001",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.6",
+        "1.8"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "The layers below are opened with shot.usda as the root layer. What is the composed value of /World/Lamp.intensityScale?",
+      "usda": {
+        "shot.usda": "#usda 1.0\n(\n    defaultPrim = \"World\"\n)\n\nclass \"_class_Lamp\"\n{\n    float intensityScale = 3\n}\n\ndef Xform \"World\"\n{\n    def Xform \"Lamp\" (\n        prepend inherits = </_class_Lamp>\n        prepend references = @./lamp.usda@\n    )\n    {\n    }\n}\n",
+        "lamp.usda": "#usda 1.0\n(\n    defaultPrim = \"Lamp\"\n)\n\ndef Xform \"Lamp\"\n{\n    float intensityScale = 1\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "3",
+        "4, because opinions from both arcs are added together",
+        "No value, because class prims are abstract and never contribute opinions",
+        "1"
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "The prim inherits </_class_Lamp>, and the class in the root layer stack authors 3. Inherits sit above references in LIVERPS, so the class opinion wins.",
+        "Attribute values are never summed across arcs; value resolution picks the single strongest opinion.",
+        "Class prims are skipped by default traversal, but their opinions still flow into every prim that inherits them.",
+        "The referenced asset does author 1, but a reference is weaker than an inherit arc on the same prim, so its opinion loses."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/inherits-specializes/what-is-inherits.md",
+        "https://openusd.org/release/glossary.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Lamp.intensityScale",
+            "expect": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-002",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.8",
+        "1.7"
+      ],
+      "type": "single",
+      "difficulty": "hard",
+      "stem": "In shot.usda an artist selects the \"blue\" paint variant on /World/Car, yet paintName still reads \"factory\". What explains this?",
+      "usda": {
+        "car.usda": "#usda 1.0\n(\n    defaultPrim = \"Car\"\n)\n\ndef Xform \"Car\" (\n    prepend variantSets = \"paint\"\n    variants = {\n        string paint = \"red\"\n    }\n)\n{\n    custom string paintName = \"factory\"\n\n    variantSet \"paint\" = {\n        \"blue\" {\n            custom string paintName = \"blue\"\n        }\n        \"red\" {\n            custom string paintName = \"red\"\n\n        }\n    }\n}\n",
+        "shot.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Car\" (\n        prepend references = @./car.usda@\n        variants = {\n            string paint = \"blue\"\n        }\n    )\n    {\n    }\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "\"factory\" is a schema fallback value, and fallbacks cannot be changed by variants.",
+        "A variant selection authored in a referencing layer is ignored; only the asset's own selection counts.",
+        "Variant opinions can only affect child prims, never properties of the prim that owns the variant set.",
+        "In car.usda, paintName is authored directly on Car outside the variant set; that direct opinion is stronger than any opinion inside a variant of the same layer stack."
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "paintName is a custom attribute with an authored value; schema fallbacks are only used when no opinion is authored at all.",
+        "The selection in shot.usda is honored (the composed selection is \"blue\"). Stronger layers are exactly where shot-level variant choices belong.",
+        "Variants may hold opinions on the owning prim's own properties as well as on descendants.",
+        "Within car.usda's layer stack, local (direct) opinions beat variant opinions, so the variant can never override \"factory\". Moving the default value into a variant (or removing it) fixes this."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/variant-sets/what-are-variant-sets.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/tracing-through-liverps.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Car.paintName",
+            "expect": "factory"
+          },
+          {
+            "path": "/World/Car",
+            "expect": {
+              "variants": {
+                "paint": "blue"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-003",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.6"
+      ],
+      "type": "single",
+      "difficulty": "hard",
+      "stem": "bolt.usda is referenced into shot.usda as shown. What is the composed roughness of /World/Bolt/Looks/PolishedSteel?",
+      "usda": {
+        "bolt.usda": "#usda 1.0\n(\n    defaultPrim = \"Bolt\"\n)\n\ndef Xform \"Bolt\"\n{\n    def Scope \"Looks\"\n    {\n        def Scope \"Steel\"\n        {\n            float roughness = 0.5\n        }\n\n        def Scope \"PolishedSteel\" (\n            prepend specializes = </Bolt/Looks/Steel>\n        )\n        {\n            float roughness = 0.1\n        }\n    }\n}\n",
+        "shot.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Bolt\" (\n        prepend references = @./bolt.usda@\n    )\n    {\n        over \"Looks\"\n        {\n            over \"Steel\"\n            {\n                float roughness = 0.9\n            }\n        }\n    }\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "0.1",
+        "0.9",
+        "No value, because specializes arcs cannot cross a reference",
+        "0.5"
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "Specializes is the weakest arc and stays weaker than everything else, including the referenced asset's own direct opinion of 0.1. The shot's 0.9 on Steel cannot override it.",
+        "0.9 would win if PolishedSteel inherited Steel. With specializes, the specialized prim's own opinions always beat opinions on the base.",
+        "Specializes arcs authored inside a referenced asset keep working after the asset is referenced.",
+        "0.5 is Steel's value inside the asset and is the weakest opinion here. Even if PolishedSteel authored nothing, the shot's 0.9 on Steel would win over it, because the specializes arc is also implied in the referencing layer stack. 0.5 would show only if neither PolishedSteel nor the shot authored roughness."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/inherits-specializes/what-is-specializes.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Bolt/Looks/PolishedSteel.roughness",
+            "expect": 0.1
+          },
+          {
+            "path": "/World/Bolt/Looks/Steel.roughness",
+            "expect": 0.9
+          }
+        ],
+        "scenarios": [
+          {
+            "note": "PolishedSteel authors nothing",
+            "usda": {
+              "bolt.usda": "#usda 1.0\n(\n    defaultPrim = \"Bolt\"\n)\n\ndef Xform \"Bolt\"\n{\n    def Scope \"Looks\"\n    {\n        def Scope \"Steel\"\n        {\n            float roughness = 0.5\n        }\n\n        def Scope \"PolishedSteel\" (\n            prepend specializes = </Bolt/Looks/Steel>\n        )\n        {\n        }\n    }\n}\n"
+            },
+            "checks": [
+              {
+                "path": "/World/Bolt/Looks/PolishedSteel.roughness",
+                "expect": 0.9
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-004",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.6",
+        "1.1"
+      ],
+      "type": "single",
+      "difficulty": "hard",
+      "stem": "This is the same bolt asset, but PolishedSteel now uses inherits instead of specializes. What is the composed roughness of /World/Bolt/Looks/PolishedSteel?",
+      "usda": {
+        "bolt.usda": "#usda 1.0\n(\n    defaultPrim = \"Bolt\"\n)\n\ndef Xform \"Bolt\"\n{\n    def Scope \"Looks\"\n    {\n        def Scope \"Steel\"\n        {\n            float roughness = 0.5\n        }\n\n        def Scope \"PolishedSteel\" (\n            prepend inherits = </Bolt/Looks/Steel>\n        )\n        {\n            float roughness = 0.1\n        }\n    }\n}\n",
+        "shot.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Bolt\" (\n        prepend references = @./bolt.usda@\n    )\n    {\n        over \"Looks\"\n        {\n            over \"Steel\"\n            {\n                float roughness = 0.9\n            }\n        }\n    }\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "1.0, the average of all authored opinions",
+        "0.9",
+        "0.1",
+        "0.5"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "USD never averages opinions; the strongest opinion wins.",
+        "An inherit authored inside a referenced asset is also applied (implied) in the referencing layer stack. The shot's opinion on Steel is therefore stronger than the asset's own 0.1.",
+        "This is the answer with specializes. With inherits, downstream opinions on the inherited class outrank the referenced asset's direct opinions.",
+        "0.5 comes from Steel in the asset, but both the shot's 0.9 and the asset's 0.1 are stronger."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/inherits-specializes/what-is-inherits.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/tracing-through-liverps.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Bolt/Looks/PolishedSteel.roughness",
+            "expect": 0.9
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-005",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.4"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "Two drones reference the same animation layer; DroneB uses a layer offset. What is DroneB's xformOp:translate at stage time 15?",
+      "usda": {
+        "anim.usda": "#usda 1.0\n(\n    defaultPrim = \"Flight\"\n    endTimeCode = 10\n    startTimeCode = 0\n)\n\ndef Xform \"Flight\"\n{\n    double3 xformOp:translate.timeSamples = {\n        0: (0, 0, 0),\n        10: (100, 0, 0),\n    }\n    uniform token[] xformOpOrder = [\"xformOp:translate\"]\n}\n",
+        "shot.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"DroneA\" (\n        prepend references = @./anim.usda@\n    )\n    {\n    }\n\n    def Xform \"DroneB\" (\n        prepend references = @./anim.usda@ (offset = 10)\n    )\n    {\n    }\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "(150, 0, 0)",
+        "(50, 0, 0)",
+        "(100, 0, 0)",
+        "(25, 0, 0)"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "Time samples are not extrapolated, and the offset shifts time rather than adding to values.",
+        "An offset of 10 moves the animation 10 frames later, so stage time 15 reads the referenced layer at time 5, halfway between the two samples.",
+        "This is DroneA at time 15: without an offset, time 15 is past the last sample and the last value is held.",
+        "That would correspond to sampling the animation at time 2.5, for example with an extra scale of 2 on the offset."
+      ],
+      "citations": [
+        "https://openusd.org/release/tut_xforms.html",
+        "LearnOpenUSD-main/docs/stage-setting/timecodes-timesamples.md",
+        "https://openusd.org/release/glossary.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/DroneB.xformOp:translate",
+            "time": 15,
+            "expect": [
+              50,
+              0,
+              0
+            ]
+          },
+          {
+            "path": "/World/DroneA.xformOp:translate",
+            "time": 15,
+            "expect": [
+              100,
+              0,
+              0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-006",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.4"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "Fifty crowd agents must play one shared walk-cycle layer, each starting on a different frame, without copying the animation data. Which approaches achieve this? (Select TWO.)",
+      "options": [
+        "Author a different timeCodesPerSecond on each agent prim.",
+        "Reference the walk-cycle layer from each agent with its own layer offset on the reference.",
+        "Sublayer the walk-cycle layer into the shot's root layer once per agent.",
+        "Set startTimeCode metadata on each agent prim.",
+        "Drive each agent with value clips whose clip times map stage time to a shifted clip time."
+      ],
+      "answer": [
+        1,
+        4
+      ],
+      "explanations": [
+        "timeCodesPerSecond is layer/stage metadata, not prim metadata, and it changes the meaning of time codes rather than offsetting playback.",
+        "Layer offsets on references retime the referenced layer per arc, so each agent can start at a different frame while sharing one file.",
+        "Sublayers do not remap namespace, so every copy would land on the same prim paths; it cannot target individual agents.",
+        "startTimeCode is layer metadata describing a playback range; it does not retime anything.",
+        "Value clips can retime data through their (stageTime, clipTime) mapping, which also offsets playback per prim without duplicating samples."
+      ],
+      "citations": [
+        "https://openusd.org/release/tut_xforms.html",
+        "LearnOpenUSD-main/docs/beyond-basics/value-clips.md",
+        "https://openusd.org/release/api/_usd__page__value_clips.html"
+      ]
+    },
+    {
+      "id": "comp-007",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.3"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "A city set brings in hundreds of building assets with dense geometry. Layout artists often open the set just to move things, and they do not want to wait for every building to load. Which arc should bring each building's heavy contents into the set?",
+      "options": [
+        "Payload",
+        "Sublayer",
+        "Inherit",
+        "Specialize"
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "Payloads are references that can be left unloaded (for example with Usd.Stage.LoadNone, then Load() on demand), which keeps opening the set fast.",
+        "A sublayer is always composed, has no load control, and cannot place an asset at a new prim path.",
+        "Inherits broadcast opinions from a class prim; they are not a way to bring in or defer external content.",
+        "Specializes provides weak base opinions; it does not offer deferred loading."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/references-payloads/what-are-payloads.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/references-payloads/working-with-payloads.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/references-payloads/what-are-references.md"
+      ]
+    },
+    {
+      "id": "comp-008",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.3"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "Which statements about sublayers are correct? (Select TWO.)",
+      "options": [
+        "Sublayers are skipped when the stage is opened with Usd.Stage.LoadNone.",
+        "A sublayer contributes its whole namespace as-is; it cannot target a prim or remap paths.",
+        "A sublayer can be pointed at one specific prim inside the other file.",
+        "Opinions in sublayers count as local opinions of the layer stack they belong to.",
+        "subLayers supports prepend and append list editing, just like references."
+      ],
+      "answer": [
+        1,
+        3
+      ],
+      "explanations": [
+        "Load rules apply to payloads. A sublayer can be excluded by muting it, not by load rules.",
+        "Sublayering adds a layer to the layer stack; its prims keep their paths. Retargeting content to a new path needs a reference or payload.",
+        "That is what references and payloads do (with an optional prim path); subLayers lists whole layers.",
+        "The L in LIVERPS covers the root layer and all of its recursive sublayers.",
+        "subLayers is a plain ordered list of layers and is not list-edited."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/sublayers/what-are-sublayers.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/sublayers/sublayers-faq.md",
+        "LearnOpenUSD-main/docs/beyond-basics/list-editing.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md"
+      ]
+    },
+    {
+      "id": "comp-009",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.6",
+        "1.1"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "shot.usda has two sublayers, and the first one has a sublayer of its own. What is the composed size of /World/Table?",
+      "usda": {
+        "shot.usda": "#usda 1.0\n(\n    subLayers = [\n        @./dressing.usda@,\n        @./layout.usda@\n    ]\n)\n",
+        "dressing.usda": "#usda 1.0\n(\n    subLayers = [\n        @./dressing_notes.usda@\n    ]\n)\n\nover \"World\"\n{\n    over \"Table\"\n    {\n        color3f[] primvars:displayColor = [(0.5, 0.3, 0.1)]\n    }\n}\n",
+        "dressing_notes.usda": "#usda 1.0\n\nover \"World\"\n{\n    over \"Table\"\n    {\n        double size = 5\n    }\n}\n",
+        "layout.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Cube \"Table\"\n    {\n        double size = 1\n    }\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "1",
+        "6",
+        "The prim does not exist, because dressing_notes.usda only contains an over",
+        "5"
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "layout.usda defines the table, but it is the weakest layer in this stack, so its opinion only applies when no stronger layer has one.",
+        "Opinions are not added together; the strongest one wins.",
+        "An over composes with the def in layout.usda; the prim is defined and gets the over's value.",
+        "Sublayers are gathered depth-first: dressing.usda and its own sublayer dressing_notes.usda are both stronger than layout.usda, which comes later in shot.usda's list."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/sublayers/what-are-sublayers.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Table.size",
+            "expect": 5
+          },
+          {
+            "path": "/World/Table",
+            "expect": {
+              "type": "Cube"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-010",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.1"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "Right now /World/Ball.radius composes to 1 from base.usda. The supervisor wants tweak.usda's radius of 2 to win without deleting base.usda's opinion. Which change achieves this?",
+      "usda": {
+        "shot.usda": "#usda 1.0\n(\n    subLayers = [\n        @./base.usda@,\n        @./tweak.usda@\n    ]\n)\n",
+        "base.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Sphere \"Ball\"\n    {\n        double radius = 1\n    }\n}\n",
+        "tweak.usda": "#usda 1.0\n\nover \"World\"\n{\n    over \"Ball\"\n    {\n        double radius = 2\n    }\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "Write `prepend` in front of the tweak.usda entry in subLayers.",
+        "Reorder subLayers in shot.usda so tweak.usda is listed before base.usda.",
+        "Set the stage's edit target to tweak.usda.",
+        "Change `over` to `def` in tweak.usda."
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "subLayers is not a list-edited field, so prepend/append do not apply to it.",
+        "Earlier entries in subLayers are stronger. Moving tweak.usda first makes its opinion win while base.usda stays untouched.",
+        "An edit target only chooses where new edits are written; it does not make that layer stronger.",
+        "The specifier does not affect how strong a property opinion is; layer order does."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/sublayers/what-are-sublayers.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md",
+        "LearnOpenUSD-main/docs/beyond-basics/edit-targets-layer-muting.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Ball.radius",
+            "expect": 1
+          }
+        ],
+        "scenarios": [
+          {
+            "note": "subLayers reordered",
+            "usda": {
+              "shot.usda": "#usda 1.0\n(\n    subLayers = [\n        @./tweak.usda@,\n        @./base.usda@\n    ]\n)\n"
+            },
+            "checks": [
+              {
+                "path": "/World/Ball.radius",
+                "expect": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-011",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.7"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "For which needs is a variant set a good way to structure an asset? (Select TWO.)",
+      "options": [
+        "Storing the per-shot animation of every shot in a film inside the character asset.",
+        "Letting the modeling and surfacing departments contribute to the same asset at the same time.",
+        "Exposing a continuously adjustable wear amount between 0 and 1.",
+        "Switching an asset between high, medium and low level-of-detail representations.",
+        "A sofa sold in four discrete fabric looks that set dressers choose between."
+      ],
+      "answer": [
+        3,
+        4
+      ],
+      "explanations": [
+        "That bloats the asset for every consumer; shot animation belongs in shot layers that reference the character.",
+        "Only one variant per set is active, so variants cannot combine two departments' work; separate workstream layers can.",
+        "A continuous parameter is better as an attribute or primvar; variants are for discrete choices.",
+        "LOD switching is a common variant set: one representation is active at a time and the choice can be made per instance or per shot.",
+        "A small set of named, mutually exclusive alternatives is the classic use of a variant set."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/variant-sets/what-are-variant-sets.md",
+        "LearnOpenUSD-main/docs/asset-structure/workstreams/modeling-workstreams.md",
+        "https://openusd.org/release/tut_authoring_variants.html"
+      ]
+    },
+    {
+      "id": "comp-012",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.8"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "An artist added the `over \"Chair\"` block to shot.usda to move the referenced chair to z = 50, but /World/Chair does not move. Why?",
+      "usda": {
+        "shot.usda": "#usda 1.0\n(\n    defaultPrim = \"World\"\n)\n\ndef Xform \"World\"\n{\n    def Xform \"Chair\" (\n        prepend references = @./chair.usda@\n    )\n    {\n    }\n}\n\nover \"Chair\"\n{\n    double3 xformOp:translate = (0, 0, 50)\n}\n",
+        "chair.usda": "#usda 1.0\n(\n    defaultPrim = \"Chair\"\n)\n\ndef Xform \"Chair\"\n{\n    double3 xformOp:translate = (0, 0, 0)\n    uniform token[] xformOpOrder = [\"xformOp:translate\"]\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "xformOp:translate only takes effect when xformOpOrder is authored in the same layer.",
+        "An over cannot change an attribute that a referenced layer already authors; a def is needed.",
+        "The over is authored at /Chair, which is a different path from /World/Chair, so it overrides nothing and only creates an undefined prim.",
+        "Opinions in the root layer are weaker than opinions brought in by references."
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "xformOpOrder composes like any other attribute; the value from chair.usda would apply.",
+        "Overs are exactly how stronger layers override authored values.",
+        "Overs apply by path. The referenced chair lives at /World/Chair, so the over must be nested under `over \"World\"` (or authored inside the World def).",
+        "The opposite is true: local opinions in the root layer stack are the strongest."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/composition-basics/specifiers.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/references-payloads/what-are-references.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Chair.xformOp:translate",
+            "expect": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "path": "/Chair",
+            "expect": {
+              "exists": true,
+              "specifier": "over",
+              "defined": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-013",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.9"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "An internal asset composes dozens of layers through references, sublayers and variants, and some layer and texture paths are identifiers that only the studio's custom resolver understands (for example studio://props/chair). Before it goes to an outside vendor, which steps make it self-contained? (Select TWO.)",
+      "options": [
+        "Flatten the composed stage (UsdStage::Flatten or `usdcat --flatten`) so the vendor receives a single layer instead of the internal layer structure.",
+        "Mute all sublayers before saving so their contents are left out.",
+        "Rename every prim to strip the studio's naming convention.",
+        "Rewrite asset paths that only the studio resolver understands into relative paths and ship the files they point to (for example packaged into a .usdz).",
+        "Change every def to over so the vendor's tools can redefine the prims."
+      ],
+      "answer": [
+        0,
+        3
+      ],
+      "explanations": [
+        "Flattening bakes the composed result into one layer. Note that only the current variant selections survive, and non-layer assets such as textures still have to travel with it.",
+        "Muting removes those layers' opinions from the result, losing real asset data.",
+        "Prim names do not create external dependencies; renaming only breaks downstream overrides.",
+        "The vendor has no access to the custom resolver, so every remaining asset path must resolve with standard, relative paths.",
+        "Prims that are only overs are not defined, so they are skipped by default traversal and rendering."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_stage.html",
+        "https://openusd.org/release/toolset.html",
+        "LearnOpenUSD-main/docs/stage-setting/usd-file-formats.md",
+        "https://openusd.org/release/spec_usdz.html"
+      ]
+    },
+    {
+      "id": "comp-014",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.10"
+      ],
+      "type": "multi",
+      "difficulty": "hard",
+      "stem": "Both crates in yard.usda are instanceable references to crate.usda. Only Crate_01's Box should lose its wear value; Crate_02 must keep it. Which edits in yard.usda achieve this? (Select TWO.)",
+      "usda": {
+        "crate.usda": "#usda 1.0\n(\n    defaultPrim = \"Crate\"\n)\n\ndef Xform \"Crate\" (\n    kind = \"component\"\n)\n{\n    def Cube \"Box\"\n    {\n        custom float wear = 0.8\n    }\n}\n",
+        "yard.usda": "#usda 1.0\n(\n    defaultPrim = \"Yard\"\n)\n\ndef Xform \"Yard\" (\n    kind = \"assembly\"\n)\n{\n    def Xform \"Crate_01\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n    )\n    {\n    }\n\n    def Xform \"Crate_02\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n    )\n    {\n    }\n}\n"
+      },
+      "root": "yard.usda",
+      "options": [
+        "Keep Crate_01 instanceable and author the blocking over on /Yard/Crate_01/Box.",
+        "Set instanceable = false on Crate_01, then author `over \"Box\" { float wear = None }` beneath it.",
+        "Edit the generated prototype prim (for example /__Prototype_1) directly.",
+        "Set active = false on Crate_01.",
+        "Give Crate_01 an extra inherits arc to a class whose Box child blocks wear; Crate_01 then gets its own prototype and stays instanced."
+      ],
+      "answer": [
+        1,
+        4
+      ],
+      "explanations": [
+        "Opinions on descendants of an instance are ignored, because the descendants come from the shared prototype.",
+        "Deinstancing makes Crate_01's descendants editable again, and a value block (None) removes the 0.8 that the reference brings in.",
+        "Prototypes are generated by the stage and cannot be authored to.",
+        "That removes the whole crate from the stage instead of just the wear value.",
+        "Adding an arc on the instance prim changes its instancing key (ad hoc arc refinement), so it gets a new prototype that includes the block."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/refining-scenegraph-instances/scenegraph-ad-hoc-arcs-refinement.md",
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/refining-scenegraph-instances/scenegraph-deinstance-refinement.md",
+        "https://openusd.org/release/api/_usd__page__scenegraph_instancing.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Yard/Crate_01/Box.wear",
+            "expect": 0.8
+          },
+          {
+            "path": "/Yard/Crate_01",
+            "expect": {
+              "instance": true,
+              "shares_prototype_with": {
+                "/Yard/Crate_02": true
+              }
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "note": "deinstance Crate_01",
+            "usda": {
+              "yard.usda": "#usda 1.0\n(\n    defaultPrim = \"Yard\"\n)\n\ndef Xform \"Yard\" (\n    kind = \"assembly\"\n)\n{\n    def Xform \"Crate_01\" (\n        instanceable = false\n        prepend references = @./crate.usda@\n    )\n    {\n        over \"Box\"\n        {\n            float wear = None\n        }\n    }\n\n    def Xform \"Crate_02\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n    )\n    {\n    }\n}\n"
+            },
+            "checks": [
+              {
+                "path": "/Yard/Crate_01/Box.wear",
+                "expect": null
+              },
+              {
+                "path": "/Yard/Crate_01",
+                "expect": {
+                  "instance": false
+                }
+              },
+              {
+                "path": "/Yard/Crate_02/Box.wear",
+                "expect": 0.8
+              }
+            ]
+          },
+          {
+            "note": "ad hoc inherits arc",
+            "usda": {
+              "yard.usda": "#usda 1.0\n(\n    defaultPrim = \"Yard\"\n)\n\ndef Xform \"Yard\" (\n    kind = \"assembly\"\n)\n{\n    def Xform \"Crate_01\" (\n        instanceable = true\n        prepend inherits = </_NoWear>\n        prepend references = @./crate.usda@\n    )\n    {\n    }\n\n    def Xform \"Crate_02\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n    )\n    {\n    }\n}\n\nclass \"_NoWear\"\n{\n    over \"Box\"\n    {\n        float wear = None\n    }\n}\n"
+            },
+            "checks": [
+              {
+                "path": "/Yard/Crate_01/Box.wear",
+                "expect": null
+              },
+              {
+                "path": "/Yard/Crate_01",
+                "expect": {
+                  "instance": true,
+                  "shares_prototype_with": {
+                    "/Yard/Crate_02": false
+                  }
+                }
+              },
+              {
+                "path": "/Yard/Crate_02/Box.wear",
+                "expect": 0.8
+              }
+            ]
+          },
+          {
+            "note": "block authored on instance descendant",
+            "usda": {
+              "yard.usda": "#usda 1.0\n(\n    defaultPrim = \"Yard\"\n)\n\ndef Xform \"Yard\" (\n    kind = \"assembly\"\n)\n{\n    def Xform \"Crate_01\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n    )\n    {\n        over \"Box\"\n        {\n            float wear = None\n        }\n    }\n\n    def Xform \"Crate_02\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n    )\n    {\n    }\n}\n"
+            },
+            "checks": [
+              {
+                "path": "/Yard/Crate_01/Box.wear",
+                "expect": 0.8
+              },
+              {
+                "path": "/Yard/Crate_01",
+                "expect": {
+                  "instance": true,
+                  "shares_prototype_with": {
+                    "/Yard/Crate_02": true
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-015",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.5"
+      ],
+      "type": "multi",
+      "difficulty": "easy",
+      "stem": "Layout, animation and lighting artists edit the same shot at the same time. Which layering choices reduce conflicts while keeping the right department in control? (Select TWO.)",
+      "options": [
+        "Order the department sublayers so the department whose decisions should win is listed first.",
+        "Give each department its own layer and sublayer all of them into the shot's root layer.",
+        "Put each department's work into its own variant of a single variant set on the shot.",
+        "Flatten the shot after every save so later edits overwrite earlier ones.",
+        "Have every artist save into the shot's root layer so there is only one file to track."
+      ],
+      "answer": [
+        0,
+        1
+      ],
+      "explanations": [
+        "Sublayer order sets strength; placing, for example, lighting above layout lets lighting's overrides win where they overlap.",
+        "Separate files mean artists never write to the same layer, while the shot still composes everyone's work.",
+        "Only one variant is active per set, so the departments' work would never compose together.",
+        "Flattening destroys the layer separation that makes collaboration manageable.",
+        "Concurrent writes to one layer cause conflicts and lost work."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/sublayers/what-are-sublayers.md",
+        "LearnOpenUSD-main/docs/asset-structure/workstreams/modeling-workstreams.md",
+        "LearnOpenUSD-main/docs/asset-structure/workstreams/adding-user-workstreams.md"
+      ]
+    },
+    {
+      "id": "comp-016",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.11"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "A single large chair.usd holds the chair's geometry, materials and rigging, so modelers and surfacing artists keep overwriting each other's work. Which restructuring best supports parallel workstreams?",
+      "options": [
+        "Split the content into layers per workstream (for example geo.usd and mtl.usd) and have the asset's contents layer compose them, so each team owns its own file.",
+        "Convert chair.usd to .usdc so saves are faster and collide less.",
+        "Put geometry and materials into two variants of one variant set.",
+        "Keep one file and have the teams take turns locking it."
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "Modeling workstreams as separate layers in the asset's layer stack lets each team author sparsely in its own file while the asset still composes into one result.",
+        "The encoding does not change who writes to the file.",
+        "Variants are mutually exclusive, so the geometry and materials could never be seen together.",
+        "Locking serializes the work instead of modeling the workstreams; it does not scale."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-structure/workstreams/modeling-workstreams.md",
+        "LearnOpenUSD-main/docs/asset-structure/workstreams/adding-user-workstreams.md",
+        "LearnOpenUSD-main/docs/asset-structure/asset-structure-principles/organizing-prim-hierarchy.md"
+      ]
+    },
+    {
+      "id": "comp-017",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.2"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "A riverbed needs about two million pebbles drawn from five pebble models. Only position, orientation and scale vary per pebble, and nobody will select or edit individual pebbles. Which representation fits best?",
+      "options": [
+        "One variant set with two million variants",
+        "Two million separate Mesh prims",
+        "Two million instanceable prims, each referencing a pebble asset",
+        "A UsdGeomPointInstancer with the five models as prototypes and per-instance arrays"
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "Variants choose between alternatives; they do not create copies.",
+        "Unique meshes multiply memory and composition cost with no benefit here.",
+        "Scenegraph instancing shares the pebbles' insides, but you would still pay for two million instance prims and their composition.",
+        "Point instancing stores each pebble as array entries rather than as a prim, which scales to millions of copies."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/authoring-point-instancing/point-instancing-intro.md",
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/what-is-instancing.md",
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/instancing-faq.md"
+      ]
+    },
+    {
+      "id": "comp-018",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.2"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "A park layout places 300 copies of a few tree assets. Set dressers must be able to pick each tree, change its transform and sometimes switch its season variant, but nobody edits a tree's internal hierarchy. Which approach fits best?",
+      "options": [
+        "Sublayer every tree file into the layout layer",
+        "Reference the tree assets on individual prims marked instanceable",
+        "One PointInstancer whose prototypes are the trees",
+        "Flatten each tree into the layout layer"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "Sublayers do not remap namespace, so all copies would land on the same prim paths.",
+        "Each tree keeps its own prim for selection, transforms and variant selections, while trees with the same arcs and selections share a prototype for their internals.",
+        "Point instances are not prims, so per-tree selection and variant switching are not natural; point instancing pays off at much larger counts.",
+        "Flattening copies all the data into the layout and gives up sharing."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/authoring-scenegraph-instancing/scenegraph-instancing-intro.md",
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/what-is-instancing.md",
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/instancing-faq.md"
+      ]
+    },
+    {
+      "id": "comp-019",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.3"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "set.usda is opened with Usd.Stage.Open(\"set.usda\", Usd.Stage.LoadNone). Which statements are true? (Select TWO.)",
+      "usda": {
+        "set.usda": "#usda 1.0\n(\n    defaultPrim = \"Set\"\n)\n\ndef Xform \"Set\"\n{\n    def Xform \"Statue\" (\n        prepend payload = @./statue_geo.usda@\n    )\n    {\n        double3 xformOp:translate = (4, 0, 0)\n        uniform token[] xformOpOrder = [\"xformOp:translate\"]\n    }\n}\n",
+        "statue_geo.usda": "#usda 1.0\n(\n    defaultPrim = \"Statue\"\n)\n\ndef Xform \"Statue\" (\n    kind = \"component\"\n)\n{\n    def Mesh \"Geom\"\n    {\n    }\n}\n"
+      },
+      "root": "set.usda",
+      "options": [
+        "/Set/Statue exists and still has the translate authored in set.usda.",
+        "/Set/Statue reports kind = component, because kind is read from the payload even when unloaded.",
+        "LoadNone also skips references, so referenced prims are missing too.",
+        "/Set/Statue/Geom exists but is marked inactive.",
+        "/Set/Statue/Geom is not on the stage until the payload is loaded."
+      ],
+      "answer": [
+        0,
+        4
+      ],
+      "explanations": [
+        "The prim and the opinions authored on it in set.usda are composed regardless of load state.",
+        "kind is authored inside the payload, so it is not composed while the payload is unloaded; this is why important metadata is often lofted above the payload.",
+        "Load rules only govern payloads; references are always composed.",
+        "Unloaded payload contents are absent, which is different from inactive prims.",
+        "Everything that comes only from the payload is left out while it is unloaded."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/references-payloads/working-with-payloads.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/references-payloads/what-are-payloads.md",
+        "LearnOpenUSD-main/docs/asset-structure/reference-payload-pattern/lofting-variant-sets.md"
+      ],
+      "verify": {
+        "load": "none",
+        "checks": [
+          {
+            "path": "/Set/Statue",
+            "expect": {
+              "exists": true,
+              "kind": ""
+            }
+          },
+          {
+            "path": "/Set/Statue.xformOp:translate",
+            "expect": [
+              4,
+              0,
+              0
+            ]
+          },
+          {
+            "path": "/Set/Statue/Geom",
+            "expect": false
+          }
+        ],
+        "scenarios": [
+          {
+            "note": "payload loaded",
+            "checks": [
+              {
+                "path": "/Set/Statue",
+                "expect": {
+                  "kind": "component"
+                }
+              },
+              {
+                "path": "/Set/Statue/Geom",
+                "expect": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-020",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.6"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "Which list orders the composition arcs from strongest to weakest according to LIVERPS?",
+      "options": [
+        "Local, Inherits, VariantSets, References, Payloads, Specializes, Relocates",
+        "Local, References, Inherits, VariantSets, Payloads, Relocates, Specializes",
+        "Specializes, Payloads, References, Relocates, VariantSets, Inherits, Local",
+        "Local, Inherits, VariantSets, Relocates, References, Payloads, Specializes"
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "Relocates is not the weakest arc; it comes right after variant sets.",
+        "References are weaker than inherits and variant sets.",
+        "This is the right sequence read from weakest to strongest, the reverse of what was asked.",
+        "This is the LIVERPS order; relocates (the E) sits between variant sets and references."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md",
+        "https://openusd.org/release/glossary.html"
+      ]
+    },
+    {
+      "id": "comp-021",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.6"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "In shot.usda the Bulb prim both references bulb.usda and selects the \"large\" variant of a variant set authored in the same layer. What is the composed radius?",
+      "usda": {
+        "bulb.usda": "#usda 1.0\n(\n    defaultPrim = \"Bulb\"\n)\n\ndef Sphere \"Bulb\"\n{\n    double radius = 1\n}\n",
+        "shot.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Sphere \"Bulb\" (\n        prepend references = @./bulb.usda@\n        prepend variantSets = \"size\"\n        variants = {\n            string size = \"large\"\n        }\n    )\n    {\n        variantSet \"size\" = {\n            \"large\" {\n                double radius = 5\n            }\n            \"small\" {\n                double radius = 0.5\n\n            }\n        }\n    }\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "6",
+        "5",
+        "1",
+        "0.5"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "Opinions are not added together.",
+        "Variant set opinions (V) are stronger than reference opinions (R), so the selected large variant wins over the asset's 1.",
+        "The referenced asset authors 1, but references are weaker than variant sets on the same prim.",
+        "0.5 belongs to the unselected small variant; unselected variants contribute nothing."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/variant-sets/what-are-variant-sets.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Bulb.radius",
+            "expect": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-022",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.1",
+        "1.8"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "A script runs `stage = Usd.Stage.Open(\"shot.usda\")`, `stage.SetEditTarget(Usd.EditTarget(Sdf.Layer.FindOrOpen(\"anim.usda\")))`, then `ball.GetAttribute(\"radius\").Set(3.0)` and `print(ball.GetAttribute(\"radius\").Get())`, where ball is the /World/Ball prim. The layers show the files after the script ran. What is printed?",
+      "usda": {
+        "shot.usda": "#usda 1.0\n(\n    subLayers = [\n        @./anim.usda@\n    ]\n)\n\nover \"World\"\n{\n    over \"Ball\"\n    {\n        double radius = 2\n    }\n}\n",
+        "anim.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Sphere \"Ball\"\n    {\n        double radius = 3\n    }\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "3.0, because the most recent write always wins",
+        "Nothing; an error is raised because only the root layer can be an edit target",
+        "2.0, because the edit went into anim.usda while shot.usda, the root layer, holds a stronger opinion",
+        "3.0, because setting an edit target makes that layer the strongest"
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "Composition is ordered by layer strength, not by when values were written.",
+        "Any layer in the stage's layer stack (here a sublayer) can be the edit target.",
+        "The edit target controls where an opinion is written, not how strong it is. The root layer's 2.0 still wins over the sublayer.",
+        "Edit targets never change strength ordering."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/edit-targets-layer-muting.md",
+        "https://openusd.org/release/api/class_usd_edit_target.html",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Ball.radius",
+            "expect": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "comp-023",
+      "domain": "Composition",
+      "objective_ids": [
+        "1.7"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "A script runs `vset = prim.GetVariantSets().AddVariantSet(\"finish\")`, adds the variants \"matte\" and \"gloss\", calls `vset.SetVariantSelection(\"gloss\")`, and then needs `prim.GetAttribute(\"roughness\").Set(0.05)` to be stored inside the gloss variant instead of as a direct opinion. What should wrap the Set call?",
+      "options": [
+        "vset.ClearVariantSelection()",
+        "with vset.GetVariantEditContext():",
+        "stage.SetEditTarget(stage.GetRootLayer())",
+        "prim.SetActive(False)"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "Clearing the selection only removes the authored choice; it does not redirect edits.",
+        "GetVariantEditContext returns an edit context that targets the currently selected variant, so edits made inside the with-block are written into that variant.",
+        "That is the default target; the value would still be written as a direct opinion in the root layer.",
+        "Deactivating the prim has nothing to do with where edits are authored."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/variant-sets/working-with-variant-sets.md",
+        "https://openusd.org/release/api/class_usd_variant_set.html",
+        "https://openusd.org/release/tut_authoring_variants.html"
+      ]
+    },
+    {
+      "id": "ca-001",
+      "domain": "Content Aggregation",
+      "objective_ids": [
+        "2.1"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "The third instance of /Forest/Rocks must become a Slab instead of a Boulder. The Slab prim already exists under Prototypes. Which edit is correct?",
+      "usda": {
+        "forest.usda": "#usda 1.0\n(\n    defaultPrim = \"Forest\"\n)\n\ndef Xform \"Forest\"\n{\n    def PointInstancer \"Rocks\"\n    {\n        point3f[] positions = [(0, 0, 0), (5, 0, 0), (10, 0, 0)]\n        int[] protoIndices = [0, 0, 0]\n        rel prototypes = [</Forest/Rocks/Prototypes/Boulder>]\n\n        def Scope \"Prototypes\"\n        {\n            def Sphere \"Boulder\"\n            {\n            }\n\n            def Cube \"Slab\"\n            {\n            }\n        }\n    }\n}\n"
+      },
+      "options": [
+        "Add </Forest/Rocks/Prototypes/Slab> as the second target of prototypes and set protoIndices to [0, 0, 1].",
+        "Only set protoIndices to [0, 0, 1]; the Slab is picked up because it lives under the instancer.",
+        "Add the Slab to prototypes and append a fourth position, leaving protoIndices with three entries.",
+        "Set protoIndices to [0, 0, \"Slab\"] so the third instance picks the prototype by name."
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "protoIndices index into the ordered targets of the prototypes relationship, so the new prototype must be targeted before an instance can use index 1.",
+        "Being a descendant is not enough; with a single prototype target, index 1 is out of range.",
+        "That adds an instance instead of changing one, and leaves the per-instance arrays with mismatched lengths.",
+        "protoIndices is an int[] attribute; prototypes are chosen by index, never by name."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/authoring-point-instancing/point-instancing-intro.md",
+        "https://openusd.org/release/api/class_usd_geom_point_instancer.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Forest/Rocks.prototypes",
+            "expect": [
+              "/Forest/Rocks/Prototypes/Boulder"
+            ]
+          }
+        ],
+        "scenarios": [
+          {
+            "note": "prototype added",
+            "usda": {
+              "forest.usda": "#usda 1.0\n(\n    defaultPrim = \"Forest\"\n)\n\ndef Xform \"Forest\"\n{\n    def PointInstancer \"Rocks\"\n    {\n        point3f[] positions = [(0, 0, 0), (5, 0, 0), (10, 0, 0)]\n        int[] protoIndices = [0, 0, 1]\n        rel prototypes = [\n            </Forest/Rocks/Prototypes/Boulder>,\n            </Forest/Rocks/Prototypes/Slab>,\n        ]\n\n        def Scope \"Prototypes\"\n        {\n            def Sphere \"Boulder\"\n            {\n            }\n\n            def Cube \"Slab\"\n            {\n            }\n        }\n    }\n}\n"
+            },
+            "checks": [
+              {
+                "path": "/Forest/Rocks.prototypes",
+                "expect": [
+                  "/Forest/Rocks/Prototypes/Boulder",
+                  "/Forest/Rocks/Prototypes/Slab"
+                ]
+              },
+              {
+                "path": "/Forest/Rocks.protoIndices",
+                "expect": [
+                  0,
+                  0,
+                  1
+                ]
+              },
+              {
+                "path": "/Forest/Rocks.positions",
+                "expect": {
+                  "length": 3
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ca-002",
+      "domain": "Content Aggregation",
+      "objective_ids": [
+        "2.3"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "You need 40 specific instances of a 100,000-instance PointInstancer to stop rendering, without rewriting its per-instance arrays. Which mechanisms are designed for this? (Select TWO.)",
+      "options": [
+        "Set visibility = invisible on the prototype prims.",
+        "Prune them through the inactiveIds list-op metadata (for example with PointInstancer.DeactivateIds).",
+        "Move those instances into a second PointInstancer and deactivate it.",
+        "List their ids in the invisibleIds attribute (for example with PointInstancer.InvisIds(ids, time)).",
+        "Delete their entries from positions and leave the other arrays unchanged."
+      ],
+      "answer": [
+        1,
+        3
+      ],
+      "explanations": [
+        "That hides every instance that uses those prototypes, not just the 40 chosen ones.",
+        "inactiveIds deactivates instances entirely; it cannot vary over time but can be list-edited sparsely in stronger layers.",
+        "This rewrites the arrays of both instancers, which is exactly what was to be avoided.",
+        "invisibleIds hides instances and can be time-sampled, which suits instances that blink on and off. Do not confuse this with MakeInvisible(), which is inherited from UsdGeomImageable and sets visibility = invisible on the whole PointInstancer prim.",
+        "That rewrites the data and leaves protoIndices, orientations and scales out of sync with positions."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/refining-point-instances.md",
+        "https://openusd.org/release/api/class_usd_geom_point_instancer.html"
+      ]
+    },
+    {
+      "id": "ca-003",
+      "domain": "Content Aggregation",
+      "objective_ids": [
+        "2.2"
+      ],
+      "type": "single",
+      "difficulty": "hard",
+      "stem": "Lamp_01 and Lamp_02 are instances of the same lamp asset. room.usda authors a displayColor primvar on the Lamp_01 instance prim itself. What is the result?",
+      "usda": {
+        "lamp.usda": "#usda 1.0\n(\n    defaultPrim = \"Lamp\"\n)\n\ndef Xform \"Lamp\" (\n    kind = \"component\"\n)\n{\n    def Mesh \"Shade\"\n    {\n        float3[] extent = [(0, 0, 0), (1, 1, 0)]\n        int[] faceVertexCounts = [4]\n        int[] faceVertexIndices = [0, 1, 2, 3]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]\n    }\n}\n",
+        "room.usda": "#usda 1.0\n\ndef Xform \"Room\"\n{\n    def Xform \"Lamp_01\" (\n        instanceable = true\n        prepend references = @./lamp.usda@\n    )\n    {\n        color3f[] primvars:displayColor = [(0.9, 0.1, 0.1)] (\n            interpolation = \"constant\"\n        )\n    }\n\n    def Xform \"Lamp_02\" (\n        instanceable = true\n        prepend references = @./lamp.usda@\n    )\n    {\n    }\n}\n"
+      },
+      "root": "room.usda",
+      "options": [
+        "Lamp_02 also turns red, because both lamps share a prototype.",
+        "Nothing changes, because no opinion can be authored on an instanceable prim.",
+        "Lamp_01 is automatically deinstanced so the color can be applied.",
+        "Lamp_01's Shade mesh inherits the red primvar from its instance prim, and Lamp_01 stays an instance sharing a prototype with Lamp_02."
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "The primvar lives on Lamp_01, outside the prototype, so only Lamp_01's subtree inherits it.",
+        "Only the descendants of an instance are locked; the instance prim itself can carry overrides such as transforms and primvars.",
+        "USD never deinstances on its own; instancing only changes when instanceable or the arcs change.",
+        "Opinions on the instance prim itself are allowed, and constant primvars are inherited down namespace. Because the mesh does not author its own displayColor, the inherited value applies without breaking instancing."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-structure/reference-payload-pattern/lofting-primvars.md",
+        "LearnOpenUSD-main/docs/beyond-basics/primvars.md",
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/refining-scenegraph-instances/scenegraph-instance-refinement.md",
+        "https://openusd.org/release/api/class_usd_geom_primvars_a_p_i.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Room/Lamp_01",
+            "expect": {
+              "instance": true,
+              "shares_prototype_with": {
+                "/Room/Lamp_02": true
+              }
+            }
+          },
+          {
+            "path": "/Room/Lamp_01/Shade",
+            "expect": {
+              "inherited_primvar": {
+                "displayColor": [
+                  [
+                    0.9,
+                    0.1,
+                    0.1
+                  ]
+                ]
+              }
+            }
+          },
+          {
+            "path": "/Room/Lamp_02/Shade",
+            "expect": {
+              "inherited_primvar": {
+                "displayColor": null
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ca-004",
+      "domain": "Content Aggregation",
+      "objective_ids": [
+        "2.4"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "yard.usda places four crates. A and B are instanceable and both select wear = clean (with different transforms), C is instanceable and selects dirty, and D is not instanceable. How many prototypes does the stage create?",
+      "usda": {
+        "crate.usda": "#usda 1.0\n(\n    defaultPrim = \"Crate\"\n)\n\ndef Xform \"Crate\" (\n    kind = \"component\"\n    prepend variantSets = \"wear\"\n    variants = {\n        string wear = \"clean\"\n    }\n)\n{\n    def Cube \"Box\"\n    {\n    }\n\n    variantSet \"wear\" = {\n        \"clean\" {\n            over \"Box\"\n            {\n                color3f[] primvars:displayColor = [(0.8, 0.6, 0.4)]\n            }\n        }\n        \"dirty\" {\n            over \"Box\"\n            {\n                color3f[] primvars:displayColor = [(0.3, 0.25, 0.2)]\n            }\n        }\n    }\n}\n",
+        "yard.usda": "#usda 1.0\n\ndef Xform \"Yard\"\n{\n    def Xform \"A\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n        variants = {\n            string wear = \"clean\"\n        }\n    )\n    {\n        double3 xformOp:translate = (0, 0, 0)\n        uniform token[] xformOpOrder = [\"xformOp:translate\"]\n    }\n\n    def Xform \"B\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n        variants = {\n            string wear = \"clean\"\n        }\n    )\n    {\n        double3 xformOp:translate = (2, 0, 0)\n        uniform token[] xformOpOrder = [\"xformOp:translate\"]\n    }\n\n    def Xform \"C\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n        variants = {\n            string wear = \"dirty\"\n        }\n    )\n    {\n    }\n\n    def Xform \"D\" (\n        prepend references = @./crate.usda@\n    )\n    {\n    }\n}\n"
+      },
+      "root": "yard.usda",
+      "options": [
+        "4",
+        "1",
+        "2",
+        "3"
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "Instances with identical arcs and selections share prototypes rather than getting one each.",
+        "C cannot share with A and B, because its variant selection gives it different composed contents.",
+        "A and B share one prototype: same arcs, same variant selection, and transforms on the instance prims do not matter. C needs a second prototype. D is not an instance at all.",
+        "D does not create a prototype because it is not instanceable."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/authoring-scenegraph-instancing/scenegraph-instancing-intro.md",
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/refining-scenegraph-instances/scenegraph-variant-set-refinement.md",
+        "https://openusd.org/release/api/_usd__page__scenegraph_instancing.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/",
+            "expect": {
+              "prototype_count": 2
+            }
+          },
+          {
+            "path": "/Yard/A",
+            "expect": {
+              "instance": true,
+              "shares_prototype_with": {
+                "/Yard/B": true,
+                "/Yard/C": false
+              }
+            }
+          },
+          {
+            "path": "/Yard/D",
+            "expect": {
+              "instance": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ca-005",
+      "domain": "Content Aggregation",
+      "objective_ids": [
+        "2.4"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "A script walks an assembly with Usd.PrimRange(root, Usd.TraverseInstanceProxies()) and calls `prim.GetAttribute(\"size\").Set(2.0)` on a Cube found beneath an instanceable prim. What happens?",
+      "options": [
+        "The value is silently written into the referenced asset's layer.",
+        "USD rejects the edit with an error, because authoring to an instance proxy is not allowed.",
+        "Only this instance changes, and USD deinstances it automatically.",
+        "Every instance that shares the prototype changes, because the value is written into the prototype."
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "Edits go to the edit target, and this one is refused before anything is written.",
+        "Instance proxies are read-only views of the shared prototype. To change them, edit the instance prim, a broadcast class, an added arc, or deinstance.",
+        "USD does not deinstance on its own, and it does not author through instance proxies.",
+        "Prototypes are generated by the stage and are never an authoring destination."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/authoring-scenegraph-instancing/scenegraph-instancing-intro.md",
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/instancing-faq.md",
+        "https://openusd.org/release/api/_usd__page__scenegraph_instancing.html"
+      ]
+    },
+    {
+      "id": "ca-006",
+      "domain": "Content Aggregation",
+      "objective_ids": [
+        "2.5"
+      ],
+      "type": "single",
+      "difficulty": "hard",
+      "stem": "Every crate in yard.usda is an instanceable reference to crate.usda, whose root prim inherits </_class_Crate>. yard.usda authors the class shown. What is the result for both crates?",
+      "usda": {
+        "crate.usda": "#usda 1.0\n(\n    defaultPrim = \"Crate\"\n)\n\ndef Xform \"Crate\" (\n    kind = \"component\"\n    prepend inherits = </_class_Crate>\n)\n{\n    def Cube \"Box\"\n    {\n        custom float wear = 0.8\n    }\n}\n",
+        "yard.usda": "#usda 1.0\n(\n    defaultPrim = \"Yard\"\n)\n\ndef Xform \"Yard\" (\n    kind = \"assembly\"\n)\n{\n    def Xform \"Crate_01\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n    )\n    {\n    }\n\n    def Xform \"Crate_02\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n    )\n    {\n    }\n}\n\nclass \"_class_Crate\"\n{\n    over \"Box\"\n    {\n        float wear = None\n    }\n}\n"
+      },
+      "root": "yard.usda",
+      "options": [
+        "wear is blocked (no value) on every crate's Box, and the crates stay instances that share one prototype.",
+        "wear is blocked, but instancing is switched off for every crate.",
+        "Only Crate_01 is affected, because a class applies to the first instance only.",
+        "wear still reads 0.8, because class opinions never reach the descendants of instances."
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "The asset's inherit arc is implied in the yard's layer stack, so the class opinion is broadcast to every crate, and all of them still share the same, refined prototype.",
+        "Nothing changes instanceable; the crates' composition stays identical, so they keep sharing a prototype.",
+        "A class applies to every prim that inherits it.",
+        "Broadcasting through inherits (or specializes) is one of the supported ways to refine instances."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/refining-scenegraph-instances/scenegraph-broadcasted-refinement.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/inherits-specializes/what-is-inherits.md",
+        "https://openusd.org/release/api/_usd__page__scenegraph_instancing.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Yard/Crate_01/Box.wear",
+            "expect": null
+          },
+          {
+            "path": "/Yard/Crate_02/Box.wear",
+            "expect": null
+          },
+          {
+            "path": "/Yard/Crate_01",
+            "expect": {
+              "instance": true,
+              "shares_prototype_with": {
+                "/Yard/Crate_02": true
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ca-007",
+      "domain": "Content Aggregation",
+      "objective_ids": [
+        "2.4"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "Given city.usda, which of the listed prims does UsdPrim.IsModel() report as models? (Select TWO.)",
+      "usda": {
+        "city.usda": "#usda 1.0\n(\n    defaultPrim = \"City\"\n)\n\ndef Xform \"City\" (\n    kind = \"assembly\"\n)\n{\n    def Xform \"Block_A\" (\n        kind = \"group\"\n    )\n    {\n        def Xform \"Kiosk\" (\n            kind = \"component\"\n        )\n        {\n            def Xform \"Sign\" (\n                kind = \"subcomponent\"\n            )\n            {\n            }\n        }\n    }\n\n    def Xform \"Loose\"\n    {\n        def Xform \"Bench\" (\n            kind = \"component\"\n        )\n        {\n        }\n    }\n}\n"
+      },
+      "options": [
+        "/City/Block_A/Kiosk/Sign",
+        "/City/Loose/Bench",
+        "/City/Block_A/Kiosk",
+        "/City/Block_A"
+      ],
+      "answer": [
+        2,
+        3
+      ],
+      "explanations": [
+        "subcomponent is not a model kind; it marks an important prim inside a component.",
+        "Its parent Loose has no kind, which breaks the model hierarchy, so Bench is not a model even though it says component.",
+        "A component whose ancestors are all groups or assemblies is a model.",
+        "group is a model kind, and its parent /City is an assembly (a kind of group), so the model hierarchy is intact."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-structure/model-hierarchy/what-are-model-kinds.md",
+        "LearnOpenUSD-main/docs/beyond-basics/model-kinds.md",
+        "https://openusd.org/release/api/kind_page_front.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/City/Block_A",
+            "expect": {
+              "is_model": true
+            }
+          },
+          {
+            "path": "/City/Block_A/Kiosk",
+            "expect": {
+              "is_model": true
+            }
+          },
+          {
+            "path": "/City/Block_A/Kiosk/Sign",
+            "expect": {
+              "is_model": false
+            }
+          },
+          {
+            "path": "/City/Loose/Bench",
+            "expect": {
+              "is_model": false,
+              "kind": "component"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ca-008",
+      "domain": "Content Aggregation",
+      "objective_ids": [
+        "2.4"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "A stadium assembly contains 80 identical seating sections, and each section asset contains 500 identical seats. Which statement about instancing this content is correct?",
+      "options": [
+        "The sections can be instanceable, and the seats inside the section asset can be instanceable too; prototypes may themselves contain instances.",
+        "USD forbids instanceable prims inside a prototype, so only one level can be instanced.",
+        "The sections must be flattened before their seats can be instanced.",
+        "Only PointInstancers can be nested; scenegraph instances cannot."
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "This is nested instancing. It multiplies the savings, but keep the scheme simple enough to understand and refine.",
+        "Nested instancing is supported.",
+        "No flattening is required; instancing is driven by instanceable metadata and composition arcs.",
+        "Scenegraph instances can be nested inside prototypes."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/authoring-scenegraph-instancing/nested-instancing.md",
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/authoring-scenegraph-instancing/scenegraph-instancing-intro.md"
+      ]
+    },
+    {
+      "id": "ca-009",
+      "domain": "Content Aggregation",
+      "objective_ids": [
+        "2.1"
+      ],
+      "type": "multi",
+      "difficulty": "easy",
+      "stem": "Which statements about UsdGeomPointInstancer data are correct? (Select TWO.)",
+      "options": [
+        "Per-instance arrays such as orientations and scales, when authored, must have the same length as positions.",
+        "orientations stores Euler angles in degrees.",
+        "Each point instance is its own prim that can be selected by prim path.",
+        "A PointInstancer can only have one prototype.",
+        "protoIndices stores, per instance, an index into the ordered targets of the prototypes relationship."
+      ],
+      "answer": [
+        0,
+        4
+      ],
+      "explanations": [
+        "Each array holds one entry per instance, so the lengths have to agree.",
+        "orientations holds quaternions (quath[]), not Euler angles.",
+        "Point instances are entries in arrays, not prims; that is what makes them cheap.",
+        "prototypes is a relationship that can target many prototype prims.",
+        "That index chooses which prototype each point instance draws."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/authoring-point-instancing/point-instancing-intro.md",
+        "https://openusd.org/release/api/class_usd_geom_point_instancer.html"
+      ]
+    },
+    {
+      "id": "cust-001",
+      "domain": "Customizing USD",
+      "objective_ids": [
+        "3.4"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "Inspection tools must recognize a fixed group of properties (inspector, inspection date, pass/fail) on existing Mesh, Xform and Camera prims, without changing those prims' types. Which kind of custom schema fits?",
+      "options": [
+        "A new IsA (typed) schema that the prims are retyped to",
+        "A single-apply API schema, applied to the prims through apiSchemas metadata",
+        "A custom model kind",
+        "A new variant set added to every asset"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "A prim has exactly one type, so retyping would remove the Mesh, Xform or Camera behavior.",
+        "API schemas add named properties and behavior to prims of any type, and tools can test for them with HasAPI.",
+        "Kinds classify prims in the model hierarchy; they do not define properties.",
+        "Variant sets switch between alternatives; they are not a schema."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/scene-description-blueprints/schemas.md",
+        "https://openusd.org/release/api/_usd__page__generating_schemas.html",
+        "https://openusd.org/release/tut_generating_new_schema.html"
+      ]
+    },
+    {
+      "id": "cust-002",
+      "domain": "Customizing USD",
+      "objective_ids": [
+        "3.4"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "Which statements about generating custom schemas with usdGenSchema are correct? (Select TWO.)",
+      "options": [
+        "A codeless schema (skipCodeGeneration = true in the customData of schema.usda's GLOBAL prim) needs no compiled library; registering its generatedSchema.usda and plugInfo.json is enough.",
+        "Schema classes are described in a schema.usda file, from which usdGenSchema writes generatedSchema.usda and plugInfo.json (plus C++ and Python sources unless code generation is skipped).",
+        "An IsA schema is attached to a prim by listing its name in the prim's apiSchemas metadata.",
+        "Custom schemas only work after being merged into the core USD source tree.",
+        "usdGenSchema reads a JSON description and writes one USDA layer per asset that uses the schema."
+      ],
+      "answer": [
+        0,
+        1
+      ],
+      "explanations": [
+        "Codeless schemas are easy to distribute because only the generated files and the plugin registration are needed.",
+        "This is the standard schema generation workflow.",
+        "IsA schemas set the prim's type name; apiSchemas lists applied API schemas.",
+        "Schemas are delivered as plugins discovered at runtime; the core does not need to change.",
+        "Its input is a USD layer (schema.usda), and it writes schema definitions and code, not asset layers."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/_usd__page__generating_schemas.html",
+        "https://openusd.org/release/tut_generating_new_schema.html",
+        "LearnOpenUSD-main/docs/scene-description-blueprints/schemas.md"
+      ]
+    },
+    {
+      "id": "cust-003",
+      "domain": "Customizing USD",
+      "objective_ids": [
+        "3.3"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "Tools should treat a new model kind, \"prop\", as a kind of component, so that Kind.Registry.IsA(\"prop\", \"component\") returns True. How is it registered?",
+      "options": [
+        "Declare it in a plugin's plugInfo.json under Info > Kinds, with baseKind set to component.",
+        "Author kind = \"prop\" on a prim; USD infers the base kind from the prim's children.",
+        "Add \"prop\" to the apiSchemas list of each asset.",
+        "Define a class prim named _kind_prop in every asset layer."
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "The kind registry reads custom kinds and their base kinds from plugin metadata at startup.",
+        "Authoring an unknown kind does not register it, and base kinds are never inferred.",
+        "apiSchemas lists API schemas, not kinds.",
+        "Class prims are composition sources; they have nothing to do with the kind registry."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/kind_page_front.html",
+        "LearnOpenUSD-main/docs/beyond-basics/model-kinds.md",
+        "https://openusd.org/release/api/plug_page_front.html"
+      ]
+    },
+    {
+      "id": "cust-004",
+      "domain": "Customizing USD",
+      "objective_ids": [
+        "3.5"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "Your layers reference assets with identifiers such as studio:/props/chair?version=latest, and these must be turned into real file locations when layers are opened. Which OpenUSD extension point is designed for this?",
+      "options": [
+        "A variant set that lists the possible file locations",
+        "A TfDebug symbol that rewrites paths",
+        "An Ar asset resolver plugin: an ArResolver subclass registered through plugInfo.json, as the primary resolver or for a URI scheme",
+        "A layer offset on every reference"
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "Variants hold alternative scene description; path resolution happens in Ar before composition can even read the layer.",
+        "TfDebug only controls diagnostic output.",
+        "Ar decides how asset paths are resolved; a custom resolver can map studio identifiers to files, optionally using a resolver context.",
+        "Layer offsets retime layers; they do not resolve paths."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/ar_page_front.html",
+        "https://openusd.org/release/api/class_ar_resolver_context.html",
+        "https://openusd.org/release/api/plug_page_front.html"
+      ]
+    },
+    {
+      "id": "cust-005",
+      "domain": "Customizing USD",
+      "objective_ids": [
+        "3.1"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "You built a schema plugin against the same USD version your application uses, but at runtime the new schema type is unknown. The plugin's files are installed outside the USD installation. What is the usual fix?",
+      "options": [
+        "Add the folder containing the plugin's plugInfo.json to PXR_PLUGINPATH_NAME before USD starts.",
+        "Copy schema.usda next to every layer that uses the schema.",
+        "Turn on TfDebug output for plugins, which registers missing plugins automatically.",
+        "Rename the compiled library to match the schema class name."
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "The plugin registry discovers plugins by searching that environment variable's paths for plugInfo.json files.",
+        "schema.usda is a build input; runtime discovery uses plugInfo.json and generatedSchema.usda.",
+        "Debug output (for example the PLUG_* symbols) helps you see what was found, but it does not register anything.",
+        "Library names are declared in plugInfo.json; renaming files does not make them discoverable."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/plug_page_front.html",
+        "https://openusd.org/release/api/_usd__page__generating_schemas.html"
+      ]
+    },
+    {
+      "id": "cust-006",
+      "domain": "Customizing USD",
+      "objective_ids": [
+        "3.7"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "You want Hydra to draw procedurally generated geometry, such as debug markers, without authoring any of it into USD layers. Which approach does Hydra 2.0 provide?",
+      "options": [
+        "Mark the markers instanceable in the session layer",
+        "A scene index plugin (an HdSceneIndexPlugin registered with HdSceneIndexPluginRegistry) that adds or modifies Hydra prims in the scene index chain",
+        "Author the markers as over prims so they are never saved",
+        "Tag the markers with TfMallocTag so Hydra treats them as transient"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "The session layer is still a USD layer, and instancing does not generate geometry.",
+        "Scene index plugins filter or extend the scene that Hydra renders, independently of the USD stage.",
+        "Overs are still scene description in a layer, and prims that are only overs are not rendered.",
+        "TfMallocTag tracks memory allocations; it does not create geometry."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/hydra.md",
+        "https://openusd.org/release/api/class_hd_scene_index_plugin.html"
+      ]
+    },
+    {
+      "id": "dx-001",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.3"
+      ],
+      "type": "multi",
+      "difficulty": "easy",
+      "stem": "Which statements correctly compare the .usda and .usdc encodings? (Select TWO.)",
+      "options": [
+        "usda is human-readable text, convenient for small interface layers, diffs and code review.",
+        "Some scene description, such as time samples, can only be stored in usda.",
+        "usdc layers cannot be referenced from usda layers.",
+        "Converting a layer from usda to usdc changes how it composes.",
+        "usdc (crate) is binary; it opens faster and can memory-map large arrays, which suits heavy geometry."
+      ],
+      "answer": [
+        0,
+        4
+      ],
+      "explanations": [
+        "Text layers are easy to inspect and compare, so they suit lightweight aggregation layers.",
+        "Both encodings store the same scene description, time samples included.",
+        "Layers of any encoding can reference, sublayer or payload each other.",
+        "The data model is identical, so composition results do not depend on the encoding.",
+        "Crate is designed for fast loading and low memory use with data-heavy layers."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/stage-setting/usd-file-formats.md",
+        "https://openusd.org/release/maxperf.html",
+        "https://openusd.org/release/tut_converting_between_layer_formats.html"
+      ]
+    },
+    {
+      "id": "dx-002",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.3"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "A script calls Usd.Stage.CreateNew(\"asset.usd\"), defines some prims and saves. With default settings, which encoding does the saved .usd file use?",
+      "options": [
+        "A zip package (usdz)",
+        "Binary crate (usdc)",
+        "Whichever encoding the most recently opened layer used",
+        "Text (usda)"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "A .usd file is never written as a zip package. Sdf treats usdz as read-only, so even Stage.CreateNew(\"asset.usdz\") fails; packages are assembled from finished layers with usdzip or UsdUtils.CreateNewUsdzPackage.",
+        "A .usd file can hold either encoding, and new .usd files are written as crate by default. The file's first bytes tell you which one it uses (PXR-USDC for crate, #usda for text); usdcat prints text to stdout whatever the source encoding.",
+        "The default does not depend on other layers in the session.",
+        "Text is the default only when you name the file .usda."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/stage-setting/usd-file-formats.md",
+        "https://openusd.org/release/usdfaq.html",
+        "https://openusd.org/release/spec_usdz.html"
+      ]
+    },
+    {
+      "id": "dx-003",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.3"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "Which command writes a text copy of a binary layer for inspection, without flattening its composition?",
+      "options": [
+        "usdzip model.usdc model.usda",
+        "usdresolve model.usdc model.usda",
+        "usdchecker model.usdc --out model.usda",
+        "usdcat model.usdc -o model.usda"
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "usdzip creates .usdz packages.",
+        "usdresolve prints how an asset path resolves.",
+        "usdchecker validates assets; it does not convert them.",
+        "usdcat writes the layer in the format implied by the output extension; composition is preserved unless --flatten is given."
+      ],
+      "citations": [
+        "https://openusd.org/release/tut_converting_between_layer_formats.html",
+        "https://openusd.org/release/toolset.html"
+      ]
+    },
+    {
+      "id": "dx-004",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.6"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "You are writing an automated check for assets exported from a DCC. Which tools or APIs are suitable building blocks? (Select TWO.)",
+      "options": [
+        "Sdf.ChangeBlock, which rolls back edits that would make an asset invalid",
+        "usdchecker, which validates a stage or .usdz package against a set of rules and reports failures",
+        "UsdUtils.ComputeAllDependencies, which reports the layers and assets an asset uses, including paths that do not resolve",
+        "usdcat --flatten, which prints validation errors for the composed stage"
+      ],
+      "answer": [
+        1,
+        2
+      ],
+      "explanations": [
+        "Change blocks only batch change notifications; they do not validate or roll back.",
+        "usdchecker is the stock validation tool and is easy to run in a pipeline or CI job.",
+        "Listing unresolved paths catches broken references and missing textures before publishing.",
+        "usdcat converts or flattens layers; it is not a validator."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/data-exchange/asset-validation/what-is-asset-validation.md",
+        "https://openusd.org/release/toolset.html"
+      ]
+    },
+    {
+      "id": "dx-005",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.6",
+        "5.6"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "Your validator inspects the exported panel below. Which problems should it report? (Select TWO.)",
+      "usda": {
+        "panel.usda": "#usda 1.0\n(\n    defaultPrim = \"Panel\"\n    metersPerUnit = 1\n    upAxis = \"Z\"\n)\n\ndef Xform \"Panel\" (\n    kind = \"component\"\n)\n{\n    def Mesh \"Geo\"\n    {\n        float3[] extent = [(0, 0, 0), (1, 1, 0)]\n        int[] faceVertexCounts = [4]\n        int[] faceVertexIndices = [0, 1, 2, 5]\n        point3f[] points = [(0, 0, 0), (2, 0, 0), (2, 2, 0), (0, 2, 0)]\n    }\n}\n"
+      },
+      "options": [
+        "The authored extent does not enclose the points; it should be [(0, 0, 0), (2, 2, 0)].",
+        "faceVertexIndices refers to point 5, but only points 0 to 3 exist.",
+        "faceVertexCounts must contain one entry per point.",
+        "A Mesh must author normals to be valid.",
+        "kind = \"component\" is not allowed on an Xform."
+      ],
+      "answer": [
+        0,
+        1
+      ],
+      "explanations": [
+        "extent must bound the points; a stale extent breaks culling and framing.",
+        "Every face-vertex index must address an existing entry of points.",
+        "faceVertexCounts has one entry per face; here one quad, so [4] is right.",
+        "normals are optional; renderers can compute them.",
+        "Kind is model metadata and is commonly authored on an asset's root Xform."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/data-exchange/asset-validation/what-is-asset-validation.md",
+        "https://openusd.org/release/api/class_usd_geom_mesh.html",
+        "https://openusd.org/release/api/class_usd_geom_boundable.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Panel/Geo",
+            "expect": {
+              "computed_extent": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  2,
+                  2,
+                  0
+                ]
+              ]
+            }
+          },
+          {
+            "path": "/Panel/Geo.extent",
+            "expect": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                1,
+                1,
+                0
+              ]
+            ]
+          },
+          {
+            "path": "/Panel/Geo.points",
+            "expect": {
+              "length": 4
+            }
+          },
+          {
+            "path": "/Panel/Geo.faceVertexIndices",
+            "expect": [
+              0,
+              1,
+              2,
+              5
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dx-006",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.2"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "You are writing a conceptual data-mapping document between MaterialX and UsdShade. Which mapping is correct?",
+      "options": [
+        "A MaterialX nodegraph maps to a UsdGeomSubset.",
+        "A MaterialX surfacematerial maps to a UsdLux light.",
+        "A MaterialX nodegraph maps to a UsdShadeNodeGraph prim, and its nodes map to UsdShadeShader prims.",
+        "Each MaterialX node maps to its own variant set."
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "GeomSubsets partition geometry elements; they do not represent shading graphs.",
+        "A surfacematerial corresponds to a UsdShadeMaterial.",
+        "This mirrors how the usdMtlx plugin represents MaterialX documents in USD.",
+        "Variant sets hold alternatives, not shading nodes."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/usd_mtlx_page_front.html",
+        "https://openusd.org/release/api/class_usd_shade_node_graph.html",
+        "LearnOpenUSD-main/docs/data-exchange/data-extraction/what-is-data-extraction.md"
+      ]
+    },
+    {
+      "id": "dx-007",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.2",
+        "4.7"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "A converter brings glTF 2.0 files into USD. Which stage metadata should it author so the result keeps glTF's coordinate conventions?",
+      "options": [
+        "No metadata is needed; USD reads glTF units at render time",
+        "upAxis = \"Y\" and metersPerUnit = 1.0",
+        "upAxis = \"Y\" and metersPerUnit = 0.01",
+        "upAxis = \"Z\" and metersPerUnit = 0.01"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "Unit and axis intent are only known if the converter authors them (otherwise USD fallbacks apply).",
+        "glTF content is Y-up and measured in meters; authoring both makes that intent explicit to USD consumers.",
+        "The axis matches, but 0.01 declares centimeters while glTF uses meters.",
+        "That describes Z-up centimeters, not glTF."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/units.md",
+        "https://openusd.org/release/api/usd_geom_page_front.html",
+        "LearnOpenUSD-main/docs/data-exchange/data-transformation/what-is-data-transformation.md"
+      ]
+    },
+    {
+      "id": "dx-008",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.1"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "When converting a USD asset to glTF 2.0, which steps help preserve fidelity? (Select TWO.)",
+      "options": [
+        "Keep every custom primvar as-is; glTF stores arbitrary USD primvars with all their interpolations.",
+        "Write the glTF as a USD sublayer so composition is preserved.",
+        "Map UsdPreviewSurface inputs such as diffuseColor, metallic and roughness onto glTF's metallic-roughness material, and report shading that cannot be mapped.",
+        "Skip unit and axis conversion because glTF reads metersPerUnit and upAxis from the file.",
+        "Export the composed result (with the intended variant selections), since glTF has no equivalent of references, payloads or variant sets."
+      ],
+      "answer": [
+        2,
+        4
+      ],
+      "explanations": [
+        "glTF has a fixed set of vertex attributes; arbitrary primvars and interpolations need mapping or are lost.",
+        "A glTF file is not a USD layer, and sublayering does not apply to the output format.",
+        "Material mapping is where conversions most often lose fidelity, so make the mapping explicit.",
+        "glTF has fixed conventions (Y-up, meters), so the converter must convert explicitly.",
+        "Composition has to be resolved before export; decide and document which variants are baked."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/data-exchange/data-exchange/what-is-data-exchange.md",
+        "LearnOpenUSD-main/docs/data-exchange/data-extraction/what-is-data-extraction.md",
+        "https://openusd.org/release/spec_usdpreviewsurface.html"
+      ]
+    },
+    {
+      "id": "dx-009",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.4"
+      ],
+      "type": "multi",
+      "difficulty": "easy",
+      "stem": "Artists import a USD asset into a DCC, edit it, and export it back. Which practices help this round trip preserve data? (Select TWO.)",
+      "options": [
+        "Rename prims on each export to include the export date.",
+        "Keep stable prim names and paths so re-exported data lands on the prims it came from.",
+        "Flatten the stage on every export and replace the original asset files with the result.",
+        "Write the DCC's changes as overrides into a dedicated layer instead of overwriting the source layers.",
+        "Drop attributes the DCC does not understand to keep exports clean."
+      ],
+      "answer": [
+        1,
+        3
+      ],
+      "explanations": [
+        "Changing paths breaks every opinion that targets the old paths.",
+        "Stable paths let downstream overrides and references keep working after each export.",
+        "That destroys the layer and arc structure other people depend on.",
+        "Sparse overrides in a separate layer are non-destructive and keep other departments' work intact.",
+        "Silently discarding unknown data is the classic round-trip loss."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/data-exchange/data-exchange/what-is-data-exchange.md",
+        "LearnOpenUSD-main/docs/beyond-basics/edit-targets-layer-muting.md",
+        "LearnOpenUSD-main/docs/asset-structure/workstreams/modeling-workstreams.md"
+      ]
+    },
+    {
+      "id": "dx-010",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.5",
+        "3.6"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "An importer gets the attribute below with prop = prim.GetProperty(\"studio:inspection:weight\"). What do prop.GetNamespace() and prop.GetBaseName() return?",
+      "usda": {
+        "part.usda": "#usda 1.0\n\ndef Xform \"Part\"\n{\n    custom float studio:inspection:weight = 2.5\n}\n"
+      },
+      "options": [
+        "\"studio\" and \"inspection:weight\"",
+        "\"studio:inspection:\" and \"weight\"",
+        "\"\" and \"studio:inspection:weight\", because only schema attributes have namespaces",
+        "\"studio:inspection\" and \"weight\""
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "The split happens at the last delimiter, not the first.",
+        "The returned namespace has no trailing delimiter.",
+        "Namespaces are part of any property name, custom or not.",
+        "The namespace is everything before the last ':' delimiter, and the base name is the last part."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_property.html",
+        "LearnOpenUSD-main/docs/beyond-basics/custom-properties.md",
+        "LearnOpenUSD-main/docs/stage-setting/properties/attributes.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Part.studio:inspection:weight",
+            "expect": {
+              "namespace": "studio:inspection",
+              "base_name": "weight",
+              "custom": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dx-011",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.7"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "Your exporter writes content from a Z-up application. Which call records that on the new stage?",
+      "options": [
+        "stage.SetUpAxis(\"Z\")",
+        "UsdGeom.Xform.Define(stage, \"/Z\")",
+        "UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)",
+        "Rotate every exported prim by 90 degrees around X and leave upAxis unauthored"
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "UsdStage has no SetUpAxis method; axis handling lives in UsdGeom.",
+        "That just defines a prim named Z.",
+        "UsdGeom provides helpers for the upAxis stage metadata (and SetStageMetersPerUnit for units).",
+        "Baking a rotation changes the data and still leaves consumers guessing the intended axis."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/units.md",
+        "https://openusd.org/release/api/usd_geom_page_front.html"
+      ]
+    },
+    {
+      "id": "dx-012",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.7"
+      ],
+      "type": "multi",
+      "difficulty": "easy",
+      "stem": "An exporter writes a 48-frame animation of a prop's translation. Which steps are appropriate? (Select TWO.)",
+      "options": [
+        "Write one time sample per frame, for example translate_op.Set(value, Usd.TimeCode(frame)).",
+        "Create one prim per frame and toggle their visibility.",
+        "Author startTimeCode and endTimeCode, and set timeCodesPerSecond to the DCC's frame rate.",
+        "Store all 48 positions in the attribute's default value and let USD pick one per frame.",
+        "Set timeCodesPerSecond to 48 because the animation has 48 frames."
+      ],
+      "answer": [
+        0,
+        2
+      ],
+      "explanations": [
+        "Animated values are stored as time samples keyed by time code.",
+        "That multiplies prims instead of animating one attribute.",
+        "These layer metadata tell players the playback range and how time codes map to seconds.",
+        "A default value is a single, time-independent value; USD does not index into it by frame.",
+        "timeCodesPerSecond is a rate, not a frame count."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/stage-setting/timecodes-timesamples.md",
+        "https://openusd.org/release/tut_xforms.html"
+      ]
+    },
+    {
+      "id": "dx-013",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.8"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "An importer loops over `for prim in stage.Traverse()` on the layer below. Which paths does it visit, in order?",
+      "usda": {
+        "scene.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Cube \"Crate\"\n    {\n    }\n\n    def Xform \"Archive\" (\n        active = false\n    )\n    {\n        def Cube \"OldCrate\"\n        {\n        }\n    }\n}\n\nclass \"_class_Prop\"\n{\n}\n\nover \"Notes\"\n{\n}\n"
+      },
+      "options": [
+        "/World, /World/Crate, /World/Archive",
+        "/World, /World/Crate",
+        "/World, /World/Crate, /World/Archive, /World/Archive/OldCrate, /_class_Prop, /Notes",
+        "/World, /World/Crate, /_class_Prop"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "Inactive prims are skipped by the default predicate.",
+        "The default predicate visits only active, loaded, defined, non-abstract prims. /World/Archive is inactive (and its children are not composed), the class is abstract, and /Notes is only an over.",
+        "This would need a traversal with an all-prims predicate, and even then the children of an inactive prim are not composed.",
+        "Class prims are abstract and skipped by default."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/stage-traversal.md",
+        "https://openusd.org/release/tut_traversing_stage.html",
+        "LearnOpenUSD-main/docs/beyond-basics/active-inactive-prims.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/",
+            "expect": {
+              "traverse": [
+                "/World",
+                "/World/Crate"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dx-014",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.8"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "Your importer brings the layer below into a DCC whose scene unit is the meter. Based on UsdGeom.GetStageMetersPerUnit(stage), what uniform scale should it apply to positions to keep their real-world size?",
+      "usda": {
+        "robot.usda": "#usda 1.0\n(\n    metersPerUnit = 0.01\n    upAxis = \"Z\"\n)\n\ndef Xform \"Robot\"\n{\n}\n"
+      },
+      "options": [
+        "It depends on upAxis, because Z-up layers are always stored in meters",
+        "1, because USD positions are always stored in meters",
+        "0.01",
+        "100"
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "upAxis and metersPerUnit are independent pieces of metadata.",
+        "USD stores positions in the layer's declared units, here centimeters.",
+        "metersPerUnit = 0.01 means one unit is a centimeter, so multiplying by 0.01 converts to meters.",
+        "That would convert meters to centimeters, the opposite direction."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/units.md",
+        "https://openusd.org/release/api/usd_geom_page_front.html",
+        "LearnOpenUSD-main/docs/data-exchange/data-transformation/what-is-data-transformation.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/",
+            "expect": {
+              "meters_per_unit": 0.01,
+              "up_axis": "Z"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dx-015",
+      "domain": "Data Exchange",
+      "objective_ids": [
+        "4.5",
+        "5.1"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "An exporter must carry a per-face integer \"damageZone\" value from the DCC so downstream tools can read it through the primvar API. Which authoring choice is correct for a Mesh?",
+      "options": [
+        "A string attribute containing the values separated by commas",
+        "An int[] primvar (primvars:damageZone) with interpolation \"uniform\", holding one value per face",
+        "An int[] primvar with interpolation \"vertex\", holding one value per face",
+        "A custom metadata key on the mesh prim listing the values"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "Strings hide the structure from primvar-aware tools and renderers.",
+        "For meshes, uniform interpolation means one element per face.",
+        "vertex interpolation expects one element per point, not per face.",
+        "Metadata is not meant for per-element data, and new metadata keys must be registered."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/primvars.md",
+        "https://openusd.org/release/api/class_usd_geom_primvar.html"
+      ]
+    },
+    {
+      "id": "dm-001",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.1"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "You add a float[] primvar named primvars:wear with 8 values to the Ribbon mesh below. Which interpolation makes 8 the correct number of elements?",
+      "usda": {
+        "ribbon.usda": "#usda 1.0\n\ndef Mesh \"Ribbon\"\n{\n    float3[] extent = [(0, 0, 0), (2, 1, 0)]\n    int[] faceVertexCounts = [4, 4]\n    int[] faceVertexIndices = [0, 1, 4, 3, 1, 2, 5, 4]\n    point3f[] points = [(0, 0, 0), (1, 0, 0), (2, 0, 0), (0, 1, 0), (1, 1, 0), (2, 1, 0)]\n}\n"
+      },
+      "options": [
+        "faceVarying",
+        "uniform",
+        "constant",
+        "vertex"
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "faceVarying needs one value per face-vertex: two quads give 8 face-vertices, the length of faceVertexIndices.",
+        "uniform needs one value per face, which is 2 here.",
+        "constant needs a single value for the whole mesh.",
+        "vertex needs one value per point, which is 6 here."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/primvars.md",
+        "https://openusd.org/release/api/class_usd_geom_primvar.html",
+        "https://openusd.org/release/api/class_usd_geom_mesh.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Ribbon.points",
+            "expect": {
+              "length": 6
+            }
+          },
+          {
+            "path": "/Ribbon.faceVertexIndices",
+            "expect": {
+              "length": 8
+            }
+          },
+          {
+            "path": "/Ribbon.faceVertexCounts",
+            "expect": {
+              "length": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dm-002",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.1"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "Which Python call adds a texture-coordinate primvar named st, with one value per face-vertex, to `mesh` (a UsdGeom.Mesh)?",
+      "options": [
+        "UsdGeom.PrimvarsAPI(mesh).CreatePrimvar(\"st\", Sdf.ValueTypeNames.String, UsdGeom.Tokens.constant)",
+        "UsdGeom.PrimvarsAPI(mesh).CreatePrimvar(\"st\", Sdf.ValueTypeNames.TexCoord2fArray, UsdGeom.Tokens.faceVarying)",
+        "mesh.GetPrim().CreateAttribute(\"st\", Sdf.ValueTypeNames.TexCoord2fArray)",
+        "mesh.CreateDisplayColorAttr(\"st\")"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "A single string is the wrong type and the wrong interpolation for texture coordinates.",
+        "PrimvarsAPI creates the primvars:st attribute with the right role type and interpolation metadata.",
+        "This creates a plain attribute called st outside the primvars: namespace, so it is not a primvar and has no interpolation.",
+        "That creates the displayColor attribute; the argument is a default value, not a name."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/primvars.md",
+        "https://openusd.org/release/api/class_usd_geom_primvars_a_p_i.html"
+      ]
+    },
+    {
+      "id": "dm-003",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.2"
+      ],
+      "type": "multi",
+      "difficulty": "easy",
+      "stem": "Which value-type choices are appropriate? (Select TWO.)",
+      "options": [
+        "matrix4d for an xformOp:transform operation",
+        "token for a value chosen from a small fixed set of names, such as a mode switch",
+        "one double to hold a separate radius for each of 10,000 points",
+        "string[] to store vertex positions",
+        "int to store a linear RGB color"
+      ],
+      "answer": [
+        0,
+        1
+      ],
+      "explanations": [
+        "A transform op stores a full 4x4 matrix, and its type is matrix4d.",
+        "Tokens are interned strings meant for identifiers and enumerated choices.",
+        "Per-element data needs an array type, such as float[] for widths.",
+        "Positions are point3f[] so tools know their role.",
+        "Colors use color3f (or color3d/color3h)."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/stage-setting/properties/attributes.md",
+        "https://openusd.org/release/api/class_usd_geom_xformable.html",
+        "https://openusd.org/release/glossary.html"
+      ]
+    },
+    {
+      "id": "dm-004",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.2"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "Which declaration matches how UsdGeomPointBased stores per-point velocities?",
+      "options": [
+        "color3f[] velocities",
+        "vector3f[] velocities",
+        "point3f[] velocities",
+        "normal3f[] velocities"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "The color role is for colors.",
+        "Velocities are directions, so they use the vector role, which is transformed without translation.",
+        "The point role is for positions; translations would wrongly apply to them.",
+        "The normal role is for surface normals, which transform differently from vectors."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_geom_point_based.html",
+        "LearnOpenUSD-main/docs/stage-setting/properties/attributes.md"
+      ]
+    },
+    {
+      "id": "dm-005",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.3"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "What does prim.GetCustomDataByKey(\"review:status\") return for the Valve prim below?",
+      "usda": {
+        "valve.usda": "#usda 1.0\n\ndef Xform \"Valve\" (\n    customData = {\n        dictionary review = {\n            int round = 2\n            string status = \"approved\"\n        }\n    }\n)\n{\n}\n"
+      },
+      "options": [
+        "\"approved\"",
+        "None, because nested dictionaries cannot be addressed by key",
+        "An error, because ':' is not allowed in keys",
+        "The whole review dictionary"
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "Key paths use ':' to reach into nested dictionaries inside customData.",
+        "GetCustomDataByKey accepts ':'-separated key paths into nested dictionaries.",
+        "':' is the key-path separator here.",
+        "That is what GetCustomDataByKey(\"review\") returns."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/stage-setting/metadata.md",
+        "https://openusd.org/release/api/class_usd_prim.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Valve",
+            "expect": {
+              "custom_data": {
+                "review:status": "approved",
+                "review:round": 2
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dm-006",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.3",
+        "7.6"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "You need to record studio notes (reviewer, ticket number) on prims without writing or deploying any plugin. Which mechanism is designed for this?",
+      "options": [
+        "The apiSchemas list",
+        "The customData dictionary metadata",
+        "prim.SetMetadata(\"reviewer\", \"kim\") with a new top-level metadata key",
+        "The kind metadata"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "apiSchemas lists applied API schemas, not notes.",
+        "customData holds arbitrary user dictionaries on prims and properties and needs no registration.",
+        "SetMetadata only accepts registered fields; a new field must first be registered through a plugin (SdfMetadata in plugInfo.json).",
+        "kind classifies prims in the model hierarchy."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/stage-setting/metadata.md",
+        "LearnOpenUSD-main/docs/beyond-basics/custom-properties.md",
+        "https://openusd.org/release/api/class_usd_prim.html"
+      ]
+    },
+    {
+      "id": "dm-007",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.4"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "Which statements about the Ball prim's properties are true? (Select TWO.)",
+      "usda": {
+        "ball.usda": "#usda 1.0\n\ndef Sphere \"Ball\"\n{\n    custom int lod = 1\n    double radius = 2\n}\n"
+      },
+      "options": [
+        "prim.GetAttribute(\"extent\") returns a valid attribute although extent is not authored, because the Sphere schema defines it.",
+        "[a.GetName() for a in prim.GetAuthoredAttributes()] contains exactly \"lod\" and \"radius\".",
+        "lod.IsCustom() returns False because it has a value.",
+        "radius.GetResolveInfo().GetSource() reports a fallback value.",
+        "prim.GetAttributes() returns only lod and radius."
+      ],
+      "answer": [
+        0,
+        1
+      ],
+      "explanations": [
+        "Schema-defined properties exist on typed prims even when nothing is authored for them.",
+        "Only those two attributes have authored opinions.",
+        "lod is declared custom and is not part of the schema, so IsCustom() is True.",
+        "radius has an authored default of 2, so the source is a default opinion, not the fallback.",
+        "GetAttributes also includes schema attributes such as extent, visibility and purpose."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/stage-setting/properties/attributes.md",
+        "https://openusd.org/release/api/class_usd_prim.html",
+        "https://openusd.org/release/api/class_usd_attribute.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Ball.extent",
+            "expect": {
+              "exists": true,
+              "authored": false
+            }
+          },
+          {
+            "path": "/Ball",
+            "expect": {
+              "authored_attributes": [
+                "lod",
+                "radius"
+              ],
+              "has_attributes": [
+                "extent",
+                "visibility",
+                "purpose"
+              ]
+            }
+          },
+          {
+            "path": "/Ball.lod",
+            "expect": {
+              "custom": true
+            }
+          },
+          {
+            "path": "/Ball.radius",
+            "expect": {
+              "resolve_source": "default",
+              "value": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dm-008",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.5",
+        "6.4"
+      ],
+      "type": "multi",
+      "difficulty": "easy",
+      "stem": "Which prims does UsdGeomImageable.ComputeVisibility() report as invisible? (Select TWO.)",
+      "usda": {
+        "room.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Props\"\n    {\n        token visibility = \"invisible\"\n\n        def Cube \"Cup\"\n        {\n            token visibility = \"inherited\"\n        }\n    }\n\n    def Cube \"Table\"\n    {\n    }\n\n    def Cube \"Helper\"\n    {\n        uniform token purpose = \"guide\"\n    }\n}\n"
+      },
+      "options": [
+        "/World/Props/Cup",
+        "/World/Table",
+        "/World/Helper",
+        "/World/Props"
+      ],
+      "answer": [
+        0,
+        3
+      ],
+      "explanations": [
+        "visibility is inherited: an invisible ancestor makes every descendant invisible, even one that authors \"inherited\".",
+        "Nothing above or on Table is invisible.",
+        "purpose = guide does not change visibility; it only lets renderers include or exclude the prim by purpose (guides are usually drawn only when enabled).",
+        "It authors visibility = invisible itself."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_geom_imageable.html",
+        "https://openusd.org/release/api/usd_geom_page_front.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Props",
+            "expect": {
+              "computed_visibility": "invisible"
+            }
+          },
+          {
+            "path": "/World/Props/Cup",
+            "expect": {
+              "computed_visibility": "invisible"
+            }
+          },
+          {
+            "path": "/World/Table",
+            "expect": {
+              "computed_visibility": "inherited"
+            }
+          },
+          {
+            "path": "/World/Helper",
+            "expect": {
+              "computed_visibility": "inherited",
+              "computed_purpose": "guide"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dm-009",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.6"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "A script scaled the points of /Plate but left extent untouched. Which code correctly refreshes the extent?",
+      "usda": {
+        "plate.usda": "#usda 1.0\n\ndef Mesh \"Plate\"\n{\n    float3[] extent = [(-1, 0, -1), (1, 0, 1)]\n    int[] faceVertexCounts = [4]\n    int[] faceVertexIndices = [0, 1, 2, 3]\n    point3f[] points = [(-3, 0, -2), (3, 0, -2), (3, 0, 2), (-3, 0, 2)]\n}\n"
+      },
+      "options": [
+        "mesh.GetExtentAttr().Set(UsdGeom.Boundable.ComputeExtentFromPlugins(mesh, Usd.TimeCode.Default()))",
+        "mesh.GetExtentAttr().Set(mesh.GetPointsAttr().Get())",
+        "mesh.GetExtentAttr().Clear(), since USD re-authors extent automatically whenever points change",
+        "stage.Reload()"
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "This computes the bounds of the current points, [(-3, 0, -2), (3, 0, 2)] here, and authors them.",
+        "extent is a two-element array (min and max corners), not a copy of the points.",
+        "USD never re-authors extent when points change. Clear() only removes the authored value: extent.Get() then returns None, and UsdGeom.BBoxCache has to fall back to computing bounds from the points, which can be expensive. Author the recomputed extent instead.",
+        "Reload re-reads layers from disk and throws away unsaved edits."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_geom_boundable.html",
+        "https://openusd.org/release/api/class_usd_geom_mesh.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Plate",
+            "expect": {
+              "computed_extent": [
+                [
+                  -3,
+                  0,
+                  -2
+                ],
+                [
+                  3,
+                  0,
+                  2
+                ]
+              ]
+            }
+          },
+          {
+            "path": "/Plate.extent",
+            "expect": [
+              [
+                -1,
+                0,
+                -1
+              ],
+              [
+                1,
+                0,
+                1
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dm-010",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.2"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "With the stage's default (linear) interpolation, what does Get(5) return for the two attributes on Gauge? (Select TWO.)",
+      "usda": {
+        "gauge.usda": "#usda 1.0\n\ndef Xform \"Gauge\"\n{\n    float needle.timeSamples = {\n        0: 0,\n        10: 10,\n    }\n    int ticks.timeSamples = {\n        0: 0,\n        10: 10,\n    }\n}\n"
+      },
+      "options": [
+        "needle returns 5.0",
+        "needle returns 0.0",
+        "ticks returns 0",
+        "Both return 10",
+        "ticks returns 5"
+      ],
+      "answer": [
+        0,
+        2
+      ],
+      "explanations": [
+        "Floating-point values are interpolated linearly between samples.",
+        "That would need held interpolation, which is not the default.",
+        "Integer values cannot be interpolated, so the earlier sample is held.",
+        "No type snaps to the next sample.",
+        "Linear interpolation only applies to floating-point based types."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/stage-setting/timecodes-timesamples.md",
+        "https://openusd.org/release/api/class_usd_stage.html",
+        "LearnOpenUSD-main/docs/beyond-basics/value-resolution.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Gauge.needle",
+            "time": 5,
+            "expect": 5.0
+          },
+          {
+            "path": "/Gauge.ticks",
+            "time": 5,
+            "expect": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "dm-011",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.4"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "What does Door.angle return at time 30 and at time 6?",
+      "usda": {
+        "door.usda": "#usda 1.0\n\ndef Xform \"Door\"\n{\n    double angle.timeSamples = {\n        12: 0,\n        24: 90,\n    }\n}\n"
+      },
+      "options": [
+        "No value at either time, because both lie outside the sampled range",
+        "135 at time 30 and -45 at time 6, by extrapolation",
+        "The default value, because time samples only apply within their range",
+        "90 at time 30 and 0 at time 6, because values are held beyond the first and last samples"
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "A value is still returned; it is held from the nearest sample.",
+        "Time samples are never extrapolated.",
+        "No default is authored, and samples apply at all times.",
+        "Outside the sampled range, time samples clamp to the nearest sample."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/stage-setting/timecodes-timesamples.md",
+        "LearnOpenUSD-main/docs/beyond-basics/value-resolution.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Door.angle",
+            "time": 30,
+            "expect": 90
+          },
+          {
+            "path": "/Door.angle",
+            "time": 6,
+            "expect": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "dm-012",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.4"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "shot.usda sublayers light_rig.usda and list-edits the lights relationship. What does GetTargets() return for /World/Rig.lights?",
+      "usda": {
+        "shot.usda": "#usda 1.0\n(\n    subLayers = [\n        @./light_rig.usda@\n    ]\n)\n\nover \"World\"\n{\n    over \"Rig\"\n    {\n        delete rel lights = </World/Fill>\n        append rel lights = </World/Rim>\n    }\n}\n",
+        "light_rig.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Scope \"Rig\"\n    {\n        rel lights = [\n            </World/Key>,\n            </World/Fill>,\n        ]\n    }\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "[/World/Rim, /World/Key]",
+        "[/World/Key, /World/Rim]",
+        "[/World/Rim]",
+        "[/World/Key, /World/Fill, /World/Rim]"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "append adds to the end; prepend would add to the front.",
+        "List edits from the stronger layer apply on top of the weaker explicit list: Fill is deleted and Rim is appended.",
+        "That would require the stronger layer to author an explicit list.",
+        "The delete operation removes Fill."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/list-editing.md",
+        "LearnOpenUSD-main/docs/stage-setting/properties/relationships.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Rig.lights",
+            "expect": [
+              "/World/Key",
+              "/World/Rim"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dm-013",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.2"
+      ],
+      "type": "multi",
+      "difficulty": "easy",
+      "stem": "Which statements about attribute variability are correct? (Select TWO.)",
+      "options": [
+        "xformOpOrder is declared as a uniform token[] attribute.",
+        "A uniform attribute is meant to hold one value for all time, so it should not be time-sampled.",
+        "uniform means the value is shared by every instance of a prototype.",
+        "Only array-valued attributes may be declared uniform.",
+        "Varying attributes cannot have a default value."
+      ],
+      "answer": [
+        0,
+        1
+      ],
+      "explanations": [
+        "The op order cannot be animated; only the op values can.",
+        "uniform declares that the value does not vary over time; tools and schemas rely on that.",
+        "Variability is about time, not instancing.",
+        "Scalars can be uniform too, for example purpose or orientation.",
+        "Any attribute can have a default value in addition to time samples."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/stage-setting/properties/attributes.md",
+        "https://openusd.org/release/api/class_usd_attribute.html",
+        "https://openusd.org/release/api/class_usd_geom_xformable.html"
+      ]
+    },
+    {
+      "id": "dm-014",
+      "domain": "Data Modeling",
+      "objective_ids": [
+        "5.5"
+      ],
+      "type": "single",
+      "difficulty": "hard",
+      "stem": "Where does the origin of /Arm end up in world space?",
+      "usda": {
+        "arm.usda": "#usda 1.0\n\ndef Xform \"Arm\"\n{\n    float xformOp:rotateZ = 90\n    double3 xformOp:translate = (2, 0, 0)\n    uniform token[] xformOpOrder = [\"xformOp:rotateZ\", \"xformOp:translate\"]\n}\n"
+      },
+      "options": [
+        "(0, -2, 0)",
+        "(2, 0, 0)",
+        "(0, 2, 0)",
+        "(-2, 0, 0)"
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "A positive rotateZ turns +X toward +Y, not toward -Y.",
+        "That ignores the rotation, as if translate were listed first.",
+        "Ops apply to points from the last entry of xformOpOrder to the first: the origin is translated to (2, 0, 0) and then rotated 90 degrees about Z to (0, 2, 0).",
+        "That would be a 180-degree rotation."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_geom_xformable.html",
+        "LearnOpenUSD-main/docs/scene-description-blueprints/xform.md",
+        "https://openusd.org/release/tut_xforms.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Arm",
+            "expect": {
+              "world_translation": [
+                0,
+                2,
+                0
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dbg-001",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.1"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "A script creates thousands of prim and property specs in a loop and is slow because the stage reacts to every single edit. Which statements about Sdf.ChangeBlock are correct? (Select TWO.)",
+      "options": [
+        "It pays off most for many Sdf-level edits, such as creating thousands of specs or setting many values in a loop.",
+        "It turns the edits into an undoable transaction that rolls back if an exception occurs.",
+        "It is required for every edit made from Python.",
+        "It defers change notification until the block closes, so the stage processes one batch of changes instead of reacting to every edit.",
+        "It speeds up read-only work such as stage.Traverse()."
+      ],
+      "answer": [
+        0,
+        3
+      ],
+      "explanations": [
+        "That is exactly the case where per-edit change processing dominates the run time.",
+        "A change block provides no undo or rollback; the edits are applied either way.",
+        "Change blocks are an optional optimization.",
+        "Batching notices means recomposition and downstream listeners run once for the whole set of edits.",
+        "Reads trigger no change notifications, so there is nothing to batch."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_sdf_change_block.html",
+        "https://openusd.org/release/maxperf.html"
+      ]
+    },
+    {
+      "id": "dbg-002",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.2"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "An artist changed the default value of the Door's xformOp:translate to (0, 0, 5), but at frame 1 the door still sits at the origin. Why?",
+      "usda": {
+        "door.usda": "#usda 1.0\n\ndef Xform \"Door\"\n{\n    double3 xformOp:translate = (0, 0, 5)\n    double3 xformOp:translate.timeSamples = {\n        1: (0, 0, 0),\n        24: (0, 0, 2),\n    }\n    uniform token[] xformOpOrder = [\"xformOp:translate\"]\n}\n"
+      },
+      "options": [
+        "xformOpOrder must be re-authored after changing an op's value.",
+        "In this layer the attribute also has time samples, and for queries at a specific time they take precedence over the default; the default only answers queries at the Default time code.",
+        "A default value is always weaker than time samples from any layer.",
+        "double3 values cannot be authored as defaults on transform ops."
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "xformOpOrder only lists which ops apply; changing a value never requires touching it.",
+        "Edit or remove the time samples, or author the change in a stronger layer, to see the new value at frame 1.",
+        "Across layers, strength decides: a stronger layer's default wins over a weaker layer's time samples. The rule here concerns the same layer.",
+        "Defaults of any value type are allowed on ops."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/value-resolution.md",
+        "LearnOpenUSD-main/docs/stage-setting/timecodes-timesamples.md",
+        "https://openusd.org/release/api/class_usd_attribute.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Door.xformOp:translate",
+            "time": 1,
+            "expect": {
+              "value": [
+                0,
+                0,
+                0
+              ],
+              "resolve_source": "time_samples"
+            }
+          },
+          {
+            "path": "/Door.xformOp:translate",
+            "expect": [
+              0,
+              0,
+              5
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dbg-003",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.2",
+        "1.10"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "yard.usda overrides wear on Crate_01's Box, but /Yard/Crate_01/Box.wear still reads 0.8. Why?",
+      "usda": {
+        "crate.usda": "#usda 1.0\n(\n    defaultPrim = \"Crate\"\n)\n\ndef Xform \"Crate\" (\n    kind = \"component\"\n)\n{\n    def Cube \"Box\"\n    {\n        custom float wear = 0.8\n    }\n}\n",
+        "yard.usda": "#usda 1.0\n\ndef Xform \"Yard\"\n{\n    def Xform \"Crate_01\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n    )\n    {\n        over \"Box\"\n        {\n            float wear = 0.2\n        }\n    }\n}\n"
+      },
+      "root": "yard.usda",
+      "options": [
+        "References are stronger than local opinions, so the referenced 0.8 wins.",
+        "Custom attributes cannot be overridden from another layer.",
+        "The over must be a def to override a referenced value.",
+        "Crate_01 is instanceable, and opinions on descendants of an instance are ignored because those descendants come from the shared prototype."
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "Local opinions are the strongest; the over is ignored only because of instancing.",
+        "Custom attributes compose like any other attribute.",
+        "The specifier is not the problem; the prim lives inside an instance.",
+        "Edit the instance prim itself, broadcast through a class, add an arc, or deinstance to change them."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/authoring-scenegraph-instancing/scenegraph-instancing-intro.md",
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/refining-scenegraph-instances/scenegraph-instance-refinement.md",
+        "https://openusd.org/release/api/_usd__page__scenegraph_instancing.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Yard/Crate_01/Box.wear",
+            "expect": 0.8
+          },
+          {
+            "path": "/Yard/Crate_01",
+            "expect": {
+              "instance": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dbg-004",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.2",
+        "6.3"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "A review tool opens shot.usda and then calls stage.MuteLayer() with lighting.usda's identifier. What intensity does /World/Key report?",
+      "usda": {
+        "shot.usda": "#usda 1.0\n(\n    subLayers = [\n        @./lighting.usda@,\n        @./layout.usda@\n    ]\n)\n",
+        "lighting.usda": "#usda 1.0\n\nover \"World\"\n{\n    over \"Key\"\n    {\n        float inputs:intensity = 5000\n    }\n}\n",
+        "layout.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def SphereLight \"Key\"\n    {\n        float inputs:intensity = 1000\n    }\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "5000",
+        "1000",
+        "No value, because muting a sublayer also mutes the layers listed after it",
+        "6000"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "That is the value while lighting.usda is not muted.",
+        "Muting removes lighting.usda's opinions from composition, so layout.usda's value is the strongest one left.",
+        "Muting affects only the named layer (and anything it alone brings in).",
+        "Opinions are never summed."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/edit-targets-layer-muting.md",
+        "https://openusd.org/release/api/class_usd_stage.html"
+      ],
+      "verify": {
+        "mute": [
+          "lighting.usda"
+        ],
+        "checks": [
+          {
+            "path": "/World/Key.inputs:intensity",
+            "expect": 1000
+          }
+        ],
+        "scenarios": [
+          {
+            "note": "not muted",
+            "checks": [
+              {
+                "path": "/World/Key.inputs:intensity",
+                "expect": 5000
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dbg-005",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.3"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "assets/lamp/lamp.usda references @./lamp_geo.usda@. Where does USD look for that file when shot.usda, at the top of the project, is opened?",
+      "usda": {
+        "shot.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Lamp\" (\n        prepend references = @./assets/lamp/lamp.usda@\n    )\n    {\n    }\n}\n",
+        "assets/lamp/lamp.usda": "#usda 1.0\n(\n    defaultPrim = \"Lamp\"\n)\n\ndef Xform \"Lamp\" (\n    prepend references = @./lamp_geo.usda@\n)\n{\n}\n",
+        "assets/lamp/lamp_geo.usda": "#usda 1.0\n(\n    defaultPrim = \"Lamp\"\n)\n\ndef Xform \"Lamp\"\n{\n    def Mesh \"Shade\"\n    {\n    }\n}\n"
+      },
+      "root": "shot.usda",
+      "options": [
+        "Next to the root layer, as ./lamp_geo.usda beside shot.usda",
+        "In every folder listed in PXR_PLUGINPATH_NAME",
+        "In the process's current working directory",
+        "Next to the layer that contains the path: assets/lamp/lamp_geo.usda"
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "The root layer does not anchor paths authored in other layers.",
+        "That variable is for finding plugins, not assets.",
+        "Anchored relative paths do not depend on the working directory.",
+        "Relative asset paths are anchored to the layer they are authored in, which keeps assets portable."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/references-payloads/references-faq.md",
+        "https://openusd.org/release/api/ar_page_front.html",
+        "LearnOpenUSD-main/docs/asset-structure/asset-structure-principles/encapsulating-your-asset.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Lamp/Shade",
+            "expect": {
+              "exists": true,
+              "type": "Mesh"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dbg-006",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.3"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "The chair's children never appear under /Scene/Chair, and composition reports an unresolved reference prim path. What is the most direct fix?",
+      "usda": {
+        "scene.usda": "#usda 1.0\n\ndef Xform \"Scene\"\n{\n    def Xform \"Chair\" (\n        prepend references = @./chair.usda@\n    )\n    {\n    }\n}\n",
+        "chair.usda": "#usda 1.0\n\ndef Xform \"Chair\"\n{\n    def Cube \"Seat\"\n    {\n    }\n}\n"
+      },
+      "root": "scene.usda",
+      "options": [
+        "Author defaultPrim = \"Chair\" in chair.usda, or reference it with an explicit prim path (@./chair.usda@</Chair>).",
+        "Convert chair.usda to usdc.",
+        "Load the stage's payloads.",
+        "Change def to over in chair.usda."
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "A reference without a prim path targets the layer's defaultPrim; chair.usda does not declare one.",
+        "The encoding does not affect how the target prim is chosen.",
+        "This is a reference, and load rules only apply to payloads.",
+        "The specifier is not the issue, and overs would not be defined prims."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/composition-basics/default-prim.md",
+        "https://openusd.org/release/api/class_usd_references.html",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/references-payloads/references-faq.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Scene/Chair/Seat",
+            "expect": false
+          },
+          {
+            "path": "/",
+            "expect": {
+              "composition_errors": true
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "note": "defaultPrim authored",
+            "usda": {
+              "chair.usda": "#usda 1.0\n(\n    defaultPrim = \"Chair\"\n)\n\ndef Xform \"Chair\"\n{\n    def Cube \"Seat\"\n    {\n    }\n}\n"
+            },
+            "checks": [
+              {
+                "path": "/Scene/Chair/Seat",
+                "expect": true
+              },
+              {
+                "path": "/",
+                "expect": {
+                  "composition_errors": false
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dbg-007",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.5"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "While reproducing a slowdown, you want USD to print its internal messages about change processing, without rebuilding USD. What do you use?",
+      "options": [
+        "Raise timeCodesPerSecond on the stage",
+        "Wrap the code in Sdf.ChangeBlock",
+        "Run usdchecker on the root layer",
+        "TfDebug: enable the relevant symbol, for example TF_DEBUG=USD_CHANGES in the environment or Tf.Debug.SetDebugSymbolsByName(\"USD_CHANGES\", True)"
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "That changes the meaning of time codes, nothing more.",
+        "That batches notifications; it prints nothing.",
+        "usdchecker validates content; it does not trace change processing.",
+        "TfDebug symbols are compiled in and can be switched on at runtime."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_tf_debug.html"
+      ]
+    },
+    {
+      "id": "dbg-008",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.5"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "Which pairings of a USD diagnostic facility and its purpose are correct? (Select THREE.)",
+      "options": [
+        "UsdUtilsCoalescingDiagnosticDelegate: collect warnings and errors and report them grouped instead of printing each one",
+        "TfMallocTag: attribute heap allocations to tagged call sites once tagging is initialized",
+        "Trace (TRACE_FUNCTION / TRACE_SCOPE with the trace collector): record how long code regions take to find hot spots",
+        "TfDebug: alters composition so problems become easier to see",
+        "SdfChangeBlock: prints every change notification to the console"
+      ],
+      "answer": [
+        0,
+        1,
+        2
+      ],
+      "explanations": [
+        "It is useful when thousands of near-identical warnings flood a log.",
+        "Malloc tags show which subsystems hold memory.",
+        "Trace gathers timing events that can be reported or viewed afterwards.",
+        "TfDebug only enables extra diagnostic output; results are unchanged.",
+        "A change block batches notifications and prints nothing."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/trace_page_front.html",
+        "https://openusd.org/release/api/class_tf_malloc_tag.html",
+        "https://openusd.org/release/api/class_usd_utils_coalescing_diagnostic_delegate.html",
+        "https://openusd.org/release/api/class_tf_debug.html"
+      ]
+    },
+    {
+      "id": "dbg-009",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.3"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "A city stage takes minutes to open because every building's payload loads, yet the artist only works on one building. Which approaches reduce what is composed or loaded? (Select TWO.)",
+      "options": [
+        "Wrap the Open call in Sdf.ChangeBlock.",
+        "Set the edit target to the building's layer.",
+        "Open with a Usd.StagePopulationMask that contains only that building's path.",
+        "Convert the root layer to usda.",
+        "Open with Usd.Stage.LoadNone and then call stage.Load() for that building's path only."
+      ],
+      "answer": [
+        2,
+        4
+      ],
+      "explanations": [
+        "Opening a stage is not a stream of edits, so batching notifications does not help.",
+        "Edit targets decide where edits go; they do not limit loading.",
+        "A population mask limits which parts of the scene graph are composed at all.",
+        "Text layers are slower to parse, not faster.",
+        "Load rules let you bring in just the payloads you need."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/creating-composition-arcs/references-payloads/working-with-payloads.md",
+        "https://openusd.org/release/api/class_usd_stage_population_mask.html",
+        "https://openusd.org/release/api/class_usd_stage.html"
+      ]
+    },
+    {
+      "id": "dbg-010",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.4"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "An exporter wrote the Lamp prim below, and the lamp renders at the origin instead of at x = 5. Why?",
+      "usda": {
+        "lamp.usda": "#usda 1.0\n\ndef Xform \"Lamp\"\n{\n    float xformOp:rotateY = 45\n    double3 xformOp:translate = (5, 0, 0)\n    uniform token[] xformOpOrder = [\"xformOp:rotateY\"]\n}\n"
+      },
+      "options": [
+        "xformOp:translate is not listed in xformOpOrder, so it does not contribute to the transform.",
+        "Xform prims ignore their ops unless kind is component.",
+        "rotateY must come after translate in the file.",
+        "translate must be authored as float3 rather than double3."
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "Only ops named in xformOpOrder are applied; authoring an op attribute is not enough.",
+        "kind has no effect on transforms.",
+        "The order of statements in the file does not matter; xformOpOrder does.",
+        "double3 is the usual precision for translate ops."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_geom_xformable.html",
+        "LearnOpenUSD-main/docs/scene-description-blueprints/xform.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Lamp",
+            "expect": {
+              "world_translation": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "note": "translate listed",
+            "usda": {
+              "lamp.usda": "#usda 1.0\n\ndef Xform \"Lamp\"\n{\n    float xformOp:rotateY = 45\n    double3 xformOp:translate = (5, 0, 0)\n    uniform token[] xformOpOrder = [\"xformOp:translate\", \"xformOp:rotateY\"]\n}\n"
+            },
+            "checks": [
+              {
+                "path": "/Lamp",
+                "expect": {
+                  "world_translation": [
+                    5,
+                    0,
+                    0
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dbg-011",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.2"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "An attribute has an unexpected value, and you want every property spec that holds an opinion for it, ordered strongest first. Which call gives you that?",
+      "options": [
+        "attr.GetPropertyStack(Usd.TimeCode.Default())",
+        "stage.GetLayerStack()",
+        "attr.Get()",
+        "attr.GetResolveInfo().GetSource()"
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "It returns the contributing property specs in strength order, which shows which layers author opinions.",
+        "That lists the root layer stack's layers, not which of them (or which referenced layers) hold opinions for this attribute.",
+        "Get returns only the resolved value.",
+        "That tells you what kind of source supplied the winning value, not the full list of opinions."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_property.html",
+        "https://openusd.org/release/api/class_usd_attribute.html",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/tracing-through-liverps.md"
+      ]
+    },
+    {
+      "id": "dbg-012",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.4"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "base.usda deactivates /World/Props, and fix.usda (the root layer) re-activates it. Is /World/Props/Box on the composed stage?",
+      "usda": {
+        "fix.usda": "#usda 1.0\n(\n    subLayers = [\n        @./base.usda@\n    ]\n)\n\nover \"World\"\n{\n    over \"Props\" (\n        active = true\n    )\n    {\n    }\n}\n",
+        "base.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Props\" (\n        active = false\n    )\n    {\n        def Cube \"Box\"\n        {\n        }\n    }\n}\n"
+      },
+      "root": "fix.usda",
+      "options": [
+        "No: an over cannot change metadata.",
+        "No: deactivation in any layer always wins.",
+        "Yes, but Props stays inactive and only Box is active.",
+        "Yes: active = true in the root layer is the stronger opinion, so Props and its children compose again."
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "Overs can author metadata such as active.",
+        "active has no special rule; the strongest opinion wins.",
+        "Children of an inactive prim are not composed at all, so Box could not appear under an inactive Props.",
+        "active is ordinary metadata that resolves by strength like any other opinion."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/active-inactive-prims.md",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/strength-ordering/what-is-liverps.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Props",
+            "expect": {
+              "active": true
+            }
+          },
+          {
+            "path": "/World/Props/Box",
+            "expect": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "dbg-013",
+      "domain": "Debugging and Troubleshooting",
+      "objective_ids": [
+        "6.4",
+        "5.5"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "A renderer that draws the render purpose skips /Robot/ProxyRig/Block, although Block authors no purpose. Why?",
+      "usda": {
+        "robot.usda": "#usda 1.0\n\ndef Xform \"Robot\"\n{\n    def Xform \"ProxyRig\"\n    {\n        uniform token purpose = \"proxy\"\n\n        def Cube \"Block\"\n        {\n        }\n    }\n}\n"
+      },
+      "options": [
+        "Every prim must author purpose or it is skipped.",
+        "Block is invisible because its ancestor is invisible.",
+        "Purpose is inherited: Block authors none, so it takes the proxy purpose of its ancestor.",
+        "Cube prims always default to the proxy purpose."
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "Unauthored purpose falls back to inheritance or to default.",
+        "Nothing authors visibility here; purpose and visibility are separate.",
+        "ComputePurpose walks up to the nearest ancestor with an authored purpose.",
+        "The schema fallback is default."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_geom_imageable.html",
+        "https://openusd.org/release/api/usd_geom_page_front.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Robot/ProxyRig/Block",
+            "expect": {
+              "computed_purpose": "proxy",
+              "computed_visibility": "inherited"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "pipe-001",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.2"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "Your asset structure guidelines say every component asset carries kind = \"component\". On which prim of the asset should it be authored?",
+      "options": [
+        "The asset's root prim, the one set as defaultPrim",
+        "The Material prims in the asset's material scope",
+        "Nowhere in the asset; kind is only authored in shot layers",
+        "Every Mesh prim inside the asset"
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "The root prim is the model boundary that references bring in; that is where kind belongs.",
+        "Materials are not models.",
+        "Kind is normally published with the asset so every consumer gets it.",
+        "Components cannot contain components, and marking meshes breaks the model hierarchy."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-structure/model-hierarchy/what-are-model-kinds.md",
+        "LearnOpenUSD-main/docs/asset-structure/asset-structure-principles/organizing-prim-hierarchy.md",
+        "https://openusd.org/release/api/kind_page_front.html"
+      ]
+    },
+    {
+      "id": "pipe-002",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.2"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "Which practices belong in asset structure guidelines for large, reusable assets? (Select TWO.)",
+      "options": [
+        "Put the asset's materials in a separate root prim next to the asset's root prim.",
+        "Loft discoverable controls, such as key variant sets or primvars, onto the root prim above the payload so they stay visible while it is unloaded.",
+        "Keep variant sets only inside the payload so they stay hidden until the asset is loaded.",
+        "Give each asset a lightweight entry layer that brings in its heavy contents through a payload, so scenes can be opened without loading every asset.",
+        "Mark every prim in the asset with kind = \"component\"."
+      ],
+      "answer": [
+        1,
+        3
+      ],
+      "explanations": [
+        "A reference to the asset only brings in its default prim's subtree, so sibling materials would be left behind.",
+        "Lofting keeps the asset's parameters discoverable and editable without loading its contents.",
+        "Hiding them defeats discoverability; consumers would have to load everything to see the choices.",
+        "This is the reference/payload pattern: references bring the light interface, payloads the heavy data.",
+        "Only the asset root is the component; nesting components breaks the model hierarchy."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/asset-structure/reference-payload-pattern/what-is-ref-payload-pattern.md",
+        "LearnOpenUSD-main/docs/asset-structure/reference-payload-pattern/lofting-variant-sets.md",
+        "LearnOpenUSD-main/docs/asset-structure/reference-payload-pattern/lofting-primvars.md",
+        "LearnOpenUSD-main/docs/asset-structure/asset-structure-principles/encapsulating-your-asset.md"
+      ]
+    },
+    {
+      "id": "pipe-003",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.3"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "A simulation exports a cache with millions of points per frame. Which encoding is most appropriate for that layer?",
+      "options": [
+        "usda, because only text layers can hold time samples",
+        "usdz, because packages can be written incrementally during the simulation",
+        "usdc (crate), for compact binary storage and fast, memory-mapped access",
+        "usda, because text files compress best"
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "Both encodings store time samples.",
+        "usdz is a read-only package for delivery, not a working format.",
+        "Data-heavy layers belong in crate; keep text for small interface layers.",
+        "Text is larger and slower to parse for big numeric arrays."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/stage-setting/usd-file-formats.md",
+        "https://openusd.org/release/maxperf.html"
+      ]
+    },
+    {
+      "id": "pipe-004",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.5",
+        "3.5"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "Every shot references @chair.usd@, but shot 010 must receive version 3 of the chair and shot 020 version 5, without editing any layers. Which mechanism fits?",
+      "options": [
+        "Muting the chair layer in shot 010",
+        "A layer offset on the chair reference",
+        "A different edit target per shot",
+        "Open each shot's stage with an asset resolver context (pathResolverContext) that your resolver uses to map the identifier to the right version"
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "Muting removes the chair rather than choosing a version.",
+        "Layer offsets retime content; they do not pick files.",
+        "Edit targets choose where edits are written.",
+        "Resolver contexts let the same identifier resolve differently per stage."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/ar_page_front.html",
+        "https://openusd.org/release/api/class_ar_resolver_context.html",
+        "https://openusd.org/release/api/class_usd_stage.html"
+      ]
+    },
+    {
+      "id": "pipe-005",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.6",
+        "5.3"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "Which call returns the version recorded for the Chair asset below?",
+      "usda": {
+        "chair.usda": "#usda 1.0\n(\n    defaultPrim = \"Chair\"\n)\n\ndef Xform \"Chair\" (\n    assetInfo = {\n        asset identifier = @./chair.usda@\n        string name = \"Chair\"\n        string version = \"3\"\n    }\n    kind = \"component\"\n)\n{\n}\n"
+      },
+      "options": [
+        "prim.GetMetadata(\"version\")",
+        "prim.GetAttribute(\"assetInfo:version\").Get()",
+        "Usd.ModelAPI(prim).GetAssetVersion()",
+        "prim.GetCustomDataByKey(\"version\")"
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "version is a key inside assetInfo, not a metadata field.",
+        "assetInfo is metadata, not an attribute.",
+        "UsdModelAPI exposes the conventional assetInfo fields (identifier, name, version, payloadAssetDependencies).",
+        "customData is a separate dictionary."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/asset-info.md",
+        "https://openusd.org/release/api/class_usd_model_a_p_i.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Chair",
+            "expect": {
+              "asset_info": {
+                "version": "3",
+                "name": "Chair"
+              },
+              "metadata": {
+                "version": null
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "pipe-006",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.7"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "A publish check must catch badly formatted asset paths before assets are shared with other sites. Which checks are sensible? (Select TWO.)",
+      "options": [
+        "Require backslashes in asset paths so they work on Windows.",
+        "Resolve every asset path the asset uses (for example with UsdUtils.ComputeAllDependencies) and fail on paths that do not resolve.",
+        "Flag absolute, machine-specific paths (such as C:/Users/... or /home/...) and require layer-relative paths like ./textures/wood.png.",
+        "Reject relative paths because they resolve against the current working directory.",
+        "Require every asset path to point to a .usda file."
+      ],
+      "answer": [
+        1,
+        2
+      ],
+      "explanations": [
+        "Forward slashes work on every platform; backslashes are not portable.",
+        "Unresolved paths mean missing layers or textures.",
+        "Relative paths are anchored to the layer that authors them, so they keep working after the asset moves.",
+        "Relative paths resolve against the authoring layer, not the working directory.",
+        "Asset paths also point to textures, usdc layers and other files."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/data-exchange/asset-validation/what-is-asset-validation.md",
+        "https://openusd.org/release/api/ar_page_front.html",
+        "https://openusd.org/release/toolset.html"
+      ]
+    },
+    {
+      "id": "pipe-007",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.4"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "A layout tool lets artists move props in a shot and must save their changes without touching the published set layers. Which techniques support this? (Select TWO.)",
+      "options": [
+        "Set the stage's edit target to a layout layer in the shot's layer stack, so new opinions are written there.",
+        "Use a payload so the set is not loaded while editing.",
+        "Mute the layout layer while saving.",
+        "Save the changes into the published set layer and bump its version.",
+        "Make sure that layout layer is stronger than the set layers (for example earlier in subLayers), so its overrides win."
+      ],
+      "answer": [
+        0,
+        4
+      ],
+      "explanations": [
+        "Edit targets route authoring into the right layer.",
+        "Unloading the set leaves nothing to arrange.",
+        "Muting hides the layout layer's opinions.",
+        "That changes a published asset for every shot that uses it.",
+        "An edit only shows if it is written to a layer strong enough to win."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/edit-targets-layer-muting.md",
+        "https://openusd.org/release/api/class_usd_edit_target.html",
+        "LearnOpenUSD-main/docs/creating-composition-arcs/sublayers/what-are-sublayers.md"
+      ]
+    },
+    {
+      "id": "pipe-008",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.1",
+        "4.1"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "You convert a USD asset to glTF and back as a fidelity check. Which automated comparison best catches geometry placement or scale problems?",
+      "options": [
+        "Compare the two files' sizes on disk",
+        "Compare world-space bounding boxes computed with UsdGeom.BBoxCache on the original and the round-tripped stage",
+        "Compare the files' modification times",
+        "Check that both stages have the same number of layers"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "File size says nothing about placement or scale.",
+        "Bounds expose unit, axis and transform mistakes cheaply, and BBoxCache handles the transforms.",
+        "Timestamps carry no geometric information.",
+        "The round-tripped asset may legitimately have a different layer structure."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_geom_b_box_cache.html",
+        "LearnOpenUSD-main/docs/data-exchange/data-transformation/what-is-data-transformation.md"
+      ]
+    },
+    {
+      "id": "pipe-009",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.8"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "An importer walks the stage with `it = iter(Usd.PrimRange(stage.GetPseudoRoot()))`. When it reaches a prim whose subtree it converts as one unit, it wants to skip that prim's descendants. Which call does that?",
+      "options": [
+        "prim.SetActive(False)",
+        "stage.Unload(prim.GetPath())",
+        "stage.RemovePrim(child.GetPath()) for each child",
+        "it.PruneChildren()"
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "That edits the stage and removes the subtree for everyone.",
+        "Unload changes payload load state; it is not a traversal control.",
+        "That destroys scene data.",
+        "PruneChildren tells the iterator not to descend below the current prim."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/stage-traversal.md",
+        "https://openusd.org/release/api/class_usd_prim_range.html"
+      ]
+    },
+    {
+      "id": "pipe-010",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.8"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "An importer that uses stage.Traverse() finds no Cube prims in the yard below. Which traversal visits /Yard/Crate_01/Box?",
+      "usda": {
+        "crate.usda": "#usda 1.0\n(\n    defaultPrim = \"Crate\"\n)\n\ndef Xform \"Crate\"\n{\n    def Cube \"Box\"\n    {\n    }\n}\n",
+        "yard.usda": "#usda 1.0\n\ndef Xform \"Yard\"\n{\n    def Xform \"Crate_01\" (\n        instanceable = true\n        prepend references = @./crate.usda@\n    )\n    {\n    }\n}\n"
+      },
+      "root": "yard.usda",
+      "options": [
+        "Usd.PrimRange(stage.GetPrimAtPath(\"/Yard\"))",
+        "stage.TraverseAll()",
+        "stage.Traverse() after calling stage.Load()",
+        "stage.Traverse(Usd.TraverseInstanceProxies())"
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "A plain PrimRange uses the same default predicate and stops at the instance.",
+        "TraverseAll relaxes the active/defined/loaded rules but still does not enter instances.",
+        "Nothing is unloaded; the Box is hidden by instancing, not by load state.",
+        "Instance proxies are only visited when the predicate asks for them."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/stage-traversal.md",
+        "LearnOpenUSD-main/docs/asset-modularity-instancing/authoring-scenegraph-instancing/scenegraph-instancing-intro.md",
+        "https://openusd.org/release/api/class_usd_prim_range.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/",
+            "expect": {
+              "traverse": [
+                "/Yard",
+                "/Yard/Crate_01"
+              ],
+              "traverse_all": [
+                "/Yard",
+                "/Yard/Crate_01"
+              ],
+              "traverse_instance_proxies": [
+                "/Yard",
+                "/Yard/Crate_01",
+                "/Yard/Crate_01/Box"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "pipe-011",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.3"
+      ],
+      "type": "multi",
+      "difficulty": "easy",
+      "stem": "Which statements about the .usdz package format are correct? (Select TWO.)",
+      "options": [
+        "Any zip file renamed to .usdz is a valid package.",
+        "It suits delivering a finished asset together with its dependencies, rather than files still being edited.",
+        "It is a zip archive whose files are stored uncompressed and aligned, so USD can read them in place without extracting.",
+        "A usdz package may only contain usda layers.",
+        "Its contents are deflate-compressed to minimize size."
+      ],
+      "answer": [
+        1,
+        2
+      ],
+      "explanations": [
+        "Ordinary zips may compress or misalign files; use usdzip or UsdUtils to create packages.",
+        "usdz packages are read-only bundles meant for distribution.",
+        "The usdz specification requires no compression and 64-byte alignment.",
+        "Packages commonly hold usdc layers and textures.",
+        "Compression would prevent reading files in place, so it is not allowed."
+      ],
+      "citations": [
+        "https://openusd.org/release/spec_usdz.html",
+        "LearnOpenUSD-main/docs/stage-setting/usd-file-formats.md",
+        "https://openusd.org/release/toolset.html"
+      ]
+    },
+    {
+      "id": "pipe-012",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.2"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "A vendor's layer has no unit or axis metadata. What does UsdGeom.GetStageMetersPerUnit(stage) return for it, and what should your guidelines require?",
+      "usda": {
+        "bracket.usda": "#usda 1.0\n(\n    defaultPrim = \"Bracket\"\n)\n\ndef Xform \"Bracket\"\n{\n}\n"
+      },
+      "options": [
+        "0.01 (centimeters, the fallback); require metersPerUnit and upAxis to be authored explicitly",
+        "An error is raised because metersPerUnit is required",
+        "0.0, meaning undefined, and USD refuses to compose the layer",
+        "1.0 (meters, the fallback); no guideline is needed"
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "Unauthored metadata falls back silently (0.01 and Y), which hides the author's intent.",
+        "The metadata is optional.",
+        "USD composes it normally and uses the fallback.",
+        "The fallback is 0.01, not 1.0."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/units.md",
+        "https://openusd.org/release/api/usd_geom_page_front.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/",
+            "expect": {
+              "meters_per_unit": 0.01,
+              "up_axis": "Y"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "pipe-013",
+      "domain": "Pipeline Development",
+      "objective_ids": [
+        "7.4"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "A DCC plugin keeps its own scene graph in sync with a USD stage while other tools edit that stage. Which API lets it react to changes?",
+      "options": [
+        "Wrap every edit in Sdf.ChangeBlock",
+        "Enable TF_DEBUG=USD_CHANGES and parse the console output",
+        "Poll stage.GetRootLayer().identifier on every frame",
+        "Register a listener for Usd.Notice.ObjectsChanged with Tf.Notice.Register(..., stage) and update the changed paths it reports"
+      ],
+      "answer": [
+        3
+      ],
+      "explanations": [
+        "Change blocks batch notices; they do not deliver them to your code.",
+        "Debug output is for diagnosis, not an integration API.",
+        "The identifier does not change with edits.",
+        "ObjectsChanged reports which paths were resynced or had only info changes."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_notice_1_1_objects_changed.html",
+        "https://openusd.org/release/api/class_sdf_change_block.html"
+      ]
+    },
+    {
+      "id": "vis-001",
+      "domain": "Visualization",
+      "objective_ids": [
+        "8.3"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "Which material does UsdShade.MaterialBindingAPI(body).ComputeBoundMaterial() resolve for /World/Car/Body?",
+      "usda": {
+        "car.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Car\" (\n        prepend apiSchemas = [\"MaterialBindingAPI\"]\n    )\n    {\n        rel material:binding = </World/Looks/Red> (\n            bindMaterialAs = \"strongerThanDescendants\"\n        )\n\n        def Mesh \"Body\" (\n            prepend apiSchemas = [\"MaterialBindingAPI\"]\n        )\n        {\n            rel material:binding = </World/Looks/Blue>\n        }\n    }\n\n    def Scope \"Looks\"\n    {\n        def Material \"Red\"\n        {\n        }\n\n        def Material \"Blue\"\n        {\n        }\n    }\n}\n"
+      },
+      "options": [
+        "Neither, because conflicting bindings cancel out",
+        "/World/Looks/Red, because the ancestor's binding is marked strongerThanDescendants",
+        "/World/Looks/Blue, because a prim's own binding always wins",
+        "Both, blended evenly"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "Binding resolution always picks one winner.",
+        "Normally the binding closest to the prim wins; strongerThanDescendants on an ancestor reverses that for its subtree.",
+        "That is the default (weakerThanDescendants) behavior, which the ancestor overrides here.",
+        "USD binds exactly one material per purpose."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_shade_material_binding_a_p_i.html",
+        "LearnOpenUSD-main/docs/scene-description-blueprints/materials-shaders.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/World/Car/Body",
+            "expect": {
+              "bound_material": "/World/Looks/Red"
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "note": "default binding strength",
+            "usda": {
+              "car.usda": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Car\" (\n        prepend apiSchemas = [\"MaterialBindingAPI\"]\n    )\n    {\n        rel material:binding = </World/Looks/Red>\n\n        def Mesh \"Body\" (\n            prepend apiSchemas = [\"MaterialBindingAPI\"]\n        )\n        {\n            rel material:binding = </World/Looks/Blue>\n        }\n    }\n\n    def Scope \"Looks\"\n    {\n        def Material \"Red\"\n        {\n        }\n\n        def Material \"Blue\"\n        {\n        }\n    }\n}\n"
+            },
+            "checks": [
+              {
+                "path": "/World/Car/Body",
+                "expect": {
+                  "bound_material": "/World/Looks/Blue"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "vis-002",
+      "domain": "Visualization",
+      "objective_ids": [
+        "8.4",
+        "8.2"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "This network is meant to drive the diffuse color from the mesh's displayColor primvar. Which statement is correct?",
+      "usda": {
+        "asset.usda": "#usda 1.0\n\ndef Xform \"Asset\"\n{\n    def Mesh \"Geo\" (\n        prepend apiSchemas = [\"MaterialBindingAPI\"]\n    )\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        rel material:binding = </Asset/Looks/VertexColor>\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n        color3f[] primvars:displayColor = [(1, 0, 0), (0, 1, 0), (0, 0, 1)] (\n            interpolation = \"vertex\"\n        )\n    }\n\n    def Scope \"Looks\"\n    {\n        def Material \"VertexColor\"\n        {\n            token outputs:surface.connect = </Asset/Looks/VertexColor/Surface.outputs:surface>\n\n            def Shader \"Surface\"\n            {\n                uniform token info:id = \"UsdPreviewSurface\"\n                color3f inputs:diffuseColor.connect = </Asset/Looks/VertexColor/ColorReader.outputs:result>\n                token outputs:surface\n            }\n\n            def Shader \"ColorReader\"\n            {\n                uniform token info:id = \"UsdPrimvarReader_float3\"\n                string inputs:varname = \"displayColor\"\n                float3 outputs:result\n            }\n        }\n    }\n}\n"
+      },
+      "options": [
+        "varname must be \"primvars:displayColor\".",
+        "It is set up correctly: the reader names the primvar without the primvars: prefix, and its result is connected to diffuseColor.",
+        "Primvar readers only work with constant interpolation.",
+        "The reader must connect to the Material's outputs:surface instead of to the shader."
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "varname takes the primvar's name without the primvars: namespace.",
+        "UsdPrimvarReader_float3 reads the primvar named by varname (without the namespace) and its outputs:result feeds the surface input.",
+        "Readers return the interpolated primvar value at the shading point, for any interpolation.",
+        "The material's surface output connects to the surface shader; readers feed shader inputs."
+      ],
+      "citations": [
+        "https://openusd.org/release/spec_usdpreviewsurface.html",
+        "LearnOpenUSD-main/docs/scene-description-blueprints/materials-shaders.md",
+        "LearnOpenUSD-main/docs/beyond-basics/primvars.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Asset/Looks/VertexColor/Surface.inputs:diffuseColor",
+            "expect": {
+              "connections": [
+                "/Asset/Looks/VertexColor/ColorReader.outputs:result"
+              ]
+            }
+          },
+          {
+            "path": "/Asset/Looks/VertexColor.outputs:surface",
+            "expect": {
+              "connections": [
+                "/Asset/Looks/VertexColor/Surface.outputs:surface"
+              ]
+            }
+          },
+          {
+            "path": "/Asset/Looks/VertexColor/ColorReader.inputs:varname",
+            "expect": "displayColor"
+          },
+          {
+            "path": "/Asset/Geo",
+            "expect": {
+              "bound_material": "/Asset/Looks/VertexColor"
+            }
+          },
+          {
+            "path": "/Asset/Geo.primvars:displayColor",
+            "expect": {
+              "interpolation": "vertex",
+              "length": 3
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "vis-003",
+      "domain": "Visualization",
+      "objective_ids": [
+        "8.2"
+      ],
+      "type": "multi",
+      "difficulty": "easy",
+      "stem": "Which statements about a UsdPreviewSurface material are correct? (Select TWO.)",
+      "options": [
+        "metallic is a color3f input.",
+        "The shader prim identifies itself with info:id = \"UsdPreviewSurface\".",
+        "diffuseColor accepts only a texture connection, never a constant value.",
+        "UsdPreviewSurface requires an MDL module path.",
+        "The Material's outputs:surface is connected to the shader's outputs:surface."
+      ],
+      "answer": [
+        1,
+        4
+      ],
+      "explanations": [
+        "metallic is a float input.",
+        "info:id names the shader definition the renderer should use.",
+        "Inputs can hold constant values or be connected to other shaders.",
+        "UsdPreviewSurface is a portable USD-defined shader; no MDL is involved.",
+        "Renderers find the surface shader through the material's surface output."
+      ],
+      "citations": [
+        "https://openusd.org/release/spec_usdpreviewsurface.html",
+        "LearnOpenUSD-main/docs/scene-description-blueprints/materials-shaders.md",
+        "https://openusd.org/release/api/class_usd_shade_material.html"
+      ]
+    },
+    {
+      "id": "vis-004",
+      "domain": "Visualization",
+      "objective_ids": [
+        "8.3"
+      ],
+      "type": "multi",
+      "difficulty": "medium",
+      "stem": "Which statements about the per-face material assignment below are correct? (Select TWO.)",
+      "usda": {
+        "box.usda": "#usda 1.0\n\ndef Xform \"Box\"\n{\n    def Mesh \"Geo\" (\n        prepend apiSchemas = [\"MaterialBindingAPI\"]\n    )\n    {\n        int[] faceVertexCounts = [4, 4]\n        int[] faceVertexIndices = [0, 1, 4, 3, 1, 2, 5, 4]\n        rel material:binding = </Box/Looks/Paint>\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (2, 0, 0), (0, 1, 0), (1, 1, 0), (2, 1, 0)]\n\n        def GeomSubset \"Label\" (\n            prepend apiSchemas = [\"MaterialBindingAPI\"]\n        )\n        {\n            uniform token elementType = \"face\"\n            uniform token familyName = \"materialBind\"\n            int[] indices = [1]\n            rel material:binding = </Box/Looks/Sticker>\n        }\n    }\n\n    def Scope \"Looks\"\n    {\n        def Material \"Paint\"\n        {\n        }\n\n        def Material \"Sticker\"\n        {\n        }\n    }\n}\n"
+      },
+      "options": [
+        "The mesh's own binding is ignored entirely once any subset exists.",
+        "A GeomSubset can only be bound when its mesh has no binding.",
+        "The subset's familyName materialBind marks it as part of the material-binding subset family.",
+        "Material subsets list point indices rather than face indices.",
+        "Face 1 resolves to Sticker through the GeomSubset's binding, while face 0 uses the mesh's Paint binding."
+      ],
+      "answer": [
+        2,
+        4
+      ],
+      "explanations": [
+        "Faces outside every subset still use the mesh's binding.",
+        "Mesh and subset bindings are used together.",
+        "Renderers look for subsets in the materialBind family when assigning per-face materials.",
+        "With elementType = face, indices refers to faces.",
+        "Faces listed in a materialBind subset use the subset's binding; other faces use the mesh binding."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_geom_subset.html",
+        "https://openusd.org/release/api/class_usd_shade_material_binding_a_p_i.html"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Box/Geo/Label",
+            "expect": {
+              "bound_material": "/Box/Looks/Sticker",
+              "type": "GeomSubset"
+            }
+          },
+          {
+            "path": "/Box/Geo",
+            "expect": {
+              "bound_material": "/Box/Looks/Paint"
+            }
+          },
+          {
+            "path": "/Box/Geo/Label.familyName",
+            "expect": "materialBind"
+          },
+          {
+            "path": "/Box/Geo/Label.indices",
+            "expect": [
+              1
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "vis-005",
+      "domain": "Visualization",
+      "objective_ids": [
+        "8.1",
+        "5.1"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "Which snippet gives `mesh` (a UsdGeom.Mesh) a single preview color for its whole surface, stored as a primvar?",
+      "options": [
+        "mesh.CreateDisplayColorPrimvar(UsdGeom.Tokens.vertex).Set([(0.8, 0.2, 0.2)])",
+        "mesh.GetPrim().CreateAttribute(\"displayColor\", Sdf.ValueTypeNames.Color3f).Set((0.8, 0.2, 0.2))",
+        "mesh.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant).Set([(0.8, 0.2, 0.2)])",
+        "UsdShade.Material.Define(stage, \"/Color\").Set((0.8, 0.2, 0.2))"
+      ],
+      "answer": [
+        2
+      ],
+      "explanations": [
+        "vertex interpolation needs one color per point, so a single value is the wrong size.",
+        "An attribute outside the primvars: namespace is not the displayColor primvar.",
+        "This creates primvars:displayColor with constant interpolation and one color.",
+        "A Material prim has no Set method for a color, and defining one does not color the mesh."
+      ],
+      "citations": [
+        "LearnOpenUSD-main/docs/beyond-basics/primvars.md",
+        "https://openusd.org/release/api/class_usd_geom_gprim.html",
+        "https://openusd.org/release/api/class_usd_geom_primvar.html"
+      ]
+    },
+    {
+      "id": "vis-006",
+      "domain": "Visualization",
+      "objective_ids": [
+        "8.3"
+      ],
+      "type": "single",
+      "difficulty": "medium",
+      "stem": "The Statue mesh has an all-purpose binding and a preview binding. A viewport asks for the preview material purpose and a final-frame renderer asks for full. Which materials do they get?",
+      "usda": {
+        "statue.usda": "#usda 1.0\n\ndef Mesh \"Statue\" (\n    prepend apiSchemas = [\"MaterialBindingAPI\"]\n)\n{\n    rel material:binding = </Looks/Marble>\n    rel material:binding:preview = </Looks/Grey>\n}\n\ndef Scope \"Looks\"\n{\n    def Material \"Marble\"\n    {\n    }\n\n    def Material \"Grey\"\n    {\n    }\n}\n"
+      },
+      "options": [
+        "Preview gets /Looks/Marble and full gets /Looks/Grey",
+        "Preview gets /Looks/Grey; full gets /Looks/Marble from the all-purpose binding",
+        "Both get /Looks/Marble, because the unqualified binding always wins",
+        "Both get /Looks/Grey"
+      ],
+      "answer": [
+        1
+      ],
+      "explanations": [
+        "This swaps the two purposes.",
+        "A purpose-specific binding wins for that purpose, and other purposes fall back to the all-purpose binding.",
+        "Purpose-specific bindings take precedence for their own purpose.",
+        "The preview binding only applies to the preview purpose."
+      ],
+      "citations": [
+        "https://openusd.org/release/api/class_usd_shade_material_binding_a_p_i.html",
+        "LearnOpenUSD-main/docs/scene-description-blueprints/materials-shaders.md"
+      ],
+      "verify": {
+        "checks": [
+          {
+            "path": "/Statue",
+            "expect": {
+              "bound_material": "/Looks/Grey",
+              "material_purpose": "preview"
+            }
+          },
+          {
+            "path": "/Statue",
+            "expect": {
+              "bound_material": "/Looks/Marble",
+              "material_purpose": "full"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "vis-007",
+      "domain": "Visualization",
+      "objective_ids": [
+        "8.2"
+      ],
+      "type": "single",
+      "difficulty": "easy",
+      "stem": "In a UsdPreviewSurface network, a UsdUVTexture shader reads a color texture. Which of its outputs connects to the surface's diffuseColor input?",
+      "options": [
+        "outputs:rgb",
+        "outputs:displacement",
+        "outputs:result",
+        "outputs:surface"
+      ],
+      "answer": [
+        0
+      ],
+      "explanations": [
+        "rgb is the texture's three-channel float3 output, matching a color input.",
+        "That is a surface shader output for displacement.",
+        "outputs:result is the output of primvar readers.",
+        "outputs:surface belongs to the surface shader and the material."
+      ],
+      "citations": [
+        "https://openusd.org/release/spec_usdpreviewsurface.html",
+        "LearnOpenUSD-main/docs/scene-description-blueprints/materials-shaders.md"
+      ]
+    }
+  ]
+}

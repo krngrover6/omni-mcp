@@ -4,7 +4,10 @@ import json
 from dataclasses import asdict
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
+
+# The scene bridge is a loopback service: never route its RPCs through HTTP(S)_PROXY.
+urlopen = build_opener(ProxyHandler({})).open
 
 from .bridge import PrimRecord, SceneSnapshot
 
