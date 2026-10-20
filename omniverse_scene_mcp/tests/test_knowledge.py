@@ -24,3 +24,18 @@ def test_usd_selector_builds_class_and_module_detail_requests():
 
     unnamed = select("class reference please")
     assert unnamed.arguments == {"class_names": "class reference please"}
+
+
+def test_usd_selector_reads_method_names_instead_of_filler_words():
+    select = build_usd_backend("http://127.0.0.1:1/mcp").selector
+
+    dotted = select("method detail for Usd.Stage.Open")
+    assert dotted.tool_name == "get_usd_method_detail"
+    assert dotted.arguments == {"method_names": "Open", "class_name": "Usd.Stage"}
+
+    named = select("Is there a signature for GetAttribute on UsdPrim?")
+    assert named.arguments == {"method_names": "GetAttribute", "class_name": "UsdPrim"}
+
+    class_only = select("method detail for UsdGeom.Xform")
+    assert class_only.tool_name == "get_usd_class_detail"
+    assert class_only.arguments == {"class_names": "UsdGeom.Xform"}

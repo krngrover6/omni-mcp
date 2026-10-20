@@ -91,6 +91,38 @@ def test_router_fallback_lesson_matches_whole_topic_words():
     assert asyncio.run(router.handle("What is a USD schema?")).payload["fallback"]["topic"] == "schemas"
 
 
+def test_router_runs_polite_scene_requests():
+    bridge = FakeSceneBridge()
+    router = OmniverseRouter(SceneMCPService(bridge))
+    assert router.route("can you move the cube up in kit?").target is RouteTarget.SCENE
+    moved = asyncio.run(router.handle("could you please move /World/Props/Cube 1 2 3?")).payload
+    assert moved["ok"] is True
+    assert moved["payload"]["prim"]["translation"] == (1.0, 2.0, 3.0)
+    for request in ("can you explain usd schemas?", "could you find docs about usd references?"):
+        assert router.route(request).target is not RouteTarget.SCENE, request
+
+
+def test_router_never_creates_a_prim_for_requests_about_an_existing_one():
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
+    before = router.scene_summary()
+    for request in ("could you make the light brighter in usd?", "make the cube red", "add the cube to the shelf"):
+        payload = asyncio.run(router.handle(request)).payload
+        assert payload.get("changes", [{}])[0].get("action") != "create", request
+    assert router.scene_summary() == before
+    created = asyncio.run(router.handle("add a cube")).payload
+    assert created["payload"]["prim"]["type_name"] == "Cube"
+
+
+def test_router_lists_candidates_instead_of_guessing_a_vague_target():
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
+    before = router.scene_summary()
+    payload = asyncio.run(router.handle("can you move the cube up in kit?")).payload
+    assert payload["ok"] is False
+    assert "/World/Props/Cube" in payload["candidates"]
+    assert "Nothing was changed" in payload["hint"]
+    assert router.scene_summary() == before
+
+
 def test_router_understands_plain_english_scene_summary():
     router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
     result = asyncio.run(router.handle("show me the scene"))

@@ -31,6 +31,18 @@ _LEARNING_PHRASES = (
 _USD_WORD = re.compile(r"(?<!\w)(?<!\w\.)usd\b")
 _KIT_WORD = re.compile(r"(?<!\w)(?<!\w\.)kit\b")
 
+# "can you move the cube up in kit?" -> "move the cube up": polite wrappers and app names around a scene request.
+_POLITE_PREFIX = re.compile(r"^(?:hey\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?")
+_POLITE_SUFFIX = re.compile(
+    r"(?:\s+(?:in|inside|using)\s+(?:usd composer|composer|omniverse kit|kit|usd|isaac sim|isaac))?"
+    r"(?:\s+(?:please|for me))?\s*[?.!]*$"
+)
+_SCENE_VERB = re.compile(
+    r"^(?:move|shift|nudge|rotate|scale|make|select|focus|highlight|inspect|delete|remove|duplicate|"
+    r"rename|reparent|find|search|add|create|spawn|place|save|bind|assign|paint)\b"
+)
+_TARGET_STOP_WORDS = {"up", "down", "left", "right", "by", "to", "in", "on", "under", "with", "into", "onto", "from", "bigger", "smaller"}
+
 # Questions about the open stage keep their scene-aware routing instead of going to a docs backend.
 _LIVE_SCENE = re.compile(r"(?:^|\s)/\w|\bselect(?:ed|ion)\b|\bmy\b|\b(?:this|current) (?:scene|stage)\b|\bhow many\b")
 
@@ -158,6 +170,14 @@ class OmniverseRouter:
         # Checked before learning topics, which also match words such as "move", "select" and "prim".
         if self._looks_like_targeted_scene_command(normalized):
             return RoutingDecision(RouteTarget.SCENE, 0.97, "Scene command verb with a target detected", normalized)
+        core = self._strip_politeness(normalized)
+        if (
+            core != normalized
+            and _SCENE_VERB.match(core)
+            and not any(phrase in core for phrase in _LEARNING_PHRASES)
+            and not re.search(r"\b(?:docs?|documentation|examples?|api)\b", core)
+        ):
+            return RoutingDecision(RouteTarget.SCENE, 0.9, "Polite scene request detected", normalized)
         learning_topic = self._detect_learning_topic(normalized)
         explicit_learning = self._detect_learning_style(normalized) != "lesson" or any(
             phrase in normalized for phrase in _LEARNING_PHRASES
@@ -232,11 +252,19 @@ class OmniverseRouter:
     def _dispatch_scene(self, request: str, dry_run: bool) -> dict[str, Any]:
         parsed = self._parse_scene_command(request)
         if parsed is None:
-            return {
+            failure = {
                 "ok": False,
                 "message": "Scene routing selected, but I could not parse the command.",
                 "hint": "Try phrases like 'inspect /World', 'create /World/NewPrim', 'select /World/Cube', 'rename /World/Cube to HeroCube', or 'find cube'.",
             }
+            candidates = self._candidate_prims(request)
+            if candidates:
+                failure["candidates"] = candidates
+                failure["hint"] = (
+                    "Name the prim by path (or select it and say 'this') and give exact values, "
+                    f"for example 'move {candidates[0]} 0 0 1'. Nothing was changed."
+                )
+            return failure
 
         action = parsed["action"]
         if action == "summary":
@@ -1265,7 +1293,7 @@ class OmniverseRouter:
         }
 
     def _parse_scene_command(self, request: str) -> dict[str, Any] | None:
-        text = request.strip()
+        text = self._strip_politeness(request.strip(), keep_case=True)
         lower = text.lower()
         if lower in {"ping", "scene ping", "status"}:
             return {"action": "ping"}
@@ -1317,8 +1345,9 @@ class OmniverseRouter:
                     "path": path_candidate,
                     "scale": (scale_value, scale_value, scale_value),
                 }
+        # "the ..." names something that already exists ("make the light brighter"), so it never creates a prim.
         create_natural = re.match(
-            r"^(?:can you\s+)?(?:please\s+)?(?:make|create|add|spawn|place)\s+(?:a|an|the)?\s*(.+)$",
+            r"^(?:can you\s+)?(?:please\s+)?(?:make\s+(?:a|an|another|new)\s+|(?:create|add|spawn|place)\s+(?:a\s+|an\s+|another\s+|new\s+)?(?!the\b))(.+)$",
             text,
             re.IGNORECASE,
         )
@@ -1463,6 +1492,36 @@ class OmniverseRouter:
             return {"action": "save", "path": save_natural.group(1).strip()}
 
         return None
+
+    @staticmethod
+    def _strip_politeness(text: str, keep_case: bool = False) -> str:
+        """Remove "can you / please" and a trailing "in kit?" so the scene parser sees the plain command."""
+        lowered = text.lower()
+        prefix = _POLITE_PREFIX.match(lowered)
+        start = prefix.end() if prefix else 0
+        suffix = _POLITE_SUFFIX.search(lowered, start)
+        end = suffix.start() if suffix else len(text)
+        core = (text if keep_case else lowered)[start:end].strip()
+        return core or (text if keep_case else lowered).strip()
+
+    def _candidate_prims(self, request: str) -> list[str]:
+        """Read-only lookup of prims named like the object in "move the cube up", so the user can pick a path."""
+        words = re.findall(r"[a-z0-9_]+", self._strip_politeness(self._normalize(request)))
+        if not words or not _SCENE_VERB.match(words[0]):
+            return []
+        target: list[str] = []
+        for word in words[1:]:
+            if word in _TARGET_STOP_WORDS or word[0].isdigit():
+                break
+            if word not in {"the", "a", "an", "this", "that", "my", "our"}:
+                target.append(word)
+        if not target:
+            return []
+        try:
+            matches = self._scene.find_prims(target[-1])["prims"]
+        except Exception:  # noqa: BLE001 - candidates are a hint only
+            return []
+        return [prim["path"] for prim in matches][:10]
 
     def _single_selected_path(self) -> str | None:
         selection = self._scene.current_selection()

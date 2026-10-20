@@ -143,6 +143,30 @@ def _extract_usd_name(query: str) -> str:
     return names[-1] if names else ""
 
 
+_METHOD_FILLER = {"detail", "details", "docs", "doc", "signature", "signatures", "reference", "info", "for", "of", "on"}
+_METHOD_VERB = re.compile(
+    r"\b((?:Get|Set|Create|Add|Remove|Has|Is|Compute|Clear|Apply|Define|Open|Find|Traverse|Bind|Make)[A-Z][A-Za-z0-9_]*)\b"
+)
+
+
+def _extract_usd_method(query: str) -> tuple[str, str]:
+    """Return (class_name, method_name), e.g. ("Usd.Stage", "Open") for "method detail for Usd.Stage.Open".
+
+    Filler words after "method" ("method detail for ...") are never taken as the method name.
+    """
+    name = _extract_usd_name(query)
+    parts = name.split(".") if name else []
+    if len(parts) >= 3:
+        return ".".join(parts[:-1]), parts[-1]
+    match = re.search(r"\b(?:method|function)s?\s+(?:named\s+|called\s+)?([A-Za-z_][A-Za-z0-9_]*)", query, re.IGNORECASE)
+    if match and match.group(1).lower() not in _METHOD_FILLER and match.group(1) != name:
+        return name, match.group(1)
+    for candidate in re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(", query) + _METHOD_VERB.findall(query):
+        if candidate not in name.split("."):
+            return name, candidate
+    return name, ""
+
+
 def _extract_instruction_sets(query: str) -> str | list[str] | None:
     lowered = query.lower()
     for keyword in ("kit_system", "omni_ui_system", "isaacsim_system", "extensions", "testing", "ui"):
@@ -177,11 +201,11 @@ def build_usd_backend(endpoint: str | None = None) -> StreamableMCPKnowledgeBack
         if any(token in lowered for token in ("list classes", "classes in", "browse classes")):
             return ToolSelection("list_usd_classes", {}, "User asked for class browsing")
         if any(token in lowered for token in ("method detail", "method", "signature", "arguments")):
-            method_name = _extract_name(query)
-            class_name = ""
-            class_match = re.search(r"class\s+([A-Za-z0-9_.]+)", query, re.IGNORECASE)
-            if class_match:
-                class_name = class_match.group(1)
+            class_name, method_name = _extract_usd_method(query)
+            if not method_name and class_name:
+                return ToolSelection(
+                    "get_usd_class_detail", {"class_names": class_name}, "No method named; class detail lists its methods"
+                )
             payload = {"method_names": method_name or query}
             if class_name:
                 payload["class_name"] = class_name
