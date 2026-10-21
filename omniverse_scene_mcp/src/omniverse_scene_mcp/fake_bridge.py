@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import Any
 
-from .bridge import PrimRecord, SceneSnapshot
+from .bridge import BASIC_RPC_METHODS, PrimRecord, SceneSnapshot, unsupported_result
+
+_FAKE_HINT = (
+    "connect the router to a live Isaac Sim bridge (9911) for this, or use the saved-file tools "
+    "(scene_stage_info, scene_composition, scene_explain_value, scene_properties, scene_bounds, usd_validate)."
+)
 
 
 class FakeSceneBridge:
@@ -219,6 +225,41 @@ class FakeSceneBridge:
     def save_scene(self, path: str) -> str:
         self._stage_name = path.rsplit("/", 1)[-1] or self._stage_name
         return path
+
+    def capabilities(self) -> dict[str, Any]:
+        """Only the basic scene methods: the fake scene has no USD stage for insight or authoring."""
+        return {
+            "ok": True,
+            "bridge": type(self).__name__,
+            "version": "fake",
+            "methods": list(BASIC_RPC_METHODS),
+            "insight_queries": [],
+            "authoring": {"available": False, "error": "The in-memory fake scene has no USD stage."},
+            "fake_scene": True,
+            "message": "In-memory fake scene: only the basic scene methods are available.",
+        }
+
+    def insight(self, query: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._not_supported("insight", "Live insight", query=str(query))
+
+    def create_light(self, path: str, light_type: str = "", **_options: Any) -> dict[str, Any]:
+        return self._not_supported("create_light", "Creating lights", path=str(path))
+
+    def create_camera(self, path: str, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("create_camera", "Creating cameras", path=str(path))
+
+    def aim(self, path: str, target: Any = None, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("aim", "Aiming prims", path=str(path))
+
+    @staticmethod
+    def _not_supported(method: str, what: str, **extra: Any) -> dict[str, Any]:
+        return unsupported_result(
+            method,
+            f"{what} is not supported on the in-memory fake scene; {_FAKE_HINT}",
+            needs_bridge_update=False,
+            fake_scene=True,
+            **extra,
+        )
 
     def _require_prim(self, path: str) -> PrimRecord:
         prim = self._prims.get(path)

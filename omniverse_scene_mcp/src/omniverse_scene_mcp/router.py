@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from enum import Enum
 import os
@@ -102,6 +104,34 @@ _NAME_ACTIONS = _EDIT_ACTIONS | {"inspect", "children", "select"}
 _NAME_CREATE_VERBS = {"add", "create", "spawn", "place", "find", "search", "save"}
 _DEFAULT_TARGET = "/World/Props/Cube"
 _PRACTICE_TOPICS = ("schemas", "prims", "selection", "transforms", "materials", "lights", "workflow")
+
+# NCP-OUSD daily lessons: "start day 3", "day one", "lesson for day 2", "next lesson", "today's lesson".
+_DAY_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "first": 1, "second": 2, "third": 3,
+}
+_EXAM_VERBS = (
+    r"(?:(?:let'?s|i want to|i'd like to)\s+)?"
+    r"(?:(?:start|begin|open|show(?:\s+me)?|give\s+me|do|run|load|resume|continue(?:\s+with)?|go\s+to|"
+    r"take\s+me\s+to|move\s+on\s+to|on\s+to)\s+)?"
+)
+_EXAM_DAY = re.compile(
+    r"^(?:what(?:'s|\s+is)\s+)?" + _EXAM_VERBS + r"(?:(?:the|my)\s+)?(?:lesson\s+for\s+)?(?:(?:exam|study|plan)\s+)?"
+    r"day\s+(?P<day>\d{1,4}|" + "|".join(_DAY_WORDS) + r")"
+    r"(?:\s+(?:lesson|of\s+(?:the|my)\s+(?:study\s+|exam\s+)?plan|(?:study\s+|exam\s+)?plan))?$"
+)
+_NEXT_LESSON = re.compile(
+    r"^(?:what(?:'s|\s+is)\s+)?" + _EXAM_VERBS + r"(?:(?:the|my)\s+)?(?:next|today'?s)\s+(?:exam\s+|study\s+|daily\s+)?"
+    r"(?:lesson|day|study\s+day|session)$"
+    r"|^(?:continue|resume)\s+(?:(?:my|the)\s+)?(?:study\s+plan|exam\s+plan|daily\s+lessons?|exam\s+prep)$"
+)
+# Timed mock exams are never started from a sentence: the router explains how instead.
+# 'mock' needs a separator and 'full test' is left out, so prim names (MockTest) and 'full test suite' stay scene/usd.
+_MOCK_EXAM = re.compile(
+    r"\bmock[\s-]+(?:exams?|tests?)\b|\b(?:full|timed)\s+(?:practice\s+)?exams?\b|\btimed\s+(?:practice\s+)?tests?\b"
+    r"|\bpractice\s+exams?\b|\bexam\s+simulation\b"
+)
+MOCK_EXAM_DEFAULTS = {"count": 65, "minutes": 120}
 _USD_SUFFIXES = (".usd", ".usda", ".usdc", ".usdz")
 
 _QUIZZES: dict[str, dict[str, list[str]]] = {
@@ -259,8 +289,14 @@ class OmniverseRouter:
         omni_ui_backend: KnowledgeBackend | None = None,
         isaac_sim_backend: KnowledgeBackend | None = None,
         bowerbot_backend: KnowledgeBackend | None = None,
+        exam_day: Callable[[int | None], dict[str, Any]] | None = None,
+        mock_status: Callable[[], dict[str, Any] | None] | None = None,
     ) -> None:
         self._scene = scene_service
+        # Optional exam hooks (runtime.build_router wires them to the server's stores): exam_day(day) builds that
+        # day's lesson; mock_status() is the open mock's status or None.
+        self._exam_day = exam_day
+        self._mock_status = mock_status
         self._practice_session: dict[str, Any] | None = None
         self._learning_history: list[dict[str, Any]] = []
         self._learning_progress: dict[str, Any] = {
@@ -297,6 +333,11 @@ class OmniverseRouter:
         if self._practice_session is not None and normalized in {"done", "next", "continue", "ok", "finished"}:
             return RoutingDecision(RouteTarget.LEARN, 0.99, "Active practice session advance request", normalized)
         core = self._strip_politeness(normalized)
+        exam = self._exam_request(normalized)
+        if exam is not None:
+            if exam[0] == "mock":
+                return RoutingDecision(RouteTarget.LEARN, 0.95, "Mock exam request (explained, never auto-started)", normalized)
+            return RoutingDecision(RouteTarget.LEARN, 0.96, "Daily exam lesson request", normalized)
         if _is_prim_count_question(core):
             return RoutingDecision(RouteTarget.SCENE, 0.95, "Prim count question about the open stage", normalized)
         # Checked before learning topics, which also match words such as "move", "select" and "prim".
@@ -364,6 +405,9 @@ class OmniverseRouter:
             normalized = self._normalize(request)
             if self._practice_session is not None and normalized in {"done", "next", "continue", "ok", "finished"}:
                 return self.next_practice_step()
+            exam = self._exam_request(normalized)
+            if exam is not None:
+                return await self._dispatch_exam(*exam)
             return self._dispatch_learning(request)
 
         if decision.target is RouteTarget.BOWERBOT and dry_run:
@@ -673,6 +717,90 @@ class OmniverseRouter:
             "note": "Offline built-in lesson; the knowledge backend could not answer.",
         }
 
+    def _exam_request(self, normalized: str) -> tuple[str, int | None] | None:
+        """("day", N) or ("day", None) for the next open day, ("mock", None), or None for any other request."""
+        if _MOCK_EXAM.search(re.sub(r"/\S*", " ", normalized)):  # never match inside a prim path
+            return ("mock", None)
+        core = self._strip_politeness(normalized).rstrip("?.! ")
+        match = _EXAM_DAY.match(core)
+        if match:
+            word = match.group("day")
+            return ("day", int(word) if word.isdigit() else _DAY_WORDS[word])
+        if _NEXT_LESSON.match(core):
+            return ("day", None)
+        return None
+
+    async def _dispatch_exam(self, kind: str, day: int | None) -> dict[str, Any]:
+        """Run the daily lesson through the exam_day hook, or explain how to start a mock (never starts one)."""
+        if kind == "mock":
+            return self._mock_exam_instructions()
+        arguments = {} if day is None else {"day": day}
+        call = "learning_exam_day()" if day is None else f"learning_exam_day(day={day})"
+        base = {"target": "learn", "style": "exam_day", "tool": "learning_exam_day", "arguments": arguments}
+        self._record_learning_event("exam_day", day=day)
+        if self._exam_day is None:
+            return {
+                "ok": True,
+                **base,
+                "executed": False,
+                "message": f"Call {call} for this lesson; this router has no exam progress store attached.",
+            }
+        try:
+            # The first lesson loads the offline docs index (about 1-2 s), so keep it off the event loop.
+            lesson = await asyncio.to_thread(self._exam_day, day)
+        except Exception as exc:  # noqa: BLE001 - a broken store or plan is reported, not raised
+            return {"ok": False, **base, "executed": True, "message": f"Could not build the lesson: {type(exc).__name__}: {exc}"}
+        return {**base, "executed": True, **lesson}
+
+    def _mock_exam_instructions(self) -> dict[str, Any]:
+        count, minutes = MOCK_EXAM_DEFAULTS["count"], MOCK_EXAM_DEFAULTS["minutes"]
+        payload: dict[str, Any] = {
+            "ok": True,
+            "target": "learn",
+            "style": "mock_exam",
+            "started": False,
+            "tool": "learning_mock_exam_start",
+            "arguments": dict(MOCK_EXAM_DEFAULTS),
+            "message": (
+                f"A mock exam is timed: {count} questions in {minutes} minutes at the official domain weights, and "
+                "the clock starts the moment it is created, so the router never starts one from a sentence. When you "
+                f"are ready, call learning_mock_exam_start(count={count}, minutes={minutes}); a smaller count and "
+                "time give a shorter practice run."
+            ),
+            "steps": [
+                f"learning_mock_exam_start(count={count}, minutes={minutes}) starts the clock and shows the first "
+                "page of questions (answers withheld).",
+                "learning_mock_exam_questions(session_id, offset=10) shows the next page.",
+                "learning_mock_exam_answer(session_id, question_id, chosen) records or changes an answer "
+                "(letters or 0-based indices).",
+                "learning_mock_exam_flag(session_id, question_id) marks a question to revisit.",
+                "learning_mock_exam_status(session_id) shows the time left and what is unanswered or flagged.",
+                "learning_mock_exam_finish(session_id) scores it per domain, explains wrong answers and saves the "
+                "answered questions to your exam progress.",
+                "learning_mock_exam_abandon(session_id) closes it without scoring.",
+            ],
+            "note": "NVIDIA publishes no passing score; treat a mock score as a readiness check, not a pass mark.",
+        }
+        if self._mock_status is not None:
+            try:
+                active = self._mock_status()
+            except Exception as exc:  # noqa: BLE001 - an unreadable session file must not break the explanation
+                payload["open_mock_error"] = f"{type(exc).__name__}: {exc}"
+            else:
+                if active:
+                    keys = ("session_id", "state", "remaining", "answered", "total", "deadline")
+                    payload["open_mock"] = {key: active.get(key) for key in keys}
+                    payload["tool"] = "learning_mock_exam_status"
+                    payload["arguments"] = {"session_id": active.get("session_id")}
+                    payload["message"] = (
+                        f"Mock {active.get('session_id')} is already open ({active.get('remaining')} left, "
+                        f"{active.get('answered')}/{active.get('total')} answered). Continue it with "
+                        "learning_mock_exam_status and learning_mock_exam_answer, or finish or abandon it before "
+                        "starting another."
+                    )
+        self._record_learning_event("mock_exam", started=False)
+        return payload
+
     def translate_command(self, request: str) -> dict[str, Any]:
         parsed = self._parse_scene_command(request)
         route = self.route(request)
@@ -725,6 +853,9 @@ class OmniverseRouter:
                 "quiz me on schemas",
                 "what should I do next?",
                 "translate: make this bigger",
+                "start day 1",
+                "next lesson",
+                "mock exam",
             ],
         }
         return {

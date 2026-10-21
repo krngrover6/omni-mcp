@@ -1,9 +1,22 @@
 from __future__ import annotations
 
+import json
+import math
 import os
 import re
+import time
+from collections.abc import Callable
+from typing import Any
 
-from .bridge import PrimRecord, SceneSnapshot
+from .bridge import (
+    BASIC_RPC_METHODS,
+    INSIGHT_QUERIES,
+    LIVE_RPC_METHODS,
+    RPC_VERSION,
+    PrimRecord,
+    SceneSnapshot,
+    unsupported_result,
+)
 
 try:
     from pxr import Gf, Sdf, Usd, UsdGeom, UsdShade, UsdUtils
@@ -21,6 +34,30 @@ except ImportError as exc:  # pragma: no cover - only available inside Kit
     _OMNI_USD_IMPORT_ERROR = exc
 else:  # pragma: no cover - only available inside Kit
     _OMNI_USD_IMPORT_ERROR = None
+
+# Live insight runs on Kit's main thread and the RPC server stops waiting after 15 s, so keep it bounded.
+LIVE_NOTE = "Read from the LIVE stage in Kit, including unsaved edits; nothing was changed, selected or saved."
+LIVE_MAX_RESULT_BYTES = 1_000_000
+LIVE_SLOW_MS = 5_000
+LIVE_DEFAULT_MAX_PRIMS = 20_000
+LIVE_MAX_PRIMS = 100_000
+LIVE_DEFAULT_MAX_ISSUES = 100
+LIVE_MAX_ISSUES = 500
+_MAX_UNSAVED_LAYERS = 50
+_MAX_PATH_CHARS = 4096
+_MAX_NAME_CHARS = 1024
+_VALIDATE_PROFILES = ("exam", "usd", "all")
+_PURPOSES = ("default", "render", "proxy", "guide")
+# Strict allowlist: query name -> the only argument names it accepts.
+_INSIGHT_ARGS: dict[str, tuple[str, ...]] = {
+    "stage_info": (),
+    "composition": ("prim_path",),
+    "explain_value": ("prim_path", "attribute", "time"),
+    "properties": ("prim_path", "include_values", "time", "authored_only"),
+    "bounds": ("prim_path", "purposes", "time", "use_extents_hint"),
+    "validate": ("profile", "max_issues", "max_prims"),
+}
+_ARG_ALIASES = {"path": "prim_path"}
 
 
 class LiveKitSceneBridge:
@@ -300,6 +337,164 @@ class LiveKitSceneBridge:
         UsdShade.MaterialBindingAPI.Apply(prim).Bind(material)
         return self._prim_to_record(prim)
 
+    # --- live insight and light/camera authoring (extended RPC, see kit_rpc.py) ---------------------------------
+
+    def capabilities(self) -> dict[str, Any]:
+        """What this live bridge can do: RPC version, insight queries and whether light/camera authoring loads."""
+        try:
+            from . import authoring  # noqa: F401 - only checks that the module imports
+        except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
+            authoring_info: dict[str, Any] = {"available": False, "error": _clip(f"{type(exc).__name__}: {exc}")}
+        else:
+            authoring_info = {"available": True}
+        return {
+            "ok": True,
+            "bridge": type(self).__name__,
+            "version": RPC_VERSION,
+            "methods": list(BASIC_RPC_METHODS) + list(LIVE_RPC_METHODS),
+            "insight_queries": list(INSIGHT_QUERIES),
+            "insight_args": {name: list(keys) for name, keys in _INSIGHT_ARGS.items()},
+            "authoring": authoring_info,
+            "dry_run_default": True,
+            "stage_open": self._stage() is not None,
+        }
+
+    def insight(self, query: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Run one allowlisted, read-only usd_insight/usd_validate query on the LIVE stage (unsaved edits included)."""
+        name = query.strip().lower() if isinstance(query, str) else ""
+        runner = _INSIGHT_RUNNERS.get(name)
+        if runner is None:
+            raise ValueError(f"Unknown insight query {_clip(repr(query), 80)}; use one of {list(INSIGHT_QUERIES)}")
+        clean = _insight_args(name, args)
+        stage = self._require_stage()
+        dirty_before = _dirty_layer_ids(stage)
+        started = time.perf_counter()
+        result = runner(stage, clean)
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        layers = _live_layer_state(stage)
+        existing = result.get("warnings")
+        warnings = list(existing) if isinstance(existing, list) else []
+        newly_dirty = sorted(_dirty_layer_ids(stage) - dirty_before)
+        if newly_dirty:
+            warnings.append(f"Read-only violation: these layers became dirty during the query: {newly_dirty[:10]}")
+        if elapsed_ms > LIVE_SLOW_MS:
+            warnings.append(
+                f"This query took {elapsed_ms} ms on Kit's main thread; the bridge gives up waiting after 15 s, "
+                "so narrow it (one prim, smaller max_prims) on big scenes."
+            )
+        if name == "validate" and clean.get("profile", "exam") != "exam":
+            warnings.append("OpenUSD's validators ran on the whole live stage; only the exam checks honor max_prims.")
+        payload: dict[str, Any] = {"ok": True}
+        payload.update(result)
+        payload.update(layers)
+        payload.update(
+            {
+                "mode": "live",
+                "query": name,
+                "args": clean,
+                "elapsed_ms": elapsed_ms,
+                "note": LIVE_NOTE,
+            }
+        )
+        if warnings:
+            payload["warnings"] = warnings
+        return _fit_json(payload, LIVE_MAX_RESULT_BYTES)
+
+    def create_light(
+        self,
+        path: str,
+        light_type: str,
+        *,
+        intensity: float | None = None,
+        exposure: float | None = None,
+        color: tuple[float, float, float] | None = None,
+        size: float | None = None,
+        translation: tuple[float, float, float] | None = None,
+        aim_at: str | tuple[float, float, float] | None = None,
+        up_axis: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Create (or with dry_run, preview) a UsdLux light on the live stage via authoring.create_light."""
+        try:
+            from .authoring import create_light as author_light
+        except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
+            return _authoring_unavailable("create_light", exc)
+        result = author_light(
+            self._require_stage(),
+            path,
+            light_type,
+            intensity=intensity,
+            exposure=exposure,
+            color=color,
+            size=size,
+            translation=translation,
+            aim_at=aim_at,
+            up_axis=up_axis,
+            dry_run=dry_run,
+        )
+        return self._authoring_result(result, path, dry_run, select=True)
+
+    def create_camera(
+        self,
+        path: str,
+        *,
+        focal_length: float | None = None,
+        horizontal_aperture: float | None = None,
+        clipping_range: tuple[float, float] | None = None,
+        translation: tuple[float, float, float] | None = None,
+        aim_at: str | tuple[float, float, float] | None = None,
+        copy_optics_from: str | None = None,
+        up_axis: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Create (or with dry_run, preview) a UsdGeom camera on the live stage via authoring.create_camera."""
+        try:
+            from .authoring import create_camera as author_camera
+        except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
+            return _authoring_unavailable("create_camera", exc)
+        result = author_camera(
+            self._require_stage(),
+            path,
+            focal_length=focal_length,
+            horizontal_aperture=horizontal_aperture,
+            clipping_range=clipping_range,
+            translation=translation,
+            aim_at=aim_at,
+            copy_optics_from=copy_optics_from,
+            up_axis=up_axis,
+            dry_run=dry_run,
+        )
+        return self._authoring_result(result, path, dry_run, select=True)
+
+    def aim(
+        self,
+        path: str,
+        target: str | tuple[float, float, float],
+        *,
+        up_axis: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Rotate (or with dry_run, preview rotating) a live prim to face a target prim or point via authoring.aim."""
+        try:
+            from .authoring import aim as author_aim
+        except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
+            return _authoring_unavailable("aim", exc)
+        result = author_aim(self._require_stage(), path, target, up_axis=up_axis, dry_run=dry_run)
+        return self._authoring_result(result, path, dry_run, select=False)
+
+    def _authoring_result(self, result: Any, path: str, dry_run: bool, select: bool) -> dict[str, Any]:
+        payload = dict(result) if isinstance(result, dict) else {"result": result}
+        payload.setdefault("mode", "live")
+        if select and not dry_run and payload.get("ok", True):
+            created = payload.get("path") if isinstance(payload.get("path"), str) else path
+            stage = self._stage()
+            try:
+                if stage is not None and Sdf.Path.IsValidPathString(created) and stage.GetPrimAtPath(created).IsValid():
+                    self._select([created])
+            except Exception:  # noqa: BLE001 - selecting the new prim is a UI nicety; the edit already happened
+                pass
+        return _fit_json(payload, LIVE_MAX_RESULT_BYTES)
+
     def _stage(self) -> Usd.Stage | None:
         return self._usd_context.get_stage()
 
@@ -433,6 +628,243 @@ class LiveKitSceneBridge:
                 "by a reference or payload. Duplicate the prim that holds the reference."
             )
         return clone
+
+
+def _run_stage_info(stage: Any, _args: dict[str, Any]) -> dict[str, Any]:
+    from . import usd_insight
+
+    return usd_insight.stage_info(stage)
+
+
+def _run_composition(stage: Any, args: dict[str, Any]) -> dict[str, Any]:
+    from . import usd_insight
+
+    return usd_insight.composition(stage, args["prim_path"])
+
+
+def _run_explain_value(stage: Any, args: dict[str, Any]) -> dict[str, Any]:
+    from . import usd_insight
+
+    return usd_insight.explain_value(stage, args["prim_path"], args.get("attribute"), args.get("time"))
+
+
+def _run_properties(stage: Any, args: dict[str, Any]) -> dict[str, Any]:
+    from . import usd_insight
+
+    return usd_insight.properties(
+        stage,
+        args["prim_path"],
+        include_values=args.get("include_values", True),
+        time=args.get("time"),
+        authored_only=args.get("authored_only", False),
+    )
+
+
+def _run_bounds(stage: Any, args: dict[str, Any]) -> dict[str, Any]:
+    from . import usd_insight
+
+    return usd_insight.bounds(
+        stage,
+        args["prim_path"],
+        purposes=args.get("purposes", ("default", "render")),
+        time=args.get("time"),
+        use_extents_hint=args.get("use_extents_hint", False),
+    )
+
+
+def _run_validate(stage: Any, args: dict[str, Any]) -> dict[str, Any]:
+    from . import usd_validate
+
+    return usd_validate.validate(stage, args["profile"], args["max_issues"], max_prims=args["max_prims"])
+
+
+# Strict allowlist: query name -> the function that runs it. Never resolved with getattr on caller input.
+_INSIGHT_RUNNERS: dict[str, Callable[[Any, dict[str, Any]], dict[str, Any]]] = {
+    "stage_info": _run_stage_info,
+    "composition": _run_composition,
+    "explain_value": _run_explain_value,
+    "properties": _run_properties,
+    "bounds": _run_bounds,
+    "validate": _run_validate,
+}
+
+
+def _insight_args(query: str, args: Any) -> dict[str, Any]:
+    """Check args against the query's allowlist and coerce each value; unknown names are rejected."""
+    if args is None:
+        args = {}
+    if not isinstance(args, dict):
+        raise ValueError(f"Insight args must be a JSON object, not {type(args).__name__}")
+    allowed = _INSIGHT_ARGS[query]
+    clean: dict[str, Any] = {}
+    for key, value in args.items():
+        name = _ARG_ALIASES.get(key, key) if isinstance(key, str) else key
+        if name not in allowed:
+            raise ValueError(
+                f"Unknown argument {_clip(repr(key), 60)} for insight query '{query}'; allowed: {list(allowed) or 'none'}"
+            )
+        if name in clean:
+            raise ValueError(f"Argument '{name}' was given twice (prim_path and its alias path)")
+        if value is not None:
+            clean[name] = _ARG_PARSERS[name](name, value)
+    if "prim_path" in allowed and "prim_path" not in clean:
+        raise ValueError(f"Insight query '{query}' needs prim_path")
+    if query == "validate":
+        clean.setdefault("profile", "exam")
+        clean.setdefault("max_issues", LIVE_DEFAULT_MAX_ISSUES)
+        clean.setdefault("max_prims", LIVE_DEFAULT_MAX_PRIMS)
+    return clean
+
+
+def _path_arg(name: str, value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be a non-empty prim path string")
+    text = value.strip()
+    if len(text) > _MAX_PATH_CHARS:
+        raise ValueError(f"{name} is longer than {_MAX_PATH_CHARS} characters")
+    return text
+
+
+def _name_arg(name: str, value: Any) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value) > _MAX_NAME_CHARS:
+        raise ValueError(f"{name} must be a non-empty string of at most {_MAX_NAME_CHARS} characters")
+    return value.strip()
+
+
+def _time_arg(name: str, value: Any) -> float | int | str:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a number, 'default' or 'earliest'")
+    if isinstance(value, (int, float)):
+        if not math.isfinite(float(value)):
+            raise ValueError(f"{name} must be a finite number")
+        return value
+    if isinstance(value, str) and len(value) <= 32:
+        return value.strip()
+    raise ValueError(f"{name} must be a number, 'default' or 'earliest'")
+
+
+def _bool_arg(name: str, value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+        return value.strip().lower() == "true"
+    raise ValueError(f"{name} must be true or false")
+
+
+def _purposes_arg(name: str, value: Any) -> tuple[str, ...]:
+    items = value.split(",") if isinstance(value, str) else value
+    if not isinstance(items, (list, tuple)) or not items or len(items) > len(_PURPOSES):
+        raise ValueError(f"{name} must list 1-4 of {list(_PURPOSES)}")
+    purposes = []
+    for item in items:
+        word = item.strip().lower() if isinstance(item, str) else None
+        if word not in _PURPOSES:
+            raise ValueError(f"{name} must only contain {list(_PURPOSES)}, not {_clip(repr(item), 40)}")
+        purposes.append(word)
+    return tuple(purposes)
+
+
+def _profile_arg(name: str, value: Any) -> str:
+    word = value.strip().lower() if isinstance(value, str) else None
+    if word not in _VALIDATE_PROFILES:
+        raise ValueError(f"{name} must be one of {list(_VALIDATE_PROFILES)}")
+    return word
+
+
+def _bounded_int(low: int, high: int) -> Callable[[str, Any], int]:
+    def parse(name: str, value: Any) -> int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{name} must be a whole number")
+        return max(low, min(int(value), high))
+
+    return parse
+
+
+_ARG_PARSERS: dict[str, Callable[[str, Any], Any]] = {
+    "prim_path": _path_arg,
+    "attribute": _name_arg,
+    "time": _time_arg,
+    "include_values": _bool_arg,
+    "authored_only": _bool_arg,
+    "use_extents_hint": _bool_arg,
+    "purposes": _purposes_arg,
+    "profile": _profile_arg,
+    "max_issues": _bounded_int(0, LIVE_MAX_ISSUES),
+    "max_prims": _bounded_int(1, LIVE_MAX_PRIMS),
+}
+
+
+def _stage_layers(stage: Any) -> list[Any]:
+    layers = list(stage.GetUsedLayers())
+    known = {layer.identifier for layer in layers}
+    # GetUsedLayers() leaves muted layers out, but their unsaved edits still exist (a released one is gone: None).
+    muted = [Sdf.Layer.Find(identifier) for identifier in stage.GetMutedLayers()]
+    for extra in (stage.GetRootLayer(), stage.GetSessionLayer(), *muted):
+        if extra is not None and extra.identifier not in known:
+            layers.append(extra)
+            known.add(extra.identifier)
+    return layers
+
+
+def _dirty_layer_ids(stage: Any) -> set[str]:
+    return {layer.identifier for layer in _stage_layers(stage) if layer.dirty}
+
+
+def _live_layer_state(stage: Any) -> dict[str, Any]:
+    """Which layers hold unsaved edits (session layer reported separately: Kit never saves it)."""
+    root = stage.GetRootLayer()
+    session = stage.GetSessionLayer()
+    session_id = session.identifier if session is not None else None
+    unsaved = [
+        {"identifier": layer.identifier, "anonymous": bool(layer.anonymous), "is_root_layer": layer.identifier == root.identifier}
+        for layer in _stage_layers(stage)
+        if layer.dirty and layer.identifier != session_id
+    ]
+    return {
+        "stage_identifier": root.identifier,
+        "root_layer_anonymous": bool(root.anonymous),
+        "has_unsaved_changes": bool(unsaved),
+        "unsaved_layers": unsaved[:_MAX_UNSAVED_LAYERS],
+        "unsaved_layer_count": len(unsaved),
+        "session_layer_has_edits": bool(session is not None and not session.empty),
+    }
+
+
+def _fit_json(payload: dict[str, Any], max_bytes: int) -> dict[str, Any]:
+    """Return a plain-JSON copy of payload, trimming lists (then long strings) until it fits in max_bytes."""
+    text = json.dumps(payload, default=str)
+    if len(text) <= max_bytes:
+        return json.loads(text)
+    data = json.loads(text)
+    for list_cap, text_cap in ((50, 2000), (20, 1000), (10, 500), (5, 200), (2, 100), (1, 80), (0, 80)):
+        trimmed = _trim(data, list_cap, text_cap)
+        trimmed["size_truncated"] = {"max_bytes": max_bytes, "original_bytes": len(text), "list_cap": list_cap}
+        if len(json.dumps(trimmed)) <= max_bytes:
+            return trimmed
+    raise ValueError(f"The live result is larger than {max_bytes} bytes even after trimming; narrow the query.")
+
+
+def _trim(value: Any, list_cap: int, text_cap: int) -> Any:
+    if isinstance(value, dict):
+        return {key: _trim(item, list_cap, text_cap) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_trim(item, list_cap, text_cap) for item in value[:list_cap]]
+    if isinstance(value, str) and len(value) > text_cap:
+        return value[:text_cap] + "..."
+    return value
+
+
+def _clip(text: str, limit: int = 400) -> str:
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _authoring_unavailable(method: str, exc: Exception) -> dict[str, Any]:
+    return unsupported_result(
+        method,
+        "Live light/camera authoring is not available in this bridge: omniverse_scene_mcp.authoring could not be "
+        f"imported ({_clip(f'{type(exc).__name__}: {exc}', 200)}). Update the package and reload the bridge.",
+        needs_bridge_update=True,
+    )
 
 
 def _rotation_from_xyz(rotation: tuple[float, float, float]):

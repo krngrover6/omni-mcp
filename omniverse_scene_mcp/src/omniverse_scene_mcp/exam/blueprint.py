@@ -295,8 +295,11 @@ def _focus(rows: dict[int, dict[str, Any]], weak_objectives: set[str] | None = N
     return focus
 
 
-def _schedule(days: int, mpd: int, focus: list[dict[str, Any]], domain_rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
-    final_day = days if days >= 3 else None
+def _schedule(
+    days: int, mpd: int, focus: list[dict[str, Any]], domain_rows: list[dict[str, Any]], final: bool = True
+) -> tuple[list[dict[str, Any]], list[str]]:
+    # final=False when the exam lies beyond the scheduled window: then the last day is not the eve of the exam.
+    final_day = days if final and days >= 3 else None
     kinds = []
     for day in range(1, days + 1):
         if day == final_day:
@@ -385,6 +388,7 @@ def study_plan(
     progress = _parse_progress(progress_summary, notes)
     has_progress = progress is not None
     days: int | None = None
+    requested: int | None = None
     if days_until_exam is not None:
         requested = _as_int(days_until_exam, None)
         if requested is None:
@@ -453,7 +457,9 @@ def study_plan(
         "scheduled_days": days or 0,
     }
     if days:
-        plan["schedule"], plan["unscheduled_objectives"] = _schedule(days, mpd, focus, domain_rows)
+        plan["schedule"], plan["unscheduled_objectives"] = _schedule(
+            days, mpd, focus, domain_rows, final=requested is None or requested <= MAX_SCHEDULE_DAYS
+        )
         if plan["unscheduled_objectives"]:
             notes.append(
                 f"{len(plan['unscheduled_objectives'])} lower-priority topics did not fit; "

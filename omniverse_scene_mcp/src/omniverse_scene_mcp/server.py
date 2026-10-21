@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import inspect
+import json
+import math
 import os
 import re
 from pathlib import Path
@@ -11,15 +13,18 @@ from typing import Any, Callable, Iterable, Sequence
 from mcp.server.fastmcp import FastMCP
 
 from . import usd_insight, usd_validate
+from .bridge import LIVE_RPC_METHODS
 from .exam import bank as exam_bank
 from .exam import blueprint as exam_blueprint
+from .exam import daily as exam_daily
 from .exam import puzzles as exam_puzzles
 from .exam import sandbox as exam_sandbox
+from .exam.mock import MockExamError
 from .file_stage import ReadOnlyViolation, SceneFileError, readonly_stage, resolve_scene_file
 from .health import router_health as check_router_health
 from .offline_knowledge import OFFLINE_NOTE, OfflineUSDKnowledge
-from .router import OmniverseRouter, RouteTarget, _local_usd_file
-from .runtime import build_progress_store, build_router
+from .router import MOCK_EXAM_DEFAULTS, OmniverseRouter, RouteTarget, _local_usd_file
+from .runtime import build_mock_store, build_progress_store, build_router
 
 
 def _coerce_vector(values: Sequence[float] | None) -> tuple[float, float, float] | None:
@@ -84,9 +89,204 @@ _QUIZ_ANSWER_HINT = (
 )
 _PUZZLE_ANSWER_HINT = "Answer with learning_composition_puzzle_answer(puzzle_id, answer) using the option text or letter A-E."
 
+# Insight tools read the LIVE stage through the bridge's 'insight' RPC, or the SAVED file read-only.
+INSIGHT_MODES = ("auto", "live", "saved_file")
+LIVE_ENABLE_STEPS = (
+    "Isaac Sim: run C:/Users/krngr/Omniverse/isaacsim-study/reload_mcp_bridge.py in Isaac Sim's Script Editor; it "
+    "runs self-tests on Isaac's USD and then restarts the scene bridge on port 9911 with the extended RPC "
+    "(isaacsim-study/bridge-reload-result.json should say status 'reloaded' and rpc_version 'tier2-1').",
+    "Router: restart it (start-isaac-mcp.ps1 targets the Isaac bridge) so it loads this code and points at "
+    "http://127.0.0.1:9911; Composer's 9910 extension only serves the basic scene methods.",
+)
+MOCK_PAGE_SIZE = 10
+MOCK_MAX_PAGE = 25
+MOCK_MAX_OUTPUT_CHARS = 60_000
+_MOCK_HOW_TO = (
+    "Answer with learning_mock_exam_answer(session_id, question_id, chosen) using letters or 0-based indices (you can "
+    "change answers, and chosen=[] clears one); learning_mock_exam_questions(session_id, offset) pages through the "
+    "questions; learning_mock_exam_flag marks one to revisit; learning_mock_exam_status shows the time left; "
+    "learning_mock_exam_finish(session_id) scores it and saves the answered questions to your exam progress."
+)
+_MOCK_TOOLS_HINT = (
+    "Mock tools: learning_mock_exam_status(), learning_mock_exam_questions(session_id), learning_mock_exam_answer(...), "
+    "learning_mock_exam_finish(session_id) or learning_mock_exam_abandon(session_id)."
+)
+_AUTHORING_PREVIEW = (
+    "Preview only: nothing in the open scene changed. Show this plan to the user and apply it (same arguments plus "
+    "dry_run=False) only after they agree."
+)
+_AUTHORING_APPLIED = (
+    "Applied to the user's open scene in memory: it is not saved (scene_save keeps it) and it is not on Kit's undo "
+    "stack, so remove or re-aim it with another edit if it is wrong."
+)
+
 
 def _error(message: str, **extra: Any) -> dict:
     return {"ok": False, "message": message, **extra}
+
+
+def _numbers(values: Any, length: int, label: str) -> tuple[float, ...] | None:
+    """[x, y, ...] of exactly ``length`` finite numbers as a float tuple; None passes through."""
+    if values is None:
+        return None
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence) or len(values) != length:
+        raise ValueError(f"{label} must be a list of {length} numbers")
+    numbers = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            raise ValueError(f"{label} must be a list of {length} finite numbers")
+        numbers.append(float(value))
+    return tuple(numbers)
+
+
+def _target_arg(value: Any, label: str) -> str | tuple[float, ...] | None:
+    """A prim path string or an [x, y, z] world point."""
+    if value is None or isinstance(value, str):
+        return value.strip() if isinstance(value, str) and value.strip() else None
+    return _numbers(value, 3, label)
+
+
+def _size_arg(value: Any) -> float | tuple[float, ...] | None:
+    """One number, or a pair: (width, height) for rect lights and (length, radius) for cylinder lights."""
+    if value is None or (isinstance(value, (int, float)) and not isinstance(value, bool)):
+        return None if value is None else float(value)
+    return _numbers(value, 2, "size")
+
+
+def _live_support(capabilities: dict, query: str | None = None) -> dict[str, Any]:
+    """Whether the bridge can run live insight (one query, or any when None), why not, and if a reload would help."""
+    if not capabilities.get("ok"):
+        if capabilities.get("needs_bridge_update"):
+            return {"available": False, "needs_bridge_update": True, "reason": capabilities.get("message")}
+        return {
+            "available": False,
+            "needs_bridge_update": False,
+            "reason": f"the live scene bridge did not answer: {capabilities.get('message') or 'no details'}",
+        }
+    if capabilities.get("fake_scene"):
+        return {
+            "available": False,
+            "needs_bridge_update": False,
+            "reason": "the router is on its in-memory fake scene, which has no live USD stage",
+        }
+    queries = list(capabilities.get("insight_queries") or [])
+    if not queries or (query is not None and query not in queries):
+        wanted = f"the '{query}' insight query" if query else "live insight"
+        return {
+            "available": False,
+            "needs_bridge_update": True,
+            "reason": f"the live bridge ({capabilities.get('bridge') or 'unknown'}, version "
+            f"{capabilities.get('version') or 'unknown'}) does not offer {wanted}; reload it",
+        }
+    if capabilities.get("stage_open") is False:
+        return {"available": False, "needs_bridge_update": False, "reason": "no stage is open in the live app"}
+    return {"available": True, "needs_bridge_update": False, "reason": None}
+
+
+def _insight_mode(
+    router: OmniverseRouter,
+    mode: str | None,
+    file: str | None,
+    query: str,
+    args: dict[str, Any],
+    action: Callable[[Any], dict],
+) -> dict:
+    """Run one insight/validation query on the live stage or the saved file; the result always names its mode.
+
+    auto: an explicit file means the saved file; otherwise the live bridge when its capabilities offer the query,
+    else the saved file plus a fallback note. live / saved_file force one source.
+    """
+    wanted = mode.strip().lower() if isinstance(mode, str) and mode.strip() else "auto"
+    if wanted not in INSIGHT_MODES:
+        return _error(f"mode must be one of {list(INSIGHT_MODES)}, not {mode!r}", mode_requested=mode, query=query)
+    has_file = isinstance(file, str) and bool(file.strip())
+    if wanted == "saved_file" or (wanted == "auto" and has_file):
+        return {**_file_mode(router, file, action), "mode_requested": wanted}
+    if has_file:
+        return _error(
+            "file=... names a saved file, but mode='live' reads the open stage; drop file or use mode='saved_file'.",
+            mode="live",
+            mode_requested="live",
+            query=query,
+        )
+    support = _live_support(router._scene.live_capabilities(), query)
+    if support["available"]:
+        result = router._scene.live_insight(query, args)
+        if wanted == "live" or not (result.get("unsupported") or result.get("needs_bridge_update")):
+            return {**result, "mode": "live", "mode_requested": wanted}
+        support = {
+            "available": False,
+            "needs_bridge_update": bool(result.get("needs_bridge_update")),
+            "reason": result.get("message") or "the live bridge refused the insight query",
+        }
+    reason = str(support["reason"] or "unknown reason").rstrip(". ")
+    if wanted == "live":
+        return _error(
+            f"Live insight is not available: {reason}.",
+            mode="live",
+            mode_requested="live",
+            query=query,
+            needs_bridge_update=support["needs_bridge_update"],
+            how_to_enable=list(LIVE_ENABLE_STEPS) if support["needs_bridge_update"] else [],
+        )
+    result = _file_mode(router, None, action)
+    return {
+        **result,
+        "mode_requested": "auto",
+        "live_fallback": {"reason": reason, "needs_bridge_update": support["needs_bridge_update"]},
+        "fallback_note": f"Live insight is not available ({reason}), so this read the SAVED file instead.",
+    }
+
+
+def _authoring_payload(router: OmniverseRouter, result: Any) -> dict:
+    """Scene-tool envelope for a light/camera/aim result, with a message saying whether anything changed."""
+    payload = router._wrap_operation_result("scene", result)
+    inner = result.payload if isinstance(result.payload, dict) else {}
+    for key in ("unsupported", "needs_bridge_update", "fake_scene", "warnings", "next_step", "error"):
+        if key in inner:
+            payload[key] = inner[key]
+    if not result.ok:
+        payload["applied"] = False
+        payload["message"] = inner.get("error") or inner.get("message") or "The live bridge could not author this."
+        if inner.get("needs_bridge_update"):
+            payload["how_to_enable"] = list(LIVE_ENABLE_STEPS)
+    elif result.dry_run:
+        payload["applied"] = False
+        payload["preview"] = True
+        payload["message"] = _AUTHORING_PREVIEW
+    else:
+        payload["applied"] = True
+        payload["message"] = _AUTHORING_APPLIED
+    return payload
+
+
+def _mock_error(exc: Exception, **extra: Any) -> dict:
+    return _error(str(exc) or type(exc).__name__, hint=_MOCK_TOOLS_HINT, **extra)
+
+
+def _fit_mock_report(report: dict) -> dict:
+    """Keep a finished mock's report under MOCK_MAX_OUTPUT_CHARS: trim per-option explanations, then stems."""
+    if len(json.dumps(report, default=str)) <= MOCK_MAX_OUTPUT_CHARS:
+        return report
+    wrong = report.get("wrong") or []
+    for row in wrong:
+        for option in row.get("correct_options") or []:
+            option.pop("why", None)
+        row.pop("your_wrong_choices", None)
+    trimmed = "Per-option explanations were left out to keep this report small"
+    if len(json.dumps(report, default=str)) > MOCK_MAX_OUTPUT_CHARS:
+        for row in wrong:
+            row.pop("correct_options", None)
+            row.pop("citations", None)
+            stem = row.get("stem")
+            if isinstance(stem, str) and len(stem) > 160:
+                row["stem"] = stem[:157] + "..."
+        trimmed = "Explanations, options and citations were left out to keep this report small"
+    report.setdefault("notes", []).append(
+        f"{trimmed}. Wrong answers were saved to your progress, so learning_exam_review shows those questions again "
+        "and learning_exam_answer explains every option."
+    )
+    return report
 
 
 def _live_scene_file(router: OmniverseRouter) -> str:
@@ -158,8 +358,18 @@ def _review_item(question_id: str, questions: dict[str, dict]) -> dict:
 
 def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
     offline_usd = OfflineUSDKnowledge()
-    router = build_router(offline_knowledge=offline_usd)
+    # One exam progress store and one mock-exam store per server, shared by the exam tools and the router.
     progress_store = build_progress_store()
+    mock_store = build_mock_store()
+    router = build_router(offline_knowledge=offline_usd, progress_store=progress_store, mock_store=mock_store)
+
+    def _open_mock_ids() -> set[str]:
+        """Question ids of the open mock (empty when none, or when the mock file cannot be read)."""
+        try:
+            return mock_store.open_question_ids()
+        except (MockExamError, ValueError, OSError):
+            return set()
+
     app = FastMCP(
         name="omniverse-router-mcp",
         instructions="Single front door for Omniverse scene operations, workspace context, and routed knowledge lookups.",
@@ -511,7 +721,8 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         if review_due:
             due_ids = [row["question_id"] for row in progress_store.due_reviews(limit=100)]
         try:
-            quiz = exam_bank.quiz(domain=domain, objective=objective, count=count, prefer_ids=due_ids)
+            quiz = exam_bank.quiz(domain=domain, objective=objective, count=count, prefer_ids=due_ids,
+                                  exclude_ids=sorted(_open_mock_ids()))
         except ValueError as exc:
             return _error(str(exc))
         payload: dict[str, Any] = {"ok": True, **quiz, "how_to_answer": _QUIZ_ANSWER_HINT}
@@ -527,6 +738,12 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
     def learning_exam_answer(question_id: str, chosen: list[int | str], seconds: float | None = None) -> dict:
         """Grade one practice question and save the result to your exam progress (spaced-repetition card, domain and
         objective stats). chosen holds 0-based option indices or letters; multi-select needs the exact correct set."""
+        if str(question_id).strip() in _open_mock_ids():
+            return _error(
+                "This question is part of your open mock exam; answer it with learning_mock_exam_answer (graded at "
+                "learning_mock_exam_finish), or finish/abandon the mock first.",
+                question_id=question_id,
+            )
         try:
             graded = exam_bank.grade(question_id, chosen)
         except ValueError as exc:
@@ -579,6 +796,153 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         except OSError as exc:
             return _error(f"Could not reset progress: {exc}", reset=False)
 
+    # --- daily lessons ------------------------------------------------------------------------------------------
+
+    @app.tool(name="learning_exam_day")
+    async def learning_exam_day(day: int | None = None) -> dict:
+        """One day of your NCP-OUSD study plan as a lesson: objectives with plain explanations, offline doc hits,
+        readings, a hands-on exercise (LIVERPS puzzle, 'predict the value' or a try-it layer stack for
+        usd_playground_compose) and quiz questions (answers withheld). day=None gives the next day not yet marked
+        complete. The first call saves the plan start date; nothing else is written."""
+        try:
+            return await asyncio.to_thread(
+                exam_daily.build_day, day, store=progress_store, knowledge=offline_usd, exclude_ids=_open_mock_ids()
+            )
+        except (TypeError, ValueError, OSError) as exc:
+            return _error(f"Could not build the lesson: {exc}", day=day)
+
+    @app.tool(name="learning_exam_day_complete")
+    def learning_exam_day_complete(day: int) -> dict:
+        """Mark one study-plan day complete (calling it again changes nothing) and report the day streak, how many
+        days remain and the next day to study."""
+        try:
+            return exam_daily.complete_day(day, progress_store)
+        except (TypeError, ValueError, OSError) as exc:
+            return _error(f"Could not mark day {day} complete: {exc}", day=day)
+
+    @app.tool(name="learning_exam_set_date")
+    def learning_exam_set_date(
+        exam_date: str | None = None,
+        days_until_exam: int | None = None,
+        minutes_per_day: int | None = None,
+    ) -> dict:
+        """Re-plan the daily lessons from today: give exam_date ('YYYY-MM-DD') or days_until_exam (neither means 30
+        days), and minutes_per_day (10-480; omit it to keep your saved value, 60 by default). Day numbering restarts
+        at day 1 today, so completed-day marks are cleared; answers and spaced-repetition reviews are kept. Returns
+        the new day-by-day outline."""
+        has_date = isinstance(exam_date, str) and bool(exam_date.strip())
+        if has_date and days_until_exam is not None:
+            return _error("Give exam_date or days_until_exam, not both.")
+        when: str | int | None = exam_date.strip() if has_date else days_until_exam
+        try:
+            return exam_daily.set_exam_date(when, minutes_per_day, progress_store)
+        except (TypeError, ValueError, OSError) as exc:
+            return _error(f"Could not set the exam date: {exc}")
+
+    # --- timed mock exam ----------------------------------------------------------------------------------------
+
+    @app.tool(name="learning_mock_exam_start")
+    def learning_mock_exam_start(count: int = MOCK_EXAM_DEFAULTS["count"], minutes: int = MOCK_EXAM_DEFAULTS["minutes"]) -> dict:
+        """Start a TIMED NCP-OUSD mock exam: the clock starts now. Questions are drawn per domain at the official
+        weights (65 in 120 minutes like the real exam; smaller values give a shorter run). Returns the session_id
+        and the first 10 questions (answers withheld); only one mock can be open at a time."""
+        try:
+            started = mock_store.start(count=count, minutes=minutes, include_questions=False)
+        except (MockExamError, ValueError, TypeError, OSError) as exc:
+            open_mock = None
+            try:
+                active = mock_store.active()
+            except (MockExamError, ValueError, OSError):
+                active = None
+            if active:
+                keys = ("session_id", "state", "deadline", "remaining", "answered", "total", "flagged_count")
+                open_mock = {key: active.get(key) for key in keys}
+            return _mock_error(exc, open_mock=open_mock)
+        try:
+            page = mock_store.questions(started["session_id"], offset=0, limit=MOCK_PAGE_SIZE)
+        except (MockExamError, ValueError, OSError) as exc:
+            page = {"questions": [], "total": started["count"], "error": str(exc)}
+        started["questions"] = page["questions"]
+        started["questions_shown"] = {"offset": 0, "count": len(page["questions"]), "total": page.get("total")}
+        if started["count"] > len(page["questions"]):
+            started["next_page"] = {"tool": "learning_mock_exam_questions", "offset": len(page["questions"])}
+        started["how_to_answer"] = _MOCK_HOW_TO
+        return started
+
+    @app.tool(name="learning_mock_exam_questions")
+    def learning_mock_exam_questions(session_id: str | None = None, offset: int = 0, limit: int = MOCK_PAGE_SIZE) -> dict:
+        """Page through a mock exam's questions (answers withheld), each with your current choice and flag.
+        session_id=None means the open mock; limit is at most 25."""
+        try:
+            page = mock_store.questions(session_id, offset=max(0, int(offset)), limit=max(1, min(MOCK_MAX_PAGE, int(limit))))
+        except (MockExamError, ValueError, TypeError, OSError) as exc:
+            return _mock_error(exc, session_id=session_id)
+        shown_to = page["offset"] + len(page["questions"])
+        if shown_to < page["total"]:
+            page["next_page"] = {"tool": "learning_mock_exam_questions", "offset": shown_to}
+        page["how_to_answer"] = _MOCK_HOW_TO
+        return page
+
+    @app.tool(name="learning_mock_exam_answer")
+    def learning_mock_exam_answer(
+        session_id: str,
+        question_id: str | int,
+        chosen: list[int | str] | int | str | None,
+        allow_late: bool = False,
+    ) -> dict:
+        """Record or change one mock-exam answer while the clock runs. question_id is the id or the 1-based question
+        number; chosen holds letters or 0-based indices ('A', ['A', 'C'], 'A,C'); [] clears it. Not graded until
+        learning_mock_exam_finish. After time is up, answers are rejected unless allow_late=True (late answers are
+        marked late in the report)."""
+        try:
+            return mock_store.answer(session_id, question_id, chosen, allow_late=allow_late)
+        except (MockExamError, ValueError, TypeError, OSError) as exc:
+            return _mock_error(exc, session_id=session_id, question_id=question_id)
+
+    @app.tool(name="learning_mock_exam_flag")
+    def learning_mock_exam_flag(session_id: str, question_id: str | int, flagged: bool = True) -> dict:
+        """Flag a mock-exam question to revisit before finishing (flagged=False removes the flag)."""
+        try:
+            return mock_store.flag(session_id, question_id, flagged=flagged)
+        except (MockExamError, ValueError, TypeError, OSError) as exc:
+            return _mock_error(exc, session_id=session_id, question_id=question_id)
+
+    @app.tool(name="learning_mock_exam_status")
+    def learning_mock_exam_status(session_id: str | None = None) -> dict:
+        """Time left, answered and unanswered questions, flags and per-domain counts of a mock (session_id=None is
+        the open mock). With no mock open it lists recent mocks and their scores."""
+        try:
+            if session_id is None and mock_store.active() is None:
+                return {
+                    "ok": True,
+                    "open": False,
+                    "message": "No mock exam is open; learning_mock_exam_start starts a timed one.",
+                    "recent": mock_store.list_sessions(limit=5),
+                }
+            status = mock_store.status(session_id)
+        except (MockExamError, ValueError, TypeError, OSError) as exc:
+            return _mock_error(exc, session_id=session_id)
+        return {**status, "open": status.get("status") == "active"}
+
+    @app.tool(name="learning_mock_exam_finish")
+    def learning_mock_exam_finish(session_id: str) -> dict:
+        """Finish and score a mock exam: overall and per-domain percentages, time used, every wrong or unanswered
+        question with the correct answer and why, and a readiness verdict (NVIDIA publishes no pass mark). Answered
+        questions are saved to your exam progress and spaced-repetition reviews."""
+        try:
+            report = mock_store.finish(session_id, store=progress_store)
+        except (MockExamError, ValueError, TypeError, OSError) as exc:
+            return _mock_error(exc, session_id=session_id)
+        return _fit_mock_report(report)
+
+    @app.tool(name="learning_mock_exam_abandon")
+    def learning_mock_exam_abandon(session_id: str) -> dict:
+        """Close an open mock exam without scoring it or saving anything to progress, so a new one can start."""
+        try:
+            return mock_store.abandon(session_id)
+        except (MockExamError, ValueError, TypeError, OSError) as exc:
+            return _mock_error(exc, session_id=session_id)
+
     # --- composition sandbox and puzzles ------------------------------------------------------------------------
 
     @app.tool(name="usd_playground_compose")
@@ -622,19 +986,27 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
             record = _error(f"Checked but not saved to progress: {exc}")
         return {**result, "progress": record}
 
-    # --- saved-file insight and validation ----------------------------------------------------------------------
+    # --- live or saved-file insight and validation --------------------------------------------------------------
+    # mode='auto' (default): the LIVE open stage when the bridge offers live insight, else the SAVED file with a
+    # fallback note; an explicit file always means the saved file. Every result says which mode it used.
 
     @app.tool(name="scene_stage_info")
-    def scene_stage_info(file: str | None = None) -> dict:
-        """Reads the SAVED file, not the live unsaved stage: layer stack, default prim, upAxis, metersPerUnit, time
-        codes, prim census, model hierarchy and composition errors. file defaults to the live scene's saved root layer."""
-        return _file_mode(router, file, usd_insight.stage_info)
+    def scene_stage_info(file: str | None = None, mode: str = "auto") -> dict:
+        """Read-only stage overview: layer stack, default prim, upAxis, metersPerUnit, time codes, prim census, model
+        hierarchy and composition errors. mode 'auto' (default) reads the live open stage (unsaved edits included)
+        when the Isaac bridge supports it, else the SAVED file with a note; 'live' or 'saved_file' force one. file
+        (saved-file mode) defaults to the live scene's saved root layer."""
+        return _insight_mode(router, mode, file, "stage_info", {}, usd_insight.stage_info)
 
     @app.tool(name="scene_composition")
-    def scene_composition(prim_path: str, file: str | None = None) -> dict:
-        """Reads the SAVED file, not the live unsaved stage: how one prim is composed (arcs with their LIVERPS letter,
-        variant selections, instancing, prim stack strongest first). file defaults to the live scene's saved file."""
-        return _file_mode(router, file, lambda stage: usd_insight.composition(stage, prim_path))
+    def scene_composition(prim_path: str, file: str | None = None, mode: str = "auto") -> dict:
+        """Read-only: how one prim is composed (arcs with their LIVERPS letter, variant selections, instancing,
+        prim stack strongest first). mode 'auto' (default) reads the live open stage when the Isaac bridge supports
+        it, else the SAVED file with a note; 'live' or 'saved_file' force one."""
+        return _insight_mode(
+            router, mode, file, "composition", {"prim_path": prim_path},
+            lambda stage: usd_insight.composition(stage, prim_path),
+        )
 
     @app.tool(name="scene_explain_value")
     def scene_explain_value(
@@ -642,28 +1014,172 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         attribute: str,
         time: float | str | None = None,
         file: str | None = None,
+        mode: str = "auto",
     ) -> dict:
-        """Reads the SAVED file, not the live unsaved stage: resolve one attribute and explain which opinion wins and
-        why (LIVERPS, layer order, offsets, default vs time samples). time: a number, 'default' or 'earliest'."""
-        return _file_mode(router, file, lambda stage: usd_insight.explain_value(stage, prim_path, attribute, time))
+        """Read-only: resolve one attribute and explain which opinion wins and why (LIVERPS, layer order, offsets,
+        default vs time samples); time is a number, 'default' or 'earliest'. mode 'auto' (default) answers from the
+        live open stage, unsaved edits included, when the Isaac bridge supports it, else from the SAVED file with a
+        note; 'live' or 'saved_file' force one."""
+        args: dict[str, Any] = {"prim_path": prim_path}
+        if isinstance(attribute, str) and attribute.strip():  # else prim_path '/Prim.attr' names it, like saved_file
+            args["attribute"] = attribute
+        if time is not None:
+            args["time"] = time
+        return _insight_mode(
+            router, mode, file, "explain_value", args,
+            lambda stage: usd_insight.explain_value(stage, prim_path, attribute, time),
+        )
 
     @app.tool(name="scene_properties")
-    def scene_properties(prim_path: str, file: str | None = None) -> dict:
-        """Reads the SAVED file, not the live unsaved stage: a prim's attributes (types, values, time samples,
-        primvars), relationships and metadata. file defaults to the live scene's saved root layer."""
-        return _file_mode(router, file, lambda stage: usd_insight.properties(stage, prim_path))
+    def scene_properties(prim_path: str, file: str | None = None, mode: str = "auto") -> dict:
+        """Read-only: a prim's attributes (types, values, time samples, primvars), relationships and metadata. mode
+        'auto' (default) reads the live open stage when the Isaac bridge supports it, else the SAVED file with a
+        note; 'live' or 'saved_file' force one."""
+        return _insight_mode(
+            router, mode, file, "properties", {"prim_path": prim_path},
+            lambda stage: usd_insight.properties(stage, prim_path),
+        )
 
     @app.tool(name="scene_bounds")
-    def scene_bounds(prim_path: str, file: str | None = None) -> dict:
-        """Reads the SAVED file, not the live unsaved stage: world/local bounds, authored vs computed extent,
-        visibility and purpose for one prim. file defaults to the live scene's saved root layer."""
-        return _file_mode(router, file, lambda stage: usd_insight.bounds(stage, prim_path))
+    def scene_bounds(prim_path: str, file: str | None = None, mode: str = "auto") -> dict:
+        """Read-only: world/local bounds, authored vs computed extent, visibility and purpose for one prim. mode
+        'auto' (default) reads the live open stage when the Isaac bridge supports it, else the SAVED file with a
+        note; 'live' or 'saved_file' force one."""
+        return _insight_mode(
+            router, mode, file, "bounds", {"prim_path": prim_path},
+            lambda stage: usd_insight.bounds(stage, prim_path),
+        )
 
     @app.tool(name="usd_validate")
-    def usd_validate_tool(file: str | None = None, profile: str = "exam") -> dict:
-        """Reads the SAVED file, not the live unsaved stage: lint it without changing anything. profile 'exam' (checks
-        tied to NCP-OUSD objectives), 'usd' (OpenUSD validators) or 'all'. ok is False when an error-level issue exists."""
-        return _file_mode(router, file, lambda stage: usd_validate.validate(stage, profile))
+    def usd_validate_tool(file: str | None = None, profile: str = "exam", mode: str = "auto") -> dict:
+        """Read-only lint: profile 'exam' (checks tied to NCP-OUSD objectives), 'usd' (OpenUSD validators) or 'all';
+        ok is False when an error-level issue exists. mode 'auto' (default) checks the live open stage when the
+        Isaac bridge supports it, else the SAVED file with a note; 'live' or 'saved_file' force one."""
+        return _insight_mode(
+            router, mode, file, "validate", {"profile": profile},
+            lambda stage: usd_validate.validate(stage, profile),
+        )
+
+    @app.tool(name="scene_capabilities")
+    def scene_capabilities() -> dict:
+        """What the connected scene bridge can do beyond basic scene commands: live insight queries, light/camera
+        authoring, its RPC version, and whether an Isaac bridge reload is needed for the live features."""
+        capabilities = router._scene.live_capabilities()
+        backend = router._scene.backend_info
+        insight = _live_support(capabilities)
+        methods = set(capabilities.get("methods") or [])
+        authoring_info = capabilities.get("authoring") if isinstance(capabilities.get("authoring"), dict) else {}
+        authoring_methods = {"create_light", "create_camera", "aim"}
+        if not capabilities.get("ok") or capabilities.get("fake_scene"):
+            authoring = {"available": False, "reason": insight["reason"]}
+        elif not authoring_methods <= methods:
+            authoring = {"available": False, "reason": "the live bridge predates light/camera authoring; reload it"}
+        elif not authoring_info.get("available"):
+            authoring = {"available": False, "reason": authoring_info.get("error") or "the authoring module did not load"}
+        else:
+            authoring = {"available": True, "reason": None}
+        authoring["dry_run_default"] = True
+        missing = sorted(set(LIVE_RPC_METHODS) - methods) if capabilities.get("ok") else list(LIVE_RPC_METHODS)
+        needs_update = bool(capabilities.get("needs_bridge_update")) or (
+            bool(capabilities.get("ok")) and not capabilities.get("fake_scene") and bool(missing)
+        )
+        if insight["available"] and authoring["available"]:
+            message = "Live insight and light/camera authoring are available on the open stage."
+        elif needs_update:
+            message = "The live bridge needs a reload before live insight and authoring work; see how_to_enable."
+        else:
+            message = f"Live features are unavailable: {insight['reason'] or authoring['reason']}."
+        payload: dict[str, Any] = {
+            "ok": True,
+            "backend": {key: backend.get(key) for key in ("mode", "bridge", "endpoint", "reason", "warnings")},
+            "rpc_version": capabilities.get("version"),
+            "live_insight": {**insight, "queries": list(capabilities.get("insight_queries") or [])},
+            "live_authoring": authoring,
+            "missing_live_methods": missing,
+            "needs_bridge_update": needs_update,
+            "message": message,
+            "capabilities": capabilities,
+        }
+        if needs_update or backend.get("mode") in _FAKE_SCENE_MODES:
+            payload["how_to_enable"] = list(LIVE_ENABLE_STEPS)
+        return payload
+
+    # --- live light/camera authoring (dry run by default) --------------------------------------------------------
+
+    @app.tool(name="scene_create_light")
+    def scene_create_light(
+        path: str,
+        light_type: str,
+        intensity: float | None = None,
+        exposure: float | None = None,
+        color: list[float] | None = None,
+        size: float | list[float] | None = None,
+        translation: list[float] | None = None,
+        aim_at: str | list[float] | None = None,
+        dry_run: bool = True,
+    ) -> dict:
+        """DRY RUN BY DEFAULT: plan a UsdLux light (rect, sphere, disk, distant, cylinder or dome) at path in the
+        LIVE open scene and show the preview to the user first. dry_run=False changes the user's open scene (not
+        saved, not on Kit's undo stack). size: one number, or [width, height] for rect / [length, radius] for
+        cylinder; aim_at: a prim path or an [x, y, z] point the light's -Z axis should face."""
+        try:
+            result = router._scene.create_light(
+                path,
+                light_type,
+                intensity=intensity,
+                exposure=exposure,
+                color=_numbers(color, 3, "color"),
+                size=_size_arg(size),
+                translation=_numbers(translation, 3, "translation"),
+                aim_at=_target_arg(aim_at, "aim_at"),
+                dry_run=dry_run,
+            )
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", dry_run=bool(dry_run), applied=False, path=path)
+        return _authoring_payload(router, result)
+
+    @app.tool(name="scene_create_camera")
+    def scene_create_camera(
+        path: str,
+        focal_length: float | None = None,
+        horizontal_aperture: float | None = None,
+        clipping_range: list[float] | None = None,
+        translation: list[float] | None = None,
+        aim_at: str | list[float] | None = None,
+        copy_optics_from: str | None = None,
+        dry_run: bool = True,
+    ) -> dict:
+        """DRY RUN BY DEFAULT: plan a camera at path in the LIVE open scene and show the preview to the user first.
+        dry_run=False changes the user's open scene (not saved, not on Kit's undo stack). clipping_range is
+        [near, far]; aim_at is a prim path or an [x, y, z] point; copy_optics_from copies another camera's lens."""
+        try:
+            result = router._scene.create_camera(
+                path,
+                focal_length=focal_length,
+                horizontal_aperture=horizontal_aperture,
+                clipping_range=_numbers(clipping_range, 2, "clipping_range"),
+                translation=_numbers(translation, 3, "translation"),
+                aim_at=_target_arg(aim_at, "aim_at"),
+                copy_optics_from=copy_optics_from.strip() if isinstance(copy_optics_from, str) and copy_optics_from.strip() else None,
+                dry_run=dry_run,
+            )
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", dry_run=bool(dry_run), applied=False, path=path)
+        return _authoring_payload(router, result)
+
+    @app.tool(name="scene_aim")
+    def scene_aim(path: str, target: str | list[float], dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan rotating a light, camera or other prim in the LIVE open scene so its -Z axis faces
+        target (a prim path or an [x, y, z] point), and show the preview to the user first. dry_run=False changes
+        the user's open scene (not saved, not on Kit's undo stack)."""
+        try:
+            aimed_at = _target_arg(target, "target")
+            if aimed_at is None:
+                raise ValueError("target is required: a prim path or an [x, y, z] point")
+            result = router._scene.aim(path, aimed_at, dry_run=dry_run)
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", dry_run=bool(dry_run), applied=False, path=path)
+        return _authoring_payload(router, result)
 
     # Tool descriptions come from raw docstrings; drop the continuation-line indentation clients would see.
     for tool in app._tool_manager.list_tools():

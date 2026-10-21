@@ -25,6 +25,16 @@ MAX_DUE_LIMIT = 100
 WEAKEST_LIMIT = 5
 TEXT_CAP = 200
 CHOICES_CAP = 20
+SETTINGS_KEYS = ("exam_date", "plan_start", "days_until_exam", "minutes_per_day", "completed_days", "schedule")
+MAX_PLAN_DAYS = 3650
+MAX_MINUTES_PER_DAY = 1440
+# The study schedule frozen when a plan is made (daily.py): at most one entry per scheduled day.
+MAX_SCHEDULE_DAYS = 60
+MAX_SCHEDULE_BLOCKS = 24
+SCHEDULE_DAY_TYPES = ("study", "review", "final_review")
+_SCHEDULE_BLOCK_KEYS = ("objective", "also", "domain", "minutes", "pass", "activity", "domains", "objectives")
+# Changing any of these makes a saved schedule stale, so an update that does not pass a new one clears it.
+_PLAN_KEYS = ("exam_date", "plan_start", "days_until_exam", "minutes_per_day")
 
 
 def workspace_root() -> Path:
@@ -231,6 +241,33 @@ class ProgressStore:
         if not count:
             return []
         return [dict(entry) for entry in reversed(self._load()["history"][-count:])]
+
+    def get_settings(self) -> dict[str, Any]:
+        """Study-plan settings with every key present (None, or [] for completed_days, when unset)."""
+        return _settings_view(self._load().get("settings"))
+
+    def update_settings(self, **values: Any) -> dict[str, Any]:
+        """Validate and save some study-plan settings (None clears one); returns all settings.
+
+        Keys: exam_date / plan_start (ISO dates), days_until_exam, minutes_per_day (ints), completed_days (list of ints),
+        schedule (the frozen day-by-day plan: a list of {type, minutes, blocks} days). Changing a plan key without
+        passing a schedule clears the saved schedule, because it was built for the old plan.
+        """
+        unknown = sorted(set(values) - set(SETTINGS_KEYS))
+        if unknown:
+            raise ValueError(f"unknown settings {', '.join(unknown)}; use {', '.join(SETTINGS_KEYS)}")
+        cleaned = {key: _clean_setting(key, value) for key, value in values.items()}
+        if "schedule" not in cleaned and any(key in cleaned for key in _PLAN_KEYS):
+            cleaned["schedule"] = None
+        if not cleaned:
+            return self.get_settings()
+        with _file_lock(self.path):
+            data = self._load()
+            raw = data.get("settings")
+            # Unknown keys (from a newer version) are kept; known keys are re-validated.
+            data["settings"] = {**(raw if isinstance(raw, dict) else {}), **_settings_view(raw), **cleaned}
+            self._save(data, srs.to_iso(srs.utc_now()))
+            return _settings_view(data["settings"])
 
     def reset(self, confirm: bool = False) -> dict[str, Any]:
         """Clear all progress. Needs ``confirm=True``; an existing file is first copied to ``progress.json.bak-<timestamp>``."""
@@ -492,6 +529,111 @@ def _clean_choice(value: Any, field: str) -> str | list[str] | None:
             items.append(str(item)[:TEXT_CAP])
         return items
     raise TypeError(f"{field} must be a string, an integer or a list of them")
+
+
+def _settings_view(raw: Any) -> dict[str, Any]:
+    """Every settings key with a valid value; unreadable saved values fall back to None / [] (never quarantined)."""
+    source = raw if isinstance(raw, dict) else {}
+    view: dict[str, Any] = {}
+    for key in SETTINGS_KEYS:
+        try:
+            view[key] = _clean_setting(key, source.get(key))
+        except (TypeError, ValueError):
+            if key == "completed_days" and isinstance(source.get(key), list):
+                view[key] = sorted({d for d in source[key] if _is_day_number(d)})
+            else:
+                view[key] = [] if key == "completed_days" else None
+    return view
+
+
+def _is_day_number(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= MAX_PLAN_DAYS
+
+
+def _clean_setting(key: str, value: Any) -> Any:
+    if key == "schedule":
+        return _clean_schedule(value)
+    if key == "completed_days":
+        if value is None:
+            return []
+        if isinstance(value, (str, bytes, dict)) or not isinstance(value, Iterable):
+            raise TypeError("completed_days must be a list of day numbers")
+        days = list(value)
+        if not all(_is_day_number(day) for day in days):
+            raise ValueError(f"completed_days items must be integers from 1 to {MAX_PLAN_DAYS}")
+        return sorted(set(days))
+    if value is None:
+        return None
+    if key in ("exam_date", "plan_start"):
+        if isinstance(value, datetime):
+            value = value.date()
+        if isinstance(value, date):
+            return value.isoformat()
+        if not isinstance(value, str) or len(value.strip()) != 10:
+            raise ValueError(f"{key} must be an ISO date such as '2026-11-30'")
+        try:
+            return date.fromisoformat(value.strip()).isoformat()
+        except ValueError:
+            raise ValueError(f"{key} must be an ISO date such as '2026-11-30'") from None
+    if key in ("days_until_exam", "minutes_per_day"):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(f"{key} must be an integer")
+        if isinstance(value, float) and not value.is_integer():
+            raise ValueError(f"{key} must be a whole number")
+        number = int(value)
+        cap = MAX_PLAN_DAYS if key == "days_until_exam" else MAX_MINUTES_PER_DAY
+        if not 1 <= number <= cap:
+            raise ValueError(f"{key} must be between 1 and {cap}")
+        return number
+    raise ValueError(f"unknown setting {key!r}")
+
+
+def _clean_schedule(value: Any) -> list[dict[str, Any]] | None:
+    """A frozen study schedule: None, or at most MAX_SCHEDULE_DAYS day entries of plain JSON data."""
+    if value is None:
+        return None
+    if not isinstance(value, (list, tuple)):
+        raise TypeError("schedule must be a list of day entries")
+    if len(value) > MAX_SCHEDULE_DAYS:
+        raise ValueError(f"schedule holds at most {MAX_SCHEDULE_DAYS} days")
+    days = []
+    for number, entry in enumerate(value, 1):
+        if not isinstance(entry, dict):
+            raise TypeError("schedule days must be objects")
+        kind = entry.get("type")
+        if kind not in SCHEDULE_DAY_TYPES:
+            raise ValueError(f"schedule day type must be one of {SCHEDULE_DAY_TYPES}")
+        blocks = entry.get("blocks")
+        if not isinstance(blocks, (list, tuple)) or len(blocks) > MAX_SCHEDULE_BLOCKS:
+            raise ValueError(f"schedule day blocks must be a list of at most {MAX_SCHEDULE_BLOCKS}")
+        day = {
+            "day": _schedule_int(entry.get("day", number), "day"),
+            "type": kind,
+            "minutes": _schedule_int(entry.get("minutes", 0), "minutes"),
+            "blocks": [],
+        }
+        for block in blocks:
+            if not isinstance(block, dict):
+                raise TypeError("schedule blocks must be objects")
+            day["blocks"].append({key: _schedule_value(key, block[key]) for key in _SCHEDULE_BLOCK_KEYS if key in block})
+        days.append(day)
+    return days
+
+
+def _schedule_int(value: Any, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_MINUTES_PER_DAY:
+        raise ValueError(f"schedule {field} must be a whole number from 0 to {MAX_MINUTES_PER_DAY}")
+    return value
+
+
+def _schedule_value(key: str, value: Any) -> Any:
+    if key == "minutes":
+        return _schedule_int(value, "block minutes")
+    if isinstance(value, str):
+        return value[:TEXT_CAP]
+    if isinstance(value, (list, tuple)) and len(value) <= CHOICES_CAP and all(isinstance(v, str) for v in value):
+        return [v[:TEXT_CAP] for v in value]
+    raise TypeError(f"schedule block {key} must be a string or a list of at most {CHOICES_CAP} strings")
 
 
 def _clean_seconds(value: Any) -> float | None:

@@ -12,16 +12,8 @@ GUIDE = Path(
     r"C:\Users\krngr\AppData\Local\Temp\claude\C--Users-krngr-Omniverse"
     r"\95cdf3be-6b57-4a88-a9a9-b1b598787514\scratchpad\mcp-expansion\cert-research\guide.txt"
 )
-TARGETS = {
-    "Composition": 21,
-    "Data Exchange": 14,
-    "Pipeline Development": 13,
-    "Data Modeling": 12,
-    "Debugging and Troubleshooting": 10,
-    "Content Aggregation": 9,
-    "Visualization": 7,
-    "Customizing USD": 5,
-}
+WEIGHT_TOLERANCE_PP = 3.0  # each domain's share of the bank stays within this many points of its exam weight
+MIN_BANK_SIZE = 200
 HIDDEN_KEYS = {"answer", "explanations", "verify", "citations"}
 
 
@@ -79,9 +71,14 @@ def test_objective_ids_come_from_the_study_guide():
 
 
 def test_distribution_tracks_exam_weights():
-    counts = bank.stats()["by_domain"]
-    for domain, target in TARGETS.items():
-        assert abs(counts[domain] - target) <= 4, (domain, counts[domain], target)
+    summary = bank.stats()
+    counts, total = summary["by_domain"], summary["total"]
+    assert total >= MIN_BANK_SIZE, total
+    assert sum(info["weight"] for info in bank.DOMAINS.values()) == 100
+    for domain, info in bank.DOMAINS.items():
+        share = 100.0 * counts[domain] / total
+        detail = (domain, counts[domain], round(share, 1), info["weight"])
+        assert abs(share - info["weight"]) <= WEIGHT_TOLERANCE_PP, detail
     items = _items()
     assert sum(1 for item in items if item.get("usda")) >= 30
     assert sum(1 for item in items if item["type"] == "multi") >= 20
@@ -226,13 +223,26 @@ def test_grade_rejects_bad_input():
         raise AssertionError(f"grade{args} should raise ValueError")
 
 
+def _quiz_pages(domain: str) -> list[dict]:
+    """Every question of a domain, fetched in MAX_QUIZ-sized pages with exclude_ids (domains can exceed one page)."""
+    expected = bank.stats()["by_domain"][domain]
+    questions: list[dict] = []
+    while True:
+        result = bank.quiz(domain=domain, count=bank.MAX_QUIZ, seed=1, exclude_ids=[q["id"] for q in questions])
+        assert result["available"] == expected - len(questions), (domain, result["available"])
+        assert result["count"] == min(bank.MAX_QUIZ, result["available"]), (domain, result["count"])
+        questions += result["questions"]
+        if result["available"] <= bank.MAX_QUIZ:
+            return questions
+
+
 def test_quiz_never_leaks_answers():
     by_id = {item["id"]: item for item in _items()}
     seen = set()
     for domain in bank.DOMAINS:
-        result = bank.quiz(domain=domain, count=bank.MAX_QUIZ, seed=1)
-        assert result["count"] == result["available"] == bank.stats()["by_domain"][domain]
-        for question in result["questions"]:
+        questions = _quiz_pages(domain)
+        assert len(questions) == len({q["id"] for q in questions}) == bank.stats()["by_domain"][domain]
+        for question in questions:
             assert not HIDDEN_KEYS & set(question), question["id"]
             source = by_id[question["id"]]
             dumped = json.dumps(question)
@@ -329,3 +339,19 @@ def test_no_ten_word_sequence_copied_from_study_guide():
         for hit in copied(text)
     ]
     assert hits == [], hits[:5]
+
+
+def test_instance_mask_and_surface_source_pin_the_keyed_results():
+    """ca-014/ca-015 check PointInstancer visibility and vis-016 the per-context surface, so a wrong key fails."""
+    for qid in ("ca-014", "ca-015", "vis-016"):
+        assert bank.verify_question(qid)["passed"] is True, qid
+    lanterns = copy.deepcopy(_first(lambda i: i["id"] == "ca-014"))
+    mask = next(c for c in lanterns["verify"]["checks"] if "instance_mask" in c.get("expect", {}))
+    assert mask["expect"]["instance_mask"] == [True, True, False, True]
+    mask["expect"]["instance_mask"] = [True, False, True, True]  # 'hides the second entry' (ids ignored)
+    assert bank.verify_question(lanterns)["passed"] is False
+    painted = copy.deepcopy(_first(lambda i: i["id"] == "vis-016"))
+    source = next(c for c in painted["verify"]["checks"] if "surface_source" in c.get("expect", {}))
+    source["expect"]["surface_source"]["ri"] = None  # 'ri gets no shader'
+    assert bank.verify_question(painted)["passed"] is False
+    assert bank.validate_item(painted) == []

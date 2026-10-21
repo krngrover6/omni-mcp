@@ -311,3 +311,140 @@ def test_save_with_file_uri_to_the_open_root_layer_saves_in_place():
             assert bridge.save_scene(uri) == uri
         assert "Added" in (root_dir / "scene.usda").read_text()
         assert not main.GetRootLayer().dirty
+
+
+# --- live insight, capabilities and authoring forwarding (extended RPC, see kit_rpc.py) ----------------------
+
+import json  # noqa: E402 - appended section
+import sys  # noqa: E402
+
+_AUTHORING_MODULE = "omniverse_scene_mcp.authoring"
+
+
+@contextlib.contextmanager
+def _authoring_module(module):
+    """Temporarily replace omniverse_scene_mcp.authoring in sys.modules (None makes the import fail)."""
+    previous = sys.modules.get(_AUTHORING_MODULE, _AUTHORING_MODULE)
+    sys.modules[_AUTHORING_MODULE] = module
+    try:
+        yield
+    finally:
+        if previous is _AUTHORING_MODULE:
+            sys.modules.pop(_AUTHORING_MODULE, None)
+        else:
+            sys.modules[_AUTHORING_MODULE] = previous
+
+
+def test_capabilities_lists_live_methods_and_insight_queries():
+    stage = Usd.Stage.CreateInMemory()
+    with _bridge(stage) as bridge:
+        info = bridge.capabilities()
+    assert info["ok"] is True and info["version"] == "tier2-1"
+    assert {"capabilities", "insight", "create_light", "create_camera", "aim", "ping", "save"} <= set(info["methods"])
+    assert info["insight_queries"] == ["stage_info", "composition", "explain_value", "properties", "bounds", "validate"]
+    assert isinstance(info["authoring"]["available"], bool)
+    assert info["stage_open"] is True and info["dry_run_default"] is True
+    json.dumps(info)
+
+
+def test_insight_reports_live_mode_and_unsaved_layers():
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.Xform.Define(stage, "/World")
+    UsdGeom.Sphere.Define(stage, "/World/Ball").CreateRadiusAttr(0.5)
+    with Usd.EditContext(stage, stage.GetSessionLayer()):
+        UsdGeom.Sphere(stage.GetPrimAtPath("/World/Ball")).GetRadiusAttr().Set(2.0)
+    before = stage.GetRootLayer().ExportToString()
+
+    with _bridge(stage) as bridge:
+        info = bridge.insight("stage_info")
+        value = bridge.insight("explain_value", {"prim_path": "/World/Ball", "attribute": "radius"})
+        bound = bridge.insight("BOUNDS", {"path": "/World/Ball"})
+        selection = bridge.get_selection()
+
+    root = stage.GetRootLayer()
+    assert info["mode"] == "live" and info["query"] == "stage_info"
+    assert info["stage_identifier"] == root.identifier and info["root_layer_anonymous"] is True
+    assert info["has_unsaved_changes"] == root.dirty
+    assert info["session_layer_has_edits"] is True
+    assert value["value"] == 2.0  # the session-layer opinion wins and is reported live
+    assert value["winning_opinion"]["layer"] == stage.GetSessionLayer().identifier
+    assert bound["query"] == "bounds" and bound["world_bound"]["size"] == [4.0, 4.0, 4.0]
+    assert root.ExportToString() == before and selection == []
+    json.dumps([info, value, bound])
+
+
+def test_insight_rejects_names_outside_the_allowlist():
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.Cube.Define(stage, "/Cube")
+    with _bridge(stage) as bridge:
+        for query in ("snapshot", "save_scene", "GetRootLayer", "__dict__", "_stage", "stage_info ;", None):
+            try:
+                bridge.insight(query)
+            except ValueError as exc:
+                assert "Unknown insight query" in str(exc)
+            else:
+                raise AssertionError(f"insight should reject {query!r}")
+        for args in (["/Cube"], {"prim_path": "/Cube", "save": True}, {"prim_path": "/Cube", "time": [1]}):
+            try:
+                bridge.insight("properties", args)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"insight should reject args {args!r}")
+    assert not stage.GetSessionLayer().dirty
+
+
+def test_live_authoring_passes_the_live_stage_and_dry_run():
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.Xform.Define(stage, "/World")
+    calls = []
+
+    def create_light(stage_arg, path, light_type, **options):
+        calls.append(("create_light", stage_arg, path, light_type, options))
+        if not options["dry_run"]:
+            stage_arg.DefinePrim(path, light_type)
+        return {"ok": True, "dry_run": options["dry_run"], "path": path, "light_type": light_type}
+
+    def create_camera(stage_arg, path, **options):
+        calls.append(("create_camera", stage_arg, path, options))
+        return {"ok": True, "dry_run": options["dry_run"], "path": path, "focal_length": (options["focal_length"],)}
+
+    def aim(stage_arg, path, target, **options):
+        calls.append(("aim", stage_arg, path, target, options))
+        return {"ok": True, "dry_run": options["dry_run"], "path": path}
+
+    fake = types.ModuleType(_AUTHORING_MODULE)
+    fake.create_light, fake.create_camera, fake.aim = create_light, create_camera, aim
+    with _authoring_module(fake), _bridge(stage) as bridge:
+        preview = bridge.create_light("/World/Key", "DistantLight", intensity=500.0)
+        assert stage.GetPrimAtPath("/World/Key").IsValid() is False and bridge.get_selection() == []
+        created = bridge.create_light("/World/Key", "DistantLight", color=(1.0, 0.9, 0.8), dry_run=False)
+        selected_after_create = bridge.get_selection()
+        camera = bridge.create_camera("/World/Cam", focal_length=35.0, aim_at="/World/Key")
+        aimed = bridge.aim("/World/Key", (0.0, 0.0, 0.0), up_axis="Z", dry_run=False)
+        selected_after_aim = bridge.get_selection()
+
+    assert preview == {"ok": True, "dry_run": True, "path": "/World/Key", "light_type": "DistantLight", "mode": "live"}
+    assert created["dry_run"] is False and stage.GetPrimAtPath("/World/Key").GetTypeName() == "DistantLight"
+    assert selected_after_create == ["/World/Key"] and selected_after_aim == ["/World/Key"]
+    assert camera["focal_length"] == [35.0]  # tuples come back as plain JSON lists
+    assert aimed["dry_run"] is False
+    assert all(call[1] is stage for call in calls)
+    assert calls[0][4]["dry_run"] is True and calls[0][4]["intensity"] == 500.0
+    assert calls[2][3]["aim_at"] == "/World/Key" and calls[2][3]["dry_run"] is True
+    assert calls[3][3] == (0.0, 0.0, 0.0) and calls[3][4] == {"up_axis": "Z", "dry_run": False}
+
+
+def test_live_authoring_without_the_module_returns_needs_bridge_update():
+    stage = Usd.Stage.CreateInMemory()
+    before = stage.GetRootLayer().ExportToString()
+    with _authoring_module(None), _bridge(stage) as bridge:
+        results = [
+            bridge.create_light("/World/Key", "SphereLight"),
+            bridge.create_camera("/World/Cam"),
+            bridge.aim("/World/Cam", "/World"),
+        ]
+    for result, method in zip(results, ("create_light", "create_camera", "aim")):
+        assert result["ok"] is False and result["needs_bridge_update"] is True and result["method"] == method
+        assert "authoring" in result["message"]
+    assert stage.GetRootLayer().ExportToString() == before

@@ -1,3 +1,6 @@
-# Personal exam progress; keep it out of git.
+# Personal exam data written by the router's exam tools; keep it out of git.
 progress.json
-progress.json.tmp
+progress.json.*
+mock_sessions.json
+mock_sessions.json.*
+*.lock

@@ -172,20 +172,89 @@ Composition sandbox (temp folder only, never your scene files):
   graded by really composing the layers; answers are recorded under the
   Composition domain
 
-Saved-file insight and validation. These read the SAVED file read-only, never
-the live unsaved stage; every result has `"mode": "saved_file"` and a note.
-`file` defaults to the live scene's saved root layer; relative paths resolve
-against the workspace root, and explicit paths must be inside the workspace:
+Insight and validation, read-only. Since Tier 2 each tool takes
+`mode="auto"` (default), `"live"` or `"saved_file"` and every result says which
+`mode` it used (plus `mode_requested`):
 
-- `scene_stage_info(file=None)`
-- `scene_composition(prim_path, file=None)`
-- `scene_explain_value(prim_path, attribute, time=None, file=None)`
-- `scene_properties(prim_path, file=None)`
-- `scene_bounds(prim_path, file=None)`
-- `usd_validate(file=None, profile="exam")` - `exam`, `usd` or `all`
+- `auto` with `file=...` reads that SAVED file. Without `file`, it reads the
+  LIVE open stage (unsaved edits included) when `scene_capabilities` reports
+  live insight; otherwise it falls back to the saved root layer and adds
+  `fallback_note` and `live_fallback` (with `needs_bridge_update`)
+- `live` never falls back; `saved_file` never asks the bridge
+- in saved-file mode `file` defaults to the live scene's saved root layer;
+  relative paths resolve against the workspace root, and explicit paths must
+  be inside the workspace
+
+- `scene_stage_info(file=None, mode="auto")`
+- `scene_composition(prim_path, file=None, mode="auto")`
+- `scene_explain_value(prim_path, attribute, time=None, file=None, mode="auto")`
+- `scene_properties(prim_path, file=None, mode="auto")`
+- `scene_bounds(prim_path, file=None, mode="auto")`
+- `usd_validate(file=None, profile="exam", mode="auto")` - `exam`, `usd` or `all`
 
 The command-line form `python -m omniverse_scene_mcp <request>` previews
 (dry run) unless `--apply` is given.
+
+### Daily lessons, mock exam and live tools (Tier 2)
+
+Daily lessons (plan settings live in the same progress store):
+
+- `learning_exam_day(day=None)` - one plan day as a lesson: objectives with
+  plain explanations, offline doc hits, readings, a hands-on exercise (LIVERPS
+  puzzle, "predict the value" item or try-it layers for
+  `usd_playground_compose`) and quiz questions with answers withheld;
+  `day=None` is the next day not marked complete
+- `learning_exam_day_complete(day)` - mark a day done; reports streak, days
+  left and the next day
+- `learning_exam_set_date(exam_date=None, days_until_exam=None,
+  minutes_per_day=60)` - re-plan from today (default 30 days); completed-day
+  marks are cleared, answers and reviews are kept
+
+Timed mock exam (one open at a time, sessions in `mock_sessions.json` next to
+`progress.json`; memory-only under `OMNIVERSE_SCENE_MCP_TEST` unless
+`OMNIVERSE_EXAM_PREP_DIR` is set):
+
+- `learning_mock_exam_start(count=65, minutes=120)` - starts the clock; draws
+  questions per domain at the official weights and shows the first 10
+- `learning_mock_exam_questions(session_id=None, offset=0, limit=10)` - page
+  through the questions with your current choices and flags
+- `learning_mock_exam_answer(session_id, question_id, chosen)` - record or
+  change an answer (id or 1-based number; letters or 0-based indices)
+- `learning_mock_exam_flag(session_id, question_id, flagged=True)`
+- `learning_mock_exam_status(session_id=None)` - time left, unanswered and
+  flagged questions; lists recent mocks when none is open
+- `learning_mock_exam_finish(session_id)` - per-domain score, wrong questions
+  with explanations, a readiness verdict against a self-set 80% target (NVIDIA
+  publishes no passing score); answered questions go to exam progress
+- `learning_mock_exam_abandon(session_id)` - close without scoring
+
+`router_dispatch` understands "start day 3", "day 1", "next lesson" and
+"today's lesson" (it returns the lesson) and "mock exam" (it only explains how
+to start one; it never starts the timer).
+
+Live scene tools (need the extended Isaac Sim bridge, see `kit_rpc.py`):
+
+- `scene_capabilities()` - bridge RPC version, live insight queries, whether
+  light/camera authoring is available and whether a bridge reload is needed
+- `scene_create_light(path, light_type, intensity=None, exposure=None,
+  color=None, size=None, translation=None, aim_at=None, dry_run=True)` -
+  rect, sphere, disk, distant, cylinder or dome; `size` is one number or
+  `[width, height]` / `[length, radius]`
+- `scene_create_camera(path, focal_length=None, horizontal_aperture=None,
+  clipping_range=None, translation=None, aim_at=None, copy_optics_from=None,
+  dry_run=True)`
+- `scene_aim(path, target, dry_run=True)` - turn a prim so its -Z axis faces a
+  prim path or an `[x, y, z]` point
+
+The three authoring tools are DRY RUN BY DEFAULT: show the preview to the user
+and call again with `dry_run=False` only after they agree. Applying changes the
+user's open scene in memory (not saved, not on Kit's undo stack). On the fake
+scene or an old bridge they return `ok: false` with `needs_bridge_update`.
+
+To turn the live tools on: run `isaacsim-study/reload_mcp_bridge.py` in Isaac
+Sim's Script Editor (it self-tests on Isaac's USD, then restarts the bridge on
+9911 with RPC version `tier2-1`), restart the router so it loads this code,
+then check `scene_capabilities()`.
 
 ## Next step
 

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 import os
 import posixpath
 import re
 from typing import Any
 
-from .bridge import ChangeRecord, PrimRecord, SceneBridge
+from .bridge import INSIGHT_QUERIES, ChangeRecord, PrimRecord, SceneBridge, unsupported_result
 
 
 @dataclass(slots=True)
@@ -283,6 +284,168 @@ class SceneMCPService:
             "warnings": warnings,
         }
 
+    # --- live insight and light/camera authoring (needs an extended live bridge, see kit_rpc.py) --------------
+
+    def live_capabilities(self) -> dict[str, Any]:
+        """What the scene bridge supports beyond the basic methods; never raises."""
+        getter = getattr(self._bridge, "capabilities", None)
+        if not callable(getter):
+            return self._bridge_lacks("capabilities")
+        try:
+            return dict(getter())
+        except Exception as exc:  # noqa: BLE001 - a down bridge is reported, not raised
+            return {"ok": False, "method": "capabilities", "message": _error_text(exc)}
+
+    def live_insight(self, query: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Run one read-only insight query on the LIVE stage (unsaved edits included); never raises.
+
+        query: stage_info, composition, explain_value, properties, bounds or validate. args: that query's
+        arguments, e.g. {"prim_path": "/World/Cube", "attribute": "size", "time": 24}.
+        """
+        name = query.strip().lower() if isinstance(query, str) else ""
+        base = {"mode": "live", "query": name or query}
+        if name not in INSIGHT_QUERIES:
+            return {"ok": False, **base, "message": f"Unknown insight query {query!r}; use one of {list(INSIGHT_QUERIES)}"}
+        if args is not None and not isinstance(args, dict):
+            return {"ok": False, **base, "message": "args must be an object (dict) of that query's arguments"}
+        runner = getattr(self._bridge, "insight", None)
+        if not callable(runner):
+            return {**base, **self._bridge_lacks("insight")}
+        try:
+            result = runner(name, dict(args or {}))
+        except Exception as exc:  # noqa: BLE001 - USD and bridge errors become a structured result
+            return {"ok": False, **base, "message": _error_text(exc)}
+        payload = dict(result) if isinstance(result, dict) else {"ok": True, "result": result}
+        for key, value in base.items():
+            payload.setdefault(key, value)
+        return payload
+
+    def create_light(
+        self,
+        path: str,
+        light_type: str,
+        *,
+        intensity: float | None = None,
+        exposure: float | None = None,
+        color: tuple[float, float, float] | None = None,
+        size: float | None = None,
+        translation: tuple[float, float, float] | None = None,
+        aim_at: str | tuple[float, float, float] | None = None,
+        up_axis: str | None = None,
+        dry_run: bool = True,
+    ) -> OperationResult:
+        """Create a UsdLux light on the live stage; dry_run (the default) previews it without authoring."""
+        dry_run = dry_run is not False  # only an explicit False authors (None, 0 and [] stay a preview)
+        _require_text(path, "Light path")
+        _require_text(light_type, "Light type")
+        options = _without_none(
+            intensity=intensity,
+            exposure=exposure,
+            color=color,
+            size=size,
+            translation=translation,
+            aim_at=aim_at,
+            up_axis=up_axis,
+        )
+        summary = f"Create {light_type} at {path}" + (f" aimed at {aim_at}" if aim_at is not None else "")
+        return self._live_authoring(
+            "create_light",
+            path,
+            summary,
+            {"light_type": light_type, **options},
+            lambda author: author(path, light_type, dry_run=dry_run, **options),
+            dry_run,
+        )
+
+    def create_camera(
+        self,
+        path: str,
+        *,
+        focal_length: float | None = None,
+        horizontal_aperture: float | None = None,
+        clipping_range: tuple[float, float] | None = None,
+        translation: tuple[float, float, float] | None = None,
+        aim_at: str | tuple[float, float, float] | None = None,
+        copy_optics_from: str | None = None,
+        up_axis: str | None = None,
+        dry_run: bool = True,
+    ) -> OperationResult:
+        """Create a camera on the live stage; dry_run (the default) previews it without authoring."""
+        dry_run = dry_run is not False  # only an explicit False authors (None, 0 and [] stay a preview)
+        _require_text(path, "Camera path")
+        options = _without_none(
+            focal_length=focal_length,
+            horizontal_aperture=horizontal_aperture,
+            clipping_range=clipping_range,
+            translation=translation,
+            aim_at=aim_at,
+            copy_optics_from=copy_optics_from,
+            up_axis=up_axis,
+        )
+        summary = f"Create camera at {path}" + (f" aimed at {aim_at}" if aim_at is not None else "")
+        return self._live_authoring(
+            "create_camera",
+            path,
+            summary,
+            options,
+            lambda author: author(path, dry_run=dry_run, **options),
+            dry_run,
+        )
+
+    def aim(
+        self,
+        path: str,
+        target: str | tuple[float, float, float],
+        *,
+        up_axis: str | None = None,
+        dry_run: bool = True,
+    ) -> OperationResult:
+        """Rotate a live prim to face a target prim or point; dry_run (the default) previews the rotation."""
+        dry_run = dry_run is not False  # only an explicit False authors (None, 0 and [] stay a preview)
+        _require_text(path, "Prim path")
+        if target is None or (isinstance(target, str) and not target.strip()):
+            raise ValueError("Aim target is required: a prim path or an (x, y, z) point")
+        options = _without_none(up_axis=up_axis)
+        return self._live_authoring(
+            "aim",
+            path,
+            f"Aim {path} at {target}",
+            {"target": target, **options},
+            lambda author: author(path, target, dry_run=dry_run, **options),
+            dry_run,
+        )
+
+    def _live_authoring(
+        self,
+        method: str,
+        path: str,
+        summary: str,
+        requested: dict[str, Any],
+        call: Callable[[Callable[..., Any]], Any],
+        dry_run: bool,
+    ) -> OperationResult:
+        """Forward to the bridge's live authoring method; an unsupported bridge gives ok=False, not an exception."""
+        author = getattr(self._bridge, method, None)  # method is one of this class's fixed names, never user input
+        if not callable(author):
+            return OperationResult(False, bool(dry_run), [], self._bridge_lacks(method))
+        result = call(author)
+        payload = dict(result) if isinstance(result, dict) else {"ok": True, "result": result}
+        if payload.get("unsupported") or payload.get("needs_bridge_update"):
+            return OperationResult(False, bool(dry_run), [], payload)
+        ok = bool(payload.get("ok", True))
+        applied_dry_run = bool(payload.get("dry_run", dry_run))
+        changes = [ChangeRecord(method, path, summary, after=requested)] if ok else []
+        return OperationResult(ok, applied_dry_run, changes, payload)
+
+    def _bridge_lacks(self, method: str) -> dict[str, Any]:
+        name = type(self._bridge).__name__
+        return unsupported_result(
+            method,
+            f"The {name} scene bridge has no {method}(); connect an up-to-date live Isaac Sim bridge.",
+            needs_bridge_update=True,
+            bridge=name,
+        )
+
     def preview_changes(self, result: OperationResult) -> dict[str, Any]:
         return {
             "ok": result.ok,
@@ -323,3 +486,17 @@ def _layer_key(path: str) -> str:
 
 def _is_absolute(path: str) -> bool:
     return os.path.isabs(path) or bool(re.match(r"^[A-Za-z]:[\\/]", path))
+
+
+def _require_text(value: Any, label: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} is required")
+
+
+def _without_none(**values: Any) -> dict[str, Any]:
+    return {key: value for key, value in values.items() if value is not None}
+
+
+def _error_text(exc: Exception) -> str:
+    text = str(exc) or type(exc).__name__
+    return text if isinstance(exc, ValueError) else f"{type(exc).__name__}: {text}"

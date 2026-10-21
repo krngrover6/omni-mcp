@@ -42,6 +42,7 @@ _PRIM_KEYS = frozenset({
     "variants", "children", "api_schemas", "computed_visibility", "computed_purpose", "world_translation",
     "computed_extent", "bound_material", "material_purpose", "custom_data", "asset_info", "metadata",
     "inherited_primvar", "shares_prototype_with", "authored_attributes", "has_attributes",
+    "instance_mask", "surface_source",
 })
 _PROPERTY_KEYS = frozenset({
     "exists", "value", "targets", "connections", "type_name", "namespace", "base_name", "custom",
@@ -646,6 +647,14 @@ def _prim_facts(stage: Any, path: str, expect: dict, time: Any) -> dict:
                 facts[key][other_path] = bool(other) and prim.IsInstance() and other.IsInstance() and (
                     prim.GetPrototype() == other.GetPrototype()
                 )
+        elif key == "instance_mask":
+            facts[key] = [bool(v) for v in UsdGeom.PointInstancer(prim).ComputeMaskAtTime(time)]
+        elif key == "surface_source":
+            material = UsdShade.Material(prim)
+            facts[key] = {}
+            for ctx in expect[key]:
+                shader = material.ComputeSurfaceSource(ctx)[0]
+                facts[key][ctx] = str(shader.GetPath()) if shader else None
     return facts
 
 

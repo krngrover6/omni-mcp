@@ -208,3 +208,100 @@ usd_validate(profile="exam")             # or "usd" (OpenUSD validators) or "all
 
 If the live scene is not saved yet, or the router is on its fake scene, these return `ok: false`
 with a message. Pass `file=...` in that case.
+
+## 9) Daily lessons, mock exam and live tools
+
+Tier 2 adds a day-by-day study plan, a timed mock exam, and tools that read or change the scene that is
+open in Isaac Sim right now.
+
+### What to say
+
+| You say | What happens |
+|---|---|
+| `start day 1` | `learning_exam_day(day=1)`: that day's lesson (explanations, docs, an exercise, quiz questions) |
+| `next lesson` | `learning_exam_day()`: the next day you have not marked complete |
+| `quiz me` | `learning_exam_quiz(count=5)`: exam-bank questions, answers withheld; answer with `learning_exam_answer` |
+| `mock exam` | Nothing starts. You get the steps; `learning_mock_exam_start()` starts the 120-minute clock |
+| `why is this value X on my open scene` | `scene_explain_value(prim_path=..., attribute=...)` reads the live stage, unsaved edits included |
+| `preview a rect light above /World/Box` | `scene_create_light(path="/World/KeyLight", light_type="rect", translation=[0, 0, 3], aim_at="/World/Box")` previews it |
+
+Through `router_dispatch`, "start day 3", "day 1", "next lesson" and "today's lesson" return the lesson,
+and "mock exam" only explains how to start one. "quiz me on schemas" there still gives the short
+built-in topic quiz.
+
+### Daily lessons
+
+```text
+learning_exam_set_date(exam_date="2026-11-30", minutes_per_day=60)   # or days_until_exam=21
+learning_exam_day()                      # the next day not marked complete
+learning_exam_day(day=3)
+learning_exam_day_complete(day=3)        # streak, days left and the next day
+```
+
+- The plan starts the first time you open a lesson, with 30 days of 60 minutes by default.
+- `learning_exam_set_date` re-plans from today and restarts at day 1. It clears completed-day marks,
+  but your answers and spaced-repetition reviews stay.
+- The schedule is rebuilt from your progress each time, so later days move toward weak objectives.
+- Exercises: a LIVERPS puzzle (`learning_composition_puzzle_answer`), a "predict the value" item, or
+  try-it layers. For the last two, predict first, then check with `usd_playground_compose`.
+
+### Timed mock exam
+
+```text
+learning_mock_exam_start(count=65, minutes=120)      # the clock starts now; shows questions 1-10
+learning_mock_exam_questions(session_id="mock-...", offset=10)
+learning_mock_exam_answer(session_id="mock-...", question_id=3, chosen=["A", "C"])   # [] clears it
+learning_mock_exam_flag(session_id="mock-...", question_id=3)
+learning_mock_exam_status()                          # time left, unanswered, flagged
+learning_mock_exam_finish(session_id="mock-...")     # score per domain, wrong answers explained
+learning_mock_exam_abandon(session_id="mock-...")    # close without a score
+```
+
+- Questions are drawn per domain at the official weights. Only one mock can be open at a time.
+- NVIDIA publishes no passing score. The 80% readiness target in the report is your own goal, not a
+  pass mark.
+- Finishing saves the answered questions to your progress, so wrong ones come back in
+  `learning_exam_review`. Sessions are kept in `exam-prep/mock_sessions.json`.
+
+### Live or saved file
+
+The insight tools from section 8 now take `mode`:
+
+```text
+scene_explain_value(prim_path="/World/Box", attribute="size")                     # mode="auto"
+scene_explain_value(prim_path="/World/Box", attribute="size", mode="live")        # open stage only
+scene_explain_value(prim_path="/World/Box", attribute="size", mode="saved_file")  # file on disk only
+scene_capabilities()                     # what the bridge can do, and whether it needs a reload
+```
+
+- `auto` reads the live stage when the bridge supports it. Otherwise it reads the saved file and adds
+  a `fallback_note`. Passing `file=...` always means that saved file.
+- Every result says which `mode` it used. Live answers include unsaved edits and change nothing.
+
+### Lights and cameras: preview first
+
+```text
+scene_create_light(path="/World/KeyLight", light_type="rect", intensity=800, size=[2, 1],
+                   translation=[0, -4, 3], aim_at="/World/Box")          # preview (dry run)
+scene_create_camera(path="/World/ShotCam", focal_length=35, translation=[0, -6, 2], aim_at="/World/Box")
+scene_aim(path="/World/KeyLight", target=[0, 0, 0])
+```
+
+- All three are dry runs by default. Read the preview, and only then repeat the call with
+  `dry_run=False`.
+- Applying changes the open scene in memory. It is not saved (use `scene_save`) and it is not on
+  Kit's undo stack.
+- Light types: rect, sphere, disk, distant, cylinder, dome. Aiming points the prim's -Z axis at the
+  target, which is the direction cameras look and rect, disk and distant lights shine.
+
+### Turning the live tools on
+
+1. In Isaac Sim, open the Script Editor and run `isaacsim-study/reload_mcp_bridge.py`. It runs self-tests
+   on Isaac's own USD, then restarts the scene bridge on port 9911.
+   `isaacsim-study/bridge-reload-result.json` should show status `reloaded` and rpc_version `tier2-1`.
+2. Restart the router so it loads the new tools, for example with `start-isaac-mcp.ps1`.
+3. Run `scene_capabilities()`. `needs_bridge_update` should be `false`, and live insight and live
+   authoring should both be available.
+
+Until then, the live tools return `ok: false` with `needs_bridge_update`, and `auto` falls back to the
+saved file. Composer's bridge on port 9910 only serves the basic scene commands.

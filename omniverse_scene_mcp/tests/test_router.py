@@ -756,3 +756,116 @@ def test_router_dry_run_and_questions_never_reach_bowerbot_write_tools():
         payload = _run(router, question)
         assert payload["tool"] == "list_scene", question
     assert calls == ["list_scene"] * 3
+
+
+# --- NCP-OUSD daily lessons and mock exams ---------------------------------------------------------------------
+
+
+def test_router_routes_daily_lesson_and_mock_exam_phrases():
+    router, _ = _router()
+    days = {
+        "start day 3": 3,
+        "day 1": 1,
+        "Day one please": 1,
+        "can you start day 2 for me?": 2,
+        "lesson for day 4": 4,
+        "open study day 12": 12,
+        "let's do day 5 of my plan": 5,
+    }
+    for request, day in days.items():
+        decision = router.route(request)
+        assert decision.target is RouteTarget.LEARN and decision.reason == "Daily exam lesson request", request
+        assert router._exam_request(router._normalize(request)) == ("day", day), request
+    for request in ("next lesson", "move on to the next lesson", "what's today's lesson?", "continue my study plan"):
+        assert router.route(request).target is RouteTarget.LEARN, request
+        assert router._exam_request(router._normalize(request)) == ("day", None), request
+    for request in ("mock exam", "start a mock exam", "I want a timed practice exam", "mock-test please"):
+        decision = router.route(request)
+        assert decision.target is RouteTarget.LEARN and decision.reason.startswith("Mock exam request"), request
+        assert router._exam_request(router._normalize(request)) == ("mock", None), request
+    for request in (
+        "day trip",
+        "what day is it",
+        "quiz me on schemas",
+        "teach me prims",
+        "next step",
+        "practice transforms with me",
+        "move /World/Props/Cube by 0 0 1",
+        "what is a variant set?",
+    ):
+        assert router._exam_request(router._normalize(request)) is None, request
+    # Existing routes keep their targets.
+    assert router.route("move /World/Props/Cube by 0 0 1").target is RouteTarget.SCENE
+    assert router.route("what is a variant set?").target is RouteTarget.USD
+    assert _run(router, "quiz me on schemas")["style"] == "quiz"
+
+
+def test_router_without_exam_hooks_names_the_tool_and_never_starts_a_mock():
+    router, _ = _router()
+    lesson = _run(router, "start day 3")
+    assert lesson["ok"] is True and lesson["executed"] is False and lesson["style"] == "exam_day"
+    assert lesson["tool"] == "learning_exam_day" and lesson["arguments"] == {"day": 3}
+    assert "learning_exam_day(day=3)" in lesson["message"]
+    assert _run(router, "next lesson")["arguments"] == {}
+    mock = _run(router, "start a mock exam")
+    assert mock["ok"] is True and mock["started"] is False and mock["style"] == "mock_exam"
+    assert mock["tool"] == "learning_mock_exam_start" and mock["arguments"] == {"count": 65, "minutes": 120}
+    assert "never starts one" in mock["message"] and "open_mock" not in mock
+    assert any("learning_mock_exam_finish" in step for step in mock["steps"])
+    events = [entry["event"] for entry in router.learning_history()["history"]]
+    assert events[-3:] == ["exam_day", "exam_day", "mock_exam"]
+    assert "start day 1" in router.cheat_sheet()["commands"]["learning"]
+
+
+def test_router_runs_exam_hooks_and_reports_an_open_mock():
+    calls = []
+
+    def exam_day(day):
+        calls.append(day)
+        return {"ok": True, "day": day or 1, "type": "study"}
+
+    open_mock = {"session_id": "mock-1", "state": "in_progress", "remaining": "10m 0s", "answered": 2, "total": 5}
+    router = OmniverseRouter(SceneMCPService(FakeSceneBridge()), exam_day=exam_day, mock_status=lambda: open_mock)
+    lesson = _run(router, "start day 3")
+    assert lesson["executed"] is True and lesson["day"] == 3 and lesson["type"] == "study"
+    assert lesson["style"] == "exam_day" and lesson["target"] == "learn"
+    assert _run(router, "today's lesson")["day"] == 1
+    assert calls == [3, None]
+
+    mock = _run(router, "mock exam")
+    assert mock["started"] is False and mock["open_mock"]["session_id"] == "mock-1"
+    assert mock["tool"] == "learning_mock_exam_status" and "already open" in mock["message"]
+
+    def broken(_day):
+        raise RuntimeError("progress file is locked")
+
+    failing = OmniverseRouter(SceneMCPService(FakeSceneBridge()), exam_day=broken, mock_status=lambda: None)
+    payload = _run(failing, "day 2")
+    assert payload["ok"] is False and "RuntimeError" in payload["message"] and "locked" in payload["message"]
+    assert "open_mock" not in _run(failing, "mock exam")
+
+    # An active practice session still advances on "next"; only lesson phrases reach the daily plan.
+    router.start_practice("selection")
+    assert _run(router, "next")["current_step_index"] == 2
+    assert calls == [3, None]
+
+
+def test_mock_exam_phrases_do_not_capture_prim_names_or_usd_questions():
+    router, _ = _router()
+    for request in (
+        "inspect /World/MockTest",
+        "delete /World/MockTests",
+        "select /World/Props/MockExam",
+        "move /World/MockTest by 0 0 1",
+        "rename /World/Cube to MockTest",
+        "find mocktest",
+        "what is a full test suite in usd?",
+    ):
+        assert router._exam_request(router._normalize(request)) is None, request
+        assert not router.route(request).reason.startswith("Mock exam request"), request
+    assert router.route("inspect /World/MockTest").target is RouteTarget.SCENE
+    assert router.route("find mocktest").target is RouteTarget.SCENE
+    assert router.route("what is a full test suite in usd?").target is RouteTarget.USD
+    for request in ("start a mock exam", "mock-exam", "timed test", "full exam", "exam simulation",
+                    "give me a full practice exam", "run a full mock test"):
+        assert router._exam_request(router._normalize(request)) == ("mock", None), request

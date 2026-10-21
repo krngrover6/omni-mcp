@@ -10,6 +10,9 @@ from urllib.request import ProxyHandler, build_opener
 # Loopback only: never route the scene-bridge probe through HTTP(S)_PROXY.
 urlopen = build_opener(ProxyHandler({})).open
 
+from .exam import daily as exam_daily
+from .exam.mock import FILE_NAME as MOCK_FILE_NAME
+from .exam.mock import MockExamStore
 from .exam.progress import ENV_DIR as EXAM_PREP_DIR_ENV
 from .exam.progress import FILE_NAME as PROGRESS_FILE_NAME
 from .exam.progress import ProgressStore
@@ -104,13 +107,18 @@ def build_router(
     detect_endpoint: Callable[[], str | None] | None = None,
     *,
     offline_knowledge: OfflineUSDKnowledge | None = None,
+    progress_store: ProgressStore | None = None,
+    mock_store: MockExamStore | None = None,
 ) -> OmniverseRouter:
     """Build the single interface used to route Omniverse requests.
 
     Outside test mode the USD backend falls back to the bundled offline docs when the USD docs MCP is down;
     ``offline_knowledge`` lets the server share one lazily loaded offline index with its doc tools.
+    With ``progress_store`` the router answers "start day 3" / "next lesson" with the daily lesson itself; with
+    ``mock_store`` its mock-exam instructions mention an open mock. Without them it only names the tool to call.
     """
     scene = build_scene_service(environ, detect_endpoint)
+    exam_hooks = _exam_hooks(progress_store, mock_store, offline_knowledge)
     if is_test_mode(environ):
         # Offline: no upstream endpoints are read and NullKnowledgeBackend never opens a socket.
         return OmniverseRouter(
@@ -120,6 +128,7 @@ def build_router(
             omni_ui_backend=NullKnowledgeBackend("omni_ui"),
             isaac_sim_backend=NullKnowledgeBackend("isaac_sim"),
             bowerbot_backend=NullKnowledgeBackend("bowerbot"),
+            **exam_hooks,
         )
     return OmniverseRouter(
         scene,
@@ -128,7 +137,26 @@ def build_router(
         omni_ui_backend=build_omni_ui_backend(),
         isaac_sim_backend=build_isaac_sim_backend(),
         bowerbot_backend=build_bowerbot_backend(),
+        **exam_hooks,
     )
+
+
+def _exam_hooks(
+    progress_store: ProgressStore | None,
+    mock_store: MockExamStore | None,
+    offline_knowledge: OfflineUSDKnowledge | None,
+) -> dict[str, Any]:
+    """Router callbacks for the daily lesson and the open-mock check; the same calls the server's exam tools make."""
+    hooks: dict[str, Any] = {}
+    if progress_store is not None:
+
+        def exam_day(day: int | None) -> dict[str, Any]:
+            return exam_daily.build_day(day, store=progress_store, knowledge=offline_knowledge)
+
+        hooks["exam_day"] = exam_day
+    if mock_store is not None:
+        hooks["mock_status"] = mock_store.active
+    return hooks
 
 
 def build_usd_backend_with_fallback(offline_knowledge: OfflineUSDKnowledge | None = None) -> FallbackKnowledgeBackend:
@@ -153,6 +181,21 @@ def build_progress_store(environ: Mapping[str, str] | None = None) -> ProgressSt
     if is_test_mode(env):
         return ProgressStore(memory_only=True)
     return ProgressStore(exam_workspace_root() / "exam-prep" / PROGRESS_FILE_NAME)
+
+
+def build_mock_store(environ: Mapping[str, str] | None = None) -> MockExamStore:
+    """The timed mock-exam session store, with the same folder rules as build_progress_store.
+
+    ``$OMNIVERSE_EXAM_PREP_DIR/mock_sessions.json`` when that is set; otherwise memory-only under the test switch;
+    otherwise ``<workspace>/exam-prep/mock_sessions.json``. Nothing is created until a mock starts.
+    """
+    env = os.environ if environ is None else environ
+    folder = env.get(EXAM_PREP_DIR_ENV, "").strip()
+    if folder:
+        return MockExamStore(Path(folder).expanduser() / MOCK_FILE_NAME)
+    if is_test_mode(env):
+        return MockExamStore(memory_only=True)
+    return MockExamStore(exam_workspace_root() / "exam-prep" / MOCK_FILE_NAME)
 
 
 def _backend_info(mode: str, bridge: str, reason: str, endpoint: str | None = None) -> dict[str, Any]:

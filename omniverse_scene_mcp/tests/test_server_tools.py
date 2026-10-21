@@ -500,6 +500,7 @@ def test_file_mode_tools_read_the_saved_file_read_only():
 
         info = call("scene_stage_info", file=shot)
         assert info["ok"] is True and info["mode"] == "saved_file" and info["note"] == SAVED_FILE_NOTE
+        assert "fallback_note" not in info  # an explicit file means the saved file, with no live attempt
         assert Path(info["file"]) == files["shot"].resolve()
         assert info["default_prim"] == "/World" and info["up_axis"] == "Y"
 
@@ -551,6 +552,9 @@ def test_file_mode_defaults_to_the_live_scenes_saved_root_layer():
         fake = call("scene_stage_info")
         assert fake["ok"] is False and fake["mode"] == "saved_file"
         assert "not saved" in fake["message"] and "fake scene" in fake["message"]
+        # mode='auto' (the default) tried the live bridge first; the fake scene has no live insight.
+        assert fake["mode_requested"] == "auto" and "fake scene" in fake["fallback_note"]
+        assert fake["live_fallback"]["needs_bridge_update"] is False
 
         with tempfile.TemporaryDirectory() as elsewhere:
             live = Path(elsewhere) / "live.usda"

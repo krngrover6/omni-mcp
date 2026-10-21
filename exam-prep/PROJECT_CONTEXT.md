@@ -45,8 +45,26 @@ This project reuses the shared router in `C:\Users\krngr\Omniverse\omniverse_sce
 
 ## Current status and next steps
 
-- Tier 1 was built on branch `feat/ncp-ousd-tier1` (not committed yet).
+- Tier 1 was built on branch `feat/ncp-ousd-tier1` and committed as `832a901`.
   - It adds 18 tools and a bank of 100 original questions.
-  - An adversarial review confirmed 42 findings, and all 42 are fixed. 305 of 305 tests pass offline.
+  - An adversarial review confirmed 42 findings, and all 42 are fixed. 305 of 305 tests passed offline.
   - It has been live since 2026-10-20, when the router restarted as PID 6864. Read-only checks passed for `router_health`, the blueprint, a quiz, `usd_docs_search` and `scene_stage_info` on `session02/main.usda`. No progress has been recorded yet.
-- Next: Tier 2 live-scene insight (needs an Isaac bridge reload), a timed mock exam, and auto-checked drills.
+- Tier 2 was integrated on 2026-10-21 on the same branch (not committed yet).
+  - An adversarial review confirmed 47 findings. 43 were applied; the other 3 were question removals the fixer kept, because the duplicate each one flagged had already been rewritten.
+  - 434 of 434 tests pass offline.
+  - Question bank: 233 original questions after the review removed duplicates. Domain shares are within 1.2 points of the exam weights.
+  - Daily lessons: `learning_exam_day`, `learning_exam_day_complete` and `learning_exam_set_date`. The plan settings live in `progress.json`. `router_dispatch` answers "start day 3", "day 1" and "next lesson".
+  - Timed mock exam: `learning_mock_exam_start`, `_questions`, `_answer`, `_flag`, `_status`, `_finish` and `_abandon`. Sessions are saved in `mock_sessions.json` in this folder. Finishing records the answered questions as progress. "mock exam" in `router_dispatch` only explains the steps and never starts the clock.
+  - Live insight: the six insight tools take `mode` (`auto`, `live` or `saved_file`), and every result says which mode it used. `auto` falls back to the saved file with a note when the bridge cannot answer. `scene_capabilities` reports what the bridge supports.
+  - Authoring: `scene_create_light`, `scene_create_camera` and `scene_aim`. They are dry runs by default; applying changes the open scene in memory.
+  - Live since 2026-10-21 02:37–02:45.
+    - The user ran `reload_mcp_bridge.py` in Isaac. All 31 self-tests passed on Isaac's USD, and the bridge reports rpc_version `tier2-1`.
+    - The first attempt kept the old bridge. Isaac had started before `kit_rpc.py` existed, so both Isaac scripts now call `importlib.invalidate_caches()` first.
+    - The router was restarted as PID 50604.
+  - Read-only checks passed:
+    - `scene_capabilities` reports live insight and authoring as available.
+    - Live `scene_explain_value` on MainLight returned `inputs:intensity` = 4000 (local opinion). It also reported that main.usda has unsaved edits in this Isaac session.
+    - A dry-run rect light aimed at the Shelves had 0° aim error and wrote nothing: the prim count stayed 49 and the prim does not exist.
+    - "start day 1" routes to the daily lesson.
+  - `learning_exam_day` was not called, because its first call saves the plan start date.
+- Next: the user sets an exam date (`learning_exam_set_date`) or says "start day 1". Commit the Tier 2 work when the user asks.

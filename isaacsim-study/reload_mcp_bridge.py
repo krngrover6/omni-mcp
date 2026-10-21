@@ -1,8 +1,10 @@
 """Run in Isaac Sim's Script Editor: reload the 9911 scene bridge with the current omniverse_scene_mcp source.
 
-The new code is first self-tested on temporary stages (tests/test_kit_bridge_usd.py) using Isaac's own USD
-build; the open stage is never edited, selected or saved. If the self-test or the new server fails, the old
-bridge keeps running (or is restarted). The outcome is written to isaacsim-study/bridge-reload-result.json.
+The new code is first self-tested on temporary stages (tests/test_kit_bridge_usd.py and tests/test_kit_rpc.py,
+both fixture-free) using Isaac's own USD build; the open stage is never edited, selected or saved. The new server
+is live_scene_control.LiveSceneControlServer extended by omniverse_scene_mcp.kit_rpc (see start_mcp_bridge.py).
+If a self-test or the new server fails, the old bridge keeps running (or is restarted). The outcome is written
+to isaacsim-study/bridge-reload-result.json.
 """
 import asyncio
 import builtins
@@ -18,7 +20,10 @@ from pathlib import Path
 
 workspace = Path(os.environ.get("OMNIVERSE_ROOT", "C:/Users/krngr/Omniverse"))
 scene_source = workspace / "omniverse_scene_mcp" / "src"
-self_test_path = workspace / "omniverse_scene_mcp" / "tests" / "test_kit_bridge_usd.py"
+self_test_paths = [
+    workspace / "omniverse_scene_mcp" / "tests" / "test_kit_bridge_usd.py",
+    workspace / "omniverse_scene_mcp" / "tests" / "test_kit_rpc.py",
+]
 start_script = workspace / "isaacsim-study" / "start_mcp_bridge.py"
 result_path = workspace / "isaacsim-study" / "bridge-reload-result.json"
 BRIDGE_MODULE = "isaac_shared_scene_control"
@@ -39,20 +44,31 @@ def _swap_package_modules(modules):
 
 
 def _run_self_tests():
-    spec = importlib.util.spec_from_file_location("isaac_bridge_self_test", self_test_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    passed, failed = [], []
-    for name in sorted(dir(module)):
-        if not name.startswith("test_"):
-            continue
+    """Run every fixture-free test_* function of each self-test file; return passed, failed and per-file counts."""
+    passed, failed, files = [], [], {}
+    for path in self_test_paths:
+        counts = files.setdefault(path.name, {"passed": 0, "failed": 0})
         try:
-            getattr(module, name)()
+            spec = importlib.util.spec_from_file_location(f"isaac_bridge_self_test_{path.stem}", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
         except Exception:
-            failed.append({"test": name, "error": traceback.format_exc(limit=4)})
-        else:
-            passed.append(name)
-    return passed, failed
+            failed.append({"test": f"{path.name}::<import>", "error": traceback.format_exc(limit=4)})
+            counts["failed"] += 1
+            continue
+        for name in sorted(dir(module)):
+            test = getattr(module, name) if name.startswith("test_") else None
+            if not callable(test):
+                continue
+            try:
+                test()
+            except Exception:
+                failed.append({"test": f"{path.name}::{name}", "error": traceback.format_exc(limit=4)})
+                counts["failed"] += 1
+            else:
+                passed.append(f"{path.name}::{name}")
+                counts["passed"] += 1
+    return passed, failed, files
 
 
 def _write(report):
@@ -71,15 +87,35 @@ async def reload_bridge():
 
     # 1. Import the new code beside the running bridge and test it on temporary stages only.
     try:
+        # start_mcp_bridge.py waits for an open stage, so without one step 2 would stop the old bridge and then
+        # hang with no bridge and no result file. Refuse up front instead; the old bridge keeps running.
+        from omni import usd
+
+        if usd.get_context().get_stage() is None:
+            raise RuntimeError("No stage is open; open a stage and run the reload again")
         _swap_package_modules({})
+        # Python caches each package folder's file list; modules added after Isaac started (kit_rpc.py,
+        # authoring.py) stay invisible until the cache is refreshed.
+        importlib.invalidate_caches()
         kit_bridge = importlib.import_module("omniverse_scene_mcp.kit_bridge")
         if kit_bridge._PXR_IMPORT_ERROR is not None or kit_bridge.UsdUtils is None:
             raise ImportError(f"New kit_bridge could not import pxr: {kit_bridge._PXR_IMPORT_ERROR}")
-        passed, failed = _run_self_tests()
-        report["self_tests"] = {"passed": passed, "failed": failed}
-        if failed or not passed:
-            raise RuntimeError(f"{len(failed)} self-test(s) failed on Isaac's USD build")
+        kit_rpc = importlib.import_module("omniverse_scene_mcp.kit_rpc")
+        if not callable(getattr(kit_rpc, "make_extended_server_class", None)):
+            raise ImportError("New kit_rpc has no make_extended_server_class")
+        expected_version = kit_rpc.RPC_VERSION
+        passed, failed, files = _run_self_tests()
+        report["self_tests"] = {"passed": passed, "failed": failed, "files": files}
+        empty = [name for name, counts in files.items() if not counts["passed"]]
+        if failed or empty:
+            raise RuntimeError(f"{len(failed)} self-test(s) failed on Isaac's USD build; files with no passing test: {empty}")
     except Exception as error:
+        package = sys.modules.get("omniverse_scene_mcp")
+        report["diagnostics"] = {
+            "package_path": [str(path) for path in getattr(package, "__path__", [])],
+            "scene_source_on_sys_path": str(scene_source) in sys.path,
+            "sys_path_head": [str(path) for path in sys.path[:8]],
+        }
         _swap_package_modules(old_modules)
         report["status"] = "kept_old_bridge"
         report["error"] = f"{type(error).__name__}: {error}"
@@ -95,9 +131,16 @@ async def reload_bridge():
         sys.modules.pop(BRIDGE_MODULE, None)
         runpy.run_path(str(start_script), run_name="__main__")
         await builtins._isaac_scene_control_start_task
-        if getattr(builtins, "_isaac_scene_control_server", None) is None:
+        new_server = getattr(builtins, "_isaac_scene_control_server", None)
+        if new_server is None:
             raise RuntimeError("New bridge did not register itself")
-        report["status"] = "reloaded"
+        report["rpc_version"] = getattr(new_server, "rpc_version", None)
+        if report["rpc_version"] == expected_version:
+            report["status"] = "reloaded"
+        else:
+            # Basic methods still work; capabilities/insight/authoring calls will report needs_bridge_update.
+            report["status"] = "reloaded_without_extended_rpc"
+            report["warning"] = f"Expected RPC {expected_version}; see the Script Editor output of start_mcp_bridge.py"
     except Exception:
         report["error"] = traceback.format_exc(limit=4)
         _swap_package_modules(old_modules)

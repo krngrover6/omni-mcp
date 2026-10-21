@@ -355,3 +355,9 @@ def test_change_block_and_high_yield_wording_are_accurate() -> None:
     assert "batching" in text and "queued" in text and "outermost block" in text
     assert "double-weighted" not in data["high_yield_notes"]
     assert "estimate" in data["high_yield_notes"]
+
+
+def test_schedule_beyond_the_window_has_no_final_review() -> None:
+    far = bp.study_plan(days_until_exam=90)["schedule"]
+    assert len(far) == 60 and all(day["type"] != "final_review" for day in far)
+    assert bp.study_plan(days_until_exam=60)["schedule"][-1]["type"] == "final_review"

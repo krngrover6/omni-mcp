@@ -516,3 +516,135 @@ def test_separate_stores_on_one_file_see_each_other():
         assert reader.summary(now=T0)["due_count"] == 1
         _answer(reader, "q2", True)
         assert writer.summary(now=T0)["totals"]["answered"] == 2
+
+
+# ---------------------------------------------------------------- study-plan settings
+
+
+def test_settings_default_on_old_file_without_settings():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "progress.json"
+        _answer(ProgressStore(path), "q1", True)
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw.pop("settings", None)
+        path.write_text(json.dumps(raw), encoding="utf-8")
+        store = ProgressStore(path)
+        assert store.get_settings() == {
+            "exam_date": None,
+            "plan_start": None,
+            "days_until_exam": None,
+            "minutes_per_day": None,
+            "completed_days": [],
+            "schedule": None,
+        }
+        assert store.summary(now=T0)["totals"]["answered"] == 1
+        assert store.recovered_backup is None
+        assert _data_files(Path(tmp)) == ["progress.json"]
+
+
+def test_update_settings_validates_normalizes_and_persists():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "progress.json"
+        store = ProgressStore(path)
+        saved = store.update_settings(
+            exam_date="2026-11-30",
+            plan_start=datetime(2026, 10, 20, 8, 0),
+            days_until_exam=41.0,
+            minutes_per_day=45,
+            completed_days=(3, 1, 3, 2),
+        )
+        assert saved == {
+            "exam_date": "2026-11-30",
+            "plan_start": "2026-10-20",
+            "days_until_exam": 41,
+            "minutes_per_day": 45,
+            "completed_days": [1, 2, 3],
+            "schedule": None,
+        }
+        assert ProgressStore(path).get_settings() == saved
+        assert json.loads(path.read_text(encoding="utf-8"))["schema_version"] == progress.SCHEMA_VERSION
+        before = path.read_text(encoding="utf-8")
+        bad = [
+            {"exam_date": "30/11/2026"},
+            {"exam_date": "2026-02-30"},
+            {"days_until_exam": 0},
+            {"days_until_exam": True},
+            {"days_until_exam": 2.5},
+            {"minutes_per_day": "60"},
+            {"minutes_per_day": progress.MAX_MINUTES_PER_DAY + 1},
+            {"completed_days": [0]},
+            {"completed_days": "1,2"},
+            {"completed_days": [1, True]},
+            {"colour": "blue"},
+        ]
+        for values in bad:
+            try:
+                store.update_settings(**values)
+            except (TypeError, ValueError):
+                pass
+            else:
+                raise AssertionError(f"accepted invalid settings {values}")
+        assert path.read_text(encoding="utf-8") == before
+        cleared = store.update_settings(exam_date=None, completed_days=None)
+        assert cleared["exam_date"] is None and cleared["completed_days"] == []
+        assert cleared["minutes_per_day"] == 45
+        assert store.update_settings() == cleared
+
+
+def test_settings_survive_answers_and_bad_saved_values_fall_back():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "progress.json"
+        store = ProgressStore(path)
+        store.update_settings(plan_start="2026-10-20", completed_days=[1, 2])
+        _answer(store, "q1", False)
+        assert store.get_settings()["completed_days"] == [1, 2]
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw["settings"] = {
+            "exam_date": "soon",
+            "minutes_per_day": -5,
+            "completed_days": [1, "two", 3, 0],
+            "future_key": {"kept": True},
+        }
+        path.write_text(json.dumps(raw), encoding="utf-8")
+        view = store.get_settings()
+        assert view["exam_date"] is None and view["minutes_per_day"] is None
+        assert view["completed_days"] == [1, 3]
+        assert store.recovered_backup is None
+        assert store.summary(now=T0)["totals"]["answered"] == 1
+        store.update_settings(minutes_per_day=30)
+        rewritten = json.loads(path.read_text(encoding="utf-8"))["settings"]
+        assert rewritten["future_key"] == {"kept": True}
+        assert rewritten["minutes_per_day"] == 30 and rewritten["completed_days"] == [1, 3]
+        not_a_dict = json.loads(path.read_text(encoding="utf-8"))
+        not_a_dict["settings"] = [1, 2]
+        path.write_text(json.dumps(not_a_dict), encoding="utf-8")
+        assert store.get_settings()["completed_days"] == []
+        assert store.recovered_backup is None
+
+
+def test_settings_memory_only_and_returned_copies():
+    store = ProgressStore(memory_only=True)
+    first = store.update_settings(completed_days=[2])
+    first["completed_days"].append(99)
+    assert store.get_settings()["completed_days"] == [2]
+    store.get_settings()["completed_days"].append(5)
+    assert store.get_settings()["completed_days"] == [2]
+    assert store.summary(now=T0)["storage"]["path"] is None
+
+
+def test_schedule_setting_is_validated_and_cleared_when_the_plan_changes():
+    store = ProgressStore(memory_only=True)
+    block = {"objective": "1.6", "also": ["6.2"], "domain": "Composition", "minutes": 20, "pass": "learn", "extra": 1}
+    saved = store.update_settings(schedule=[{"day": 1, "type": "study", "minutes": 40, "blocks": [block]}])
+    assert saved["schedule"] == [{"day": 1, "type": "study", "minutes": 40, "blocks": [
+        {"objective": "1.6", "also": ["6.2"], "domain": "Composition", "minutes": 20, "pass": "learn"}]}]
+    day = saved["schedule"][0]
+    for bad in ("plan", [{"type": "holiday", "blocks": []}], [{"type": "study", "blocks": [{"objective": 5}]}],
+                [{"type": "study", "minutes": True, "blocks": []}], [day] * (progress.MAX_SCHEDULE_DAYS + 1)):
+        try:
+            store.update_settings(schedule=bad)
+        except (TypeError, ValueError):
+            continue
+        raise AssertionError(f"accepted invalid schedule {bad!r}")
+    assert store.update_settings(completed_days=[1])["schedule"] == saved["schedule"]  # marking days keeps it
+    assert store.update_settings(minutes_per_day=30)["schedule"] is None  # a changed plan makes it stale
