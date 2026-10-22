@@ -132,7 +132,8 @@ class SceneMCPService:
         prim = self._require_prim(path)
         return {"path": prim.path, "children": self._bridge.list_children(path)}
 
-    def rename_prim(self, path: str, new_name: str, dry_run: bool = False) -> OperationResult:
+    def rename_prim(self, path: str, new_name: str, dry_run: bool = True) -> OperationResult:
+        dry_run = dry_run is not False
         prim = self._require_prim(path)
         new_path = self._renamed_path(path, new_name)
         changes = [
@@ -149,7 +150,8 @@ class SceneMCPService:
         updated = self._bridge.rename_prim(path, new_name)
         return OperationResult(True, False, changes, {"prim": asdict(updated)})
 
-    def create_prim(self, path: str, type_name: str = "Xform", dry_run: bool = False) -> OperationResult:
+    def create_prim(self, path: str, type_name: str = "Xform", dry_run: bool = True) -> OperationResult:
+        dry_run = dry_run is not False
         self._ensure_available(path, must_exist=False)
         changes = [ChangeRecord("create", path, f"Create {type_name} at {path}")]
         if dry_run:
@@ -157,7 +159,8 @@ class SceneMCPService:
         prim = self._bridge.create_prim(path, type_name)
         return OperationResult(True, False, changes, {"prim": asdict(prim)})
 
-    def delete_prim(self, path: str, dry_run: bool = False) -> OperationResult:
+    def delete_prim(self, path: str, dry_run: bool = True) -> OperationResult:
+        dry_run = dry_run is not False
         prim = self._require_prim(path)
         changes = [ChangeRecord("delete", path, f"Delete prim at {path}", before=asdict(prim))]
         if dry_run:
@@ -165,7 +168,8 @@ class SceneMCPService:
         self._bridge.delete_prim(path)
         return OperationResult(True, False, changes, {"path": path})
 
-    def duplicate_prim(self, source_path: str, target_path: str, dry_run: bool = False) -> OperationResult:
+    def duplicate_prim(self, source_path: str, target_path: str, dry_run: bool = True) -> OperationResult:
+        dry_run = dry_run is not False
         source = self._require_prim(source_path)
         changes = [
             ChangeRecord(
@@ -180,7 +184,8 @@ class SceneMCPService:
         prim = self._bridge.duplicate_prim(source_path, target_path)
         return OperationResult(True, False, changes, {"prim": asdict(prim)})
 
-    def reparent_prim(self, path: str, new_parent: str, dry_run: bool = False) -> OperationResult:
+    def reparent_prim(self, path: str, new_parent: str, dry_run: bool = True) -> OperationResult:
+        dry_run = dry_run is not False
         prim = self._require_prim(path)
         changes = [
             ChangeRecord(
@@ -202,8 +207,9 @@ class SceneMCPService:
         translation: tuple[float, float, float] | None = None,
         rotation: tuple[float, float, float] | None = None,
         scale: tuple[float, float, float] | None = None,
-        dry_run: bool = False,
+        dry_run: bool = True,
     ) -> OperationResult:
+        dry_run = dry_run is not False
         prim = self._require_prim(path)
         requested = {"translation": translation, "rotation": rotation, "scale": scale}
         changes = [ChangeRecord("transform", path, f"Update transform for {path}", before=asdict(prim), after=requested)]
@@ -212,7 +218,8 @@ class SceneMCPService:
         updated = self._bridge.move_prim(path, translation=translation, rotation=rotation, scale=scale)
         return OperationResult(True, False, changes, {"prim": asdict(updated)})
 
-    def set_material(self, path: str, material_path: str, dry_run: bool = False) -> OperationResult:
+    def set_material(self, path: str, material_path: str, dry_run: bool = True) -> OperationResult:
+        dry_run = dry_run is not False
         prim = self._require_prim(path)
         changes = [
             ChangeRecord(
@@ -237,8 +244,9 @@ class SceneMCPService:
         path: str,
         variant_set: str,
         selection: str,
-        dry_run: bool = False,
+        dry_run: bool = True,
     ) -> OperationResult:
+        dry_run = dry_run is not False
         self._require_prim(path)
         before = self._bridge.get_variant_selections(path)
         changes = [
@@ -281,7 +289,8 @@ class SceneMCPService:
             "prims": [asdict(prim) for prim in matches],
         }
 
-    def save_scene(self, path: str, dry_run: bool = False) -> dict[str, Any]:
+    def save_scene(self, path: str, dry_run: bool = True) -> dict[str, Any]:
+        dry_run = dry_run is not False
         if dry_run:
             return self.preview_save(path)
         saved_path = self._bridge.save_scene(path)
@@ -580,6 +589,7 @@ class SceneMCPService:
         Saving is not undoable: undo reverts the open layers in memory, so save again to write the reverted state.
         Never raises: a bridge without undo returns needs_bridge_update.
         """
+        dry_run = dry_run is not False
         dry = dry_run is not False
         payload = self._call_undo("undo_last", lambda undo: undo(dry_run=dry))
         payload.setdefault("dry_run", dry)
@@ -618,6 +628,7 @@ class SceneMCPService:
         dry_run: bool,
     ) -> OperationResult:
         """Forward to the bridge's live authoring method; an unsupported bridge gives ok=False, not an exception."""
+        dry_run = dry_run is not False
         author = getattr(self._bridge, method, None)  # method is one of this class's fixed names, never user input
         if not callable(author):
             return OperationResult(False, bool(dry_run), [], self._bridge_lacks(method))
@@ -1054,6 +1065,7 @@ class SceneMCPService:
 
     def _live_layer_write(self, method: str, dry_run: bool, call: Callable[[Callable[..., Any]], Any]) -> dict[str, Any]:
         """A writing layer call; every answer says whether it was a dry run and whether anything was applied."""
+        dry_run = dry_run is not False
         payload = self._call_live(method, call)
         payload.setdefault("dry_run", dry_run)
         payload.setdefault("applied", False)

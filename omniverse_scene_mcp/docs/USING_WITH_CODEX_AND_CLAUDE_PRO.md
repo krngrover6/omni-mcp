@@ -6,34 +6,24 @@ same Composer and Isaac Sim bridges. Only the client side changes, plus a few sw
 
 ## Why the tool count matters
 
-Every MCP client sends the name, description and argument schema of **every listed tool** to the model when a
-session starts, and again in every request that carries the tool list. The router lists about 155 tools. Measured
-on the real tool list (2026-10-22, test mode, `profiles.estimate_schema_tokens`, compact JSON characters / 4):
+The server can advertise a small tool list while keeping the remaining tools available on demand.
+How a client sends or caches tool schemas varies; these estimates compare the server's schemas, not billing.
+Measured locally on 2026-10-22 using compact JSON characters / 4 (real tokenizers differ):
 
-| Profile (`OMNIVERSE_MCP_PROFILE`) | Tools listed | Approx. tokens | Share of `all` |
-|---|---:|---:|---:|
-| `all` (default, today's behaviour) | 155 | 22,272 | 100% |
-| `build` | 64 | 10,786 | 48% |
-| `starter,study` | 66 | 7,700 | 35% |
-| `study` | 57 | 6,950 | 31% |
-| `pipeline` | 32 | 4,376 | 20% |
-| `robotics` | 22 | 3,069 | 14% |
-| `starter` | 18 | 2,006 | 9% |
+| Profile (`OMNIVERSE_MCP_PROFILE`) | Tools listed | Approximate schema tokens |
+|---|---:|---:|
+| `starter` (default) | 21 | 2,260 |
+| `study` | 60 | 7,210 |
+| `build` | 85 | 13,280 |
+| `robotics` | 57 | 7,460 |
+| `pipeline` | 76 | 9,940 |
+| `all` | 228 | 31,140 |
 
-Real tokenizers differ by model, so read the numbers as a comparison. Other agents are adding tools right now; when
-they land, `all` grows and the profile rows grow only by the tools that belong to them. Recompute with:
+Counts include the three discovery tools. Estimates are rounded and will change when descriptions change.
+The default lists about 91% fewer tools. No existing client configuration is rewritten automatically.
 
-```powershell
-$env:OMNIVERSE_SCENE_MCP_TEST = "1"   # fake scene, offline knowledge, no ports opened
-& "C:/Program Files/Python312/python.exe" -c "import json; from omniverse_scene_mcp import server, profiles; app = server.build_server(); tools = [{'name': t.name, 'description': t.description, 'inputSchema': t.parameters} for t in app._tool_manager.list_tools()]; [print(r) for r in profiles.estimate_profile_tokens(tools)]"
-```
-
-(Run it with the same `PYTHONPATH` as `start-isaac-mcp.ps1` sets: `omniverse_scene_mcp\src` plus the
-`bowerbot-venv\Lib\site-packages` folders.)
-
-**Every profile keeps `router_dispatch`.** It understands plain English ("move the chair 2 m to the left",
-"quiz me on variants") and reaches every router feature, even tools the profile hides. A small profile costs less;
-you lose only the model's ability to call the hidden tools *by name*.
+Every profile keeps `router_dispatch`, `router_list_tools`, `router_enable_tools` and `router_call_tool`.
+Natural language covers a documented subset; use discovery and an exact tool call for other operations.
 
 ## Profiles
 
@@ -44,7 +34,7 @@ you lose only the model's ability to call the hidden tools *by name*.
 | `build` | Scene editing: create/move/rename/delete, layout, materials, lights, cameras, variants, layers, checkpoints, undo and journal, assets, projects. |
 | `robotics` | Physics, robots, simulation controls, screenshots. Also picks up joint, sensor, gripper, pick-and-place and ROS 2 tools automatically when they are added. |
 | `pipeline` | Asset intake and health, import, performance, variants, OmniGraph, message bus, animation, reports, projects, Kit logs, Docker docs. |
-| `all` | Everything (the default, so nothing changes until you choose a profile). |
+| `all` | Everything; explicitly set `OMNIVERSE_MCP_PROFILE=all` for the full list. |
 
 Combine them with commas: `starter,study`. You can also add single tools or patterns:
 `starter,scene_layers,scene_checkpoint*`. Aliases: `minimal`/`basic` = starter, `exam`/`learn` = study,
@@ -72,8 +62,8 @@ $env:OMNIVERSE_MCP_COMPACT = "1"      # optional: shorter tool results (see "Com
 ./start-omniverse.ps1
 ```
 
-Note: profiles and compact results take effect once `server.py` applies them (see "For the integrator" below).
-Until then the variables are simply ignored and all tools are listed.
+Profiles and compact results are integrated in `build_server()`. A running router keeps its previously loaded code
+until an approved restart. Changing the environment in a different terminal does not update that process.
 
 The HTTP router is shared: every client connected to port 9905 sees the same profile. For a different profile per
 client, use the client-side filter (Codex `enabled_tools`) or a stdio entry (Claude Desktop; Codex option B), which
@@ -203,66 +193,29 @@ A `_trimmed` note says what was cut. Teaching tools whose whole point is text (`
 - [ ] Start a new session per topic: long sessions resend the whole history.
 - [ ] Disable MCP servers you are not using in that client (Blender, VRED, ...): their tools cost tokens too.
 
-## For the integrator (server.py)
+## Discovery and calls (implemented)
 
-Three calls at the end of `build_server()`, after the last `@app.tool` and the docstring-cleanup loop, before
-`return app`:
-
-```python
-from . import profiles, workflows
-
-workflows.register_prompts(app)                 # nine MCP prompts; tolerant of FastMCP versions
-profiles.install_compact_outputs(app)           # wraps tools; acts only while OMNIVERSE_MCP_COMPACT=1
-stash, profile_report = profiles.apply_profile_to_app(app)   # reads OMNIVERSE_MCP_PROFILE; "all" = no change
-profiles.advertise_tool_list_changed(app)       # only needed with router_enable_tools (below)
-```
-
-Order matters: compact wrapping before pruning, so hidden tools are wrapped too. Pruning must come after every tool
-is registered. `router_dispatch` calls the Python functions directly (the call table in `build_server`), not the
-tool list, so it keeps reaching hidden tools. Optionally log `profile_report` to stderr (never stdout: stdio
-transport uses stdout).
-
-### Meta tools (design): `router_enable_tools`, `router_list_tools`, `router_call_tool`
-
-Installed MCP SDK: **`mcp` 1.28.1** in `bowerbot-venv` (the router's FastMCP). What it supports:
-
-* `FastMCP.add_tool` / `FastMCP.remove_tool` at runtime (tools live in `app._tool_manager._tools`, one list per
-  process, shared by every connected session).
-* `ServerSession.send_tool_list_changed()` sends `notifications/tools/list_changed` (reach it in a tool through a
-  `ctx: Context` parameter: `await ctx.session.send_tool_list_changed()`).
-* But FastMCP advertises `tools.listChanged = false`: `create_initialization_options()` is called without
-  `NotificationOptions(tools_changed=True)` for stdio, SSE and streamable HTTP. A client may ignore the
-  notification unless the capability is advertised. `profiles.advertise_tool_list_changed(app)` fixes that (it
-  wraps `app._mcp_server.create_initialization_options` to pass `NotificationOptions(tools_changed=True)`; checked
-  against 1.28.1: the advertised capability becomes `listChanged=True`).
-* Client support for re-listing varies: Claude Code handles `list_changed`; the Codex binary contains the
-  notification name but its behaviour was not verified here; do not rely on it.
-
-So implement three always-on tools (already in `profiles.ALWAYS_ON`, so every profile keeps them):
+Start with `router_list_tools(pattern="sensor_*")` to see names and brief descriptions.
+For one tool's full argument schema, call:
 
 ```python
-@app.tool(name="router_list_tools")
-def router_list_tools(group: str = "*") -> dict:
-    """Hidden tools you can enable or call. group: a profile name (study, build, ...) or a pattern."""
-    names = profiles.resolve_profile(group, stash.hidden)["tools"] if group != "*" else stash.names()
-    return {"hidden": [row for row in stash.describe() if row["name"] in names], "profiles": profiles.profile_names()}
-
-@app.tool(name="router_enable_tools")
-async def router_enable_tools(group: str, ctx: Context) -> dict:
-    """List more tools for this session: a profile name (study, build, robotics, pipeline), tool names or patterns."""
-    enabled = stash.enable(group)
-    if enabled:
-        await ctx.session.send_tool_list_changed()
-    return {"enabled": enabled, "note": "If your client does not refresh its tool list, use router_call_tool."}
-
-@app.tool(name="router_call_tool")
-async def router_call_tool(name: str, arguments: dict | None = None) -> Any:
-    """Call any router tool by name, including hidden ones (same validation and safety defaults)."""
-    return await stash.call(name, arguments or {})
+router_list_tools(pattern="sensor_add_camera", include_schema=True)
+router_call_tool(name="sensor_add_camera", arguments={"parent_path": "/World/Robot/Link"})
 ```
 
-Register these three **before** `apply_profile_to_app` (so they are never pruned) but they need `stash`: create it
-with a holder (`holder = {}` then `holder["stash"]`) or register them after pruning (they are in `ALWAYS_ON`, so a
-later registration is fine either way). `router_call_tool` is the portable path: it works in every client, whether
-or not it re-lists tools, and costs one small schema. Since the tool list is process-wide, enabling tools on the
-shared HTTP router enables them for every connected client until the router restarts.
+That sensor call previews only. Applying it requires an explicitly authorized second call with
+`"dry_run": False`. Only literal JSON `false` authorizes a write; missing, null, string and numeric flags preview.
+Saved-file inspection is read-only. Generated pick-and-place scripts are returned as text, never executed.
+
+To expose more schemas, use `router_enable_tools(names="robotics")` or an exact tool name/pattern.
+The list is shared by all clients on that router process. The server advertises and sends a tool-list-change
+notification; clients may require a refresh. `router_call_tool` works without refreshing the list and uses the
+same argument validation as a directly listed tool. Recursive discovery calls are refused.
+
+Nine workflow prompts are registered. Optional compact results preserve generated pick-and-place scripts and
+schema-discovery results; other large results may be shortened and marked `_trimmed`.
+
+Implementation order: register all tools and journal hooks, register prompts and discovery, wrap optional compact
+outputs, then apply the profile. The allowlist in `features.py` is shared with Kit RPC `feature_call` (tier8-1).
+No arbitrary function or module can be named through that RPC. An old bridge reports that it needs updating;
+the router never reloads it automatically.

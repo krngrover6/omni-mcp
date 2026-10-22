@@ -32,6 +32,9 @@ for _path in (SRC_DIR, TESTS_DIR):
 
 # Offline by default: runtime then uses the fake scene and NullKnowledgeBackend and never probes 127.0.0.1:9910.
 os.environ["OMNIVERSE_SCENE_MCP_TEST"] = "1"
+# Integration tests exercise every tool; tests of the production starter default
+# pass an explicit empty environment to profiles or temporarily clear this value.
+os.environ.setdefault("OMNIVERSE_MCP_PROFILE", "all")
 
 # ------------------------------------------------------------------------------------- local-only data, platforms
 
@@ -172,6 +175,21 @@ def _guarded_getaddrinfo(host: object, port: object, *args: object, **kwargs: ob
     return _ORIGINALS["getaddrinfo"](host, port, *args, **kwargs)  # type: ignore[operator]
 
 
+def _guarded_socketpair(*args, **kwargs):
+    """Retry Windows' local socketpair if its ephemeral listener gets a protected port.
+
+    The connect guard stays active throughout. The stdlib closes both sockets
+    before raising, so retrying cannot connect to a live service or leak sockets.
+    """
+    for _ in range(100):
+        before = len(BLOCKED_ATTEMPTS)
+        try:
+            return _ORIGINALS["socketpair"](*args, **kwargs)
+        except NetworkBlockedError:
+            del BLOCKED_ATTEMPTS[before:]  # the pair's own listener, not an app probe
+    raise RuntimeError("Could not allocate a test socketpair outside protected ports")
+
+
 def install_network_guard() -> bool:
     """Patch socket connect/connect_ex/getaddrinfo once; False when disabled by env or running inside Kit."""
     if _ORIGINALS:
@@ -181,11 +199,14 @@ def install_network_guard() -> bool:
     if "carb" in sys.modules or "omni.kit.app" in sys.modules:
         return False  # never patch a live Kit process
     _ORIGINALS.update(
-        connect=socket.socket.connect, connect_ex=socket.socket.connect_ex, getaddrinfo=socket.getaddrinfo
+        connect=socket.socket.connect, connect_ex=socket.socket.connect_ex, getaddrinfo=socket.getaddrinfo,
+        socketpair=socket.socketpair,
     )
     socket.socket.connect = _guarded_connect  # type: ignore[method-assign]
     socket.socket.connect_ex = _guarded_connect_ex  # type: ignore[method-assign]
     socket.getaddrinfo = _guarded_getaddrinfo  # type: ignore[assignment]
+    if sys.platform == "win32":
+        socket.socketpair = _guarded_socketpair
     return True
 
 

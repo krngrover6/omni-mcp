@@ -404,7 +404,7 @@ def test_fake_scene_edits_preview_apply_and_undo_through_the_server_tools():
     bridge = FakeSceneBridge()
     with _server(scene=lambda: SceneMCPService(bridge)) as call:
         original = bridge.snapshot()
-        created = call("scene_create", path="/World/Key", type_name="RectLight")
+        created = call("scene_create", path="/World/Key", type_name="RectLight", dry_run=False)
         assert created["ok"] is True and created["dry_run"] is False
         lit = bridge.snapshot()
 
@@ -467,7 +467,7 @@ def test_router_dispatch_reaches_the_new_service_methods_on_the_fake_scene():
     bridge = FakeSceneBridge()
     with _server(scene=lambda: SceneMCPService(bridge)) as call:
         dispatch = call.dispatch
-        call("scene_create", path="/World/Key", type_name="RectLight")
+        call("scene_create", path="/World/Key", type_name="RectLight", dry_run=False)
         set_light = dispatch("set intensity of /World/Key to 5000")
         assert set_light["ok"] is True and set_light["applied"] is True and set_light["attribute_name"] == "inputs:intensity"
         assert bridge.get_attribute("/World/Key", "inputs:intensity") == 5000.0
@@ -526,7 +526,7 @@ def test_live_bridge_edits_and_undo_end_to_end_with_byte_identical_dry_runs():
         rpc = kit_rpc.make_extended_server_class(_BasicServer)(bridge)
         with _server(scene=lambda: SceneMCPService(HttpSceneBridge(ISAAC))) as call, _in_process_transport(rpc) as sent:
             capabilities = call("scene_capabilities")
-            assert capabilities["rpc_version"] == RPC_VERSION == "tier7-1" and capabilities["needs_bridge_update"] is False
+            assert capabilities["rpc_version"] == RPC_VERSION == "tier8-1" and capabilities["needs_bridge_update"] is False
             assert capabilities["scene_edits"]["available"] is True and capabilities["undo"]["available"] is True
             assert "how_to_enable" not in capabilities
 
@@ -756,7 +756,7 @@ def test_docs_tools_and_knowledge_fallback_answer_offline_from_a_temp_install():
 
 
 def test_new_rpc_methods_line_up_across_the_protocol_the_rpc_and_the_bridges():
-    assert RPC_VERSION == "tier7-1"
+    assert RPC_VERSION == "tier8-1"
     new = set(EDIT_RPC_METHODS) | set(UNDO_RPC_METHODS)
     assert new <= set(LIVE_RPC_METHODS) and new <= set(kit_rpc._HANDLERS)
     for owner in (FakeSceneBridge, HttpSceneBridge, LiveKitSceneBridge, SceneMCPService):

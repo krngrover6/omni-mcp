@@ -61,6 +61,7 @@ _MAX_HISTORY = 50
 # live_scene_control._submit stops waiting after 15 s but leaves the request queued, so Kit would still run it on a
 # later update while the caller was told it failed. Writes older than this are dropped instead (must stay below 15 s).
 _WRITE_METHODS = (
+    "feature_call",
     "create_light",
     "create_camera",
     "aim",
@@ -954,6 +955,8 @@ def _asset_health(bridge: Any, params: dict[str, Any], queued_at: Any = None) ->
 
 # Fixed method table: the only names the extended server adds. Lookups never touch attributes named by callers.
 _HANDLERS: dict[str, Handler] = {
+    "feature_call": lambda bridge, params: __import__(
+        'omniverse_scene_mcp.features', fromlist=['rpc_call']).rpc_call(bridge, params),
     "capabilities": _capabilities,
     "insight": _insight,
     "create_light": _create_light,

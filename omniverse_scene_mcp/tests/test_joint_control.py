@@ -41,7 +41,7 @@ def _body(stage, path, z=0.0):
     UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
 
 
-def _robot(meters_per_unit=1.0, *, elbow_drive=True, mimic=True):
+def _robot(meters_per_unit=1.0, *, elbow_drive=False, mimic=True):
     """base -(shoulder hinge, drive)-> link1 -(elbow hinge)-> link2 -(slide, drive)-> link3 -(follower, mimic)-> link4."""
     stage = Usd.Stage.CreateInMemory()
     UsdGeom.SetStageUpAxis(stage, "Z")

@@ -47,7 +47,8 @@ REQUIRED_PLANNED = {
 def _server_tool_names():
     """Tool names registered with @app.tool(name=...) in server.py, read as text (the server is not built)."""
     text = SERVER.read_text(encoding="utf-8")
-    return re.findall(r"@app\.tool\(\s*name\s*=\s*[\"']([^\"']+)[\"']", text)
+    from omniverse_scene_mcp.features import FEATURES
+    return re.findall(r"@app\.tool\(\s*name\s*=\s*[\"']([^\"']+)[\"']", text) + list(FEATURES)
 
 
 def _router():

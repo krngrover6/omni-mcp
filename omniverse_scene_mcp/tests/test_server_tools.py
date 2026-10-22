@@ -274,10 +274,11 @@ def test_new_tools_are_registered_exactly_once():
         declared = re.findall(r'@app\.tool\(name="([a-z_]+)"\)', SERVER_SOURCE.read_text(encoding="utf-8"))
         duplicates = sorted({name for name in declared if declared.count(name) > 1})
         assert duplicates == [], duplicates
-        assert set(declared) == set(names)
+        from omniverse_scene_mcp.features import FEATURES
+        assert set(declared) | set(FEATURES) == set(names)
         assert declared.count("router_health") == 1 and declared.count("scene_save") == 1
         save = app._tool_manager.get_tool("scene_save")
-        assert save.parameters["properties"]["dry_run"]["default"] is False
+        assert save.parameters["properties"]["dry_run"]["default"] is True
         for name in NEW_TOOLS:
             description = app._tool_manager.get_tool(name).description
             assert description.strip() and "\n " not in description, name

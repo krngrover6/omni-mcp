@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 # Version of the extended live RPC (kit_rpc.make_extended_server_class); bump when its methods change.
-RPC_VERSION = "tier7-1"
+RPC_VERSION = "tier8-1"
 # Methods every LiveSceneControlServer (live_scene_control.py) answers, Composer's 9910 bridge included.
 BASIC_RPC_METHODS: tuple[str, ...] = (
     "ping",
@@ -83,6 +83,7 @@ LAYER_RPC_METHODS: tuple[str, ...] = (*LAYER_READ_RPC_METHODS, *LAYER_WRITE_RPC_
 HEALTH_RPC_METHODS: tuple[str, ...] = ("asset_health",)
 # Methods only an extended bridge answers; an older bridge replies "Unsupported live scene method: <name>".
 LIVE_RPC_METHODS: tuple[str, ...] = (
+    "feature_call",
     "capabilities",
     "insight",
     "create_light",

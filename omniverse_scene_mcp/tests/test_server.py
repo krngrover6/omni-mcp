@@ -283,7 +283,7 @@ def test_scene_save_tool_dry_run_previews_without_saving():
         app = build_server()
     assert attempts == []
     tool = _tool(app, "scene_save")
-    assert tool.parameters["properties"]["dry_run"]["default"] is False
+    assert tool.parameters["properties"]["dry_run"]["default"] is True
     preview = tool.fn(path="C:/tmp/Copy.usda", dry_run=True)
     assert preview["dry_run"] is True
     assert preview["would"] == "Save As: export a copy of the root layer only"

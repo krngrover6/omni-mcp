@@ -494,3 +494,20 @@ class_sessions() / class_ask(question, session=2) / class_search(query)
 2. Composer: relaunch with `start-composer-study.ps1`, or run `composer-study/reload_composer_bridge.py`.
 3. Restart the router (or use `router_set_scene_target`), then `scene_capabilities()`: `homework` is available and
    `needs_bridge_update` is `false`. The Python, practice, error and class-notes tools work without any bridge.
+
+
+## Handoff tools and safety (2026-10-22)
+
+- Default `starter` profile: 21 listed tools; full surface: 228 tools and 9 workflow prompts.
+- Discover a group: `router_list_tools(pattern="sensor_*")`.
+- Read exact arguments: `router_list_tools(pattern="sensor_add_camera", include_schema=True)`.
+- Preview a hidden tool: `router_call_tool(name="sensor_add_camera", arguments={"parent_path": "/World/Robot/Link"})`.
+- Expose a group: `router_enable_tools(names="robotics")`. The shared router's list changes for all its clients.
+- Only literal `dry_run=False` permits scene edit tools to write. New feature sentences always preview.
+- New modules: graphs/events, variants, imports/performance, animation, robot imports/joints, sensors,
+  pick-and-place lesson/script generation, ROS 2 checks. Script generation returns text; it never runs the script.
+- Live additions require RPC `tier8-1`. Existing apps keep their current bridge until an approved reload;
+  a running router also needs an approved restart. Source tests do not activate changes.
+- Full offline tests: `python -I omniverse_scene_mcp/tools/run_tests.py -q`.
+- Installed Kit USD 25.11 compatibility: `python -I omniverse_scene_mcp/tools/check_kit_usd.py isaacsim-6.1.0`.
+  This loads libraries and tests temporary stages in a separate process; it does not launch or reload an app.

@@ -189,7 +189,7 @@ def _corpus():
 def test_round8_tools_are_registered_with_safe_defaults_and_catalogued():
     with _server() as call:
         tools = {tool.name: tool for tool in call.app._tool_manager.list_tools()}
-        assert NEW_TOOLS <= set(tools) and len(NEW_TOOLS) == 26 and len(tools) == 155, len(tools)
+        assert NEW_TOOLS <= set(tools) and len(NEW_TOOLS) == 26 and len(tools) == 228, len(tools)
         for name in (*LAYER_WRITE_TOOLS, *CHECKPOINT_WRITE_TOOLS, "project_create"):
             assert tools[name].parameters["properties"]["dry_run"]["default"] is True, name
             description = " ".join(tools[name].description.split())
@@ -230,7 +230,7 @@ def test_round8_tools_are_registered_with_safe_defaults_and_catalogued():
 
 
 def test_tier7_rpc_methods_line_up_across_the_protocol_the_rpc_and_every_bridge():
-    assert RPC_VERSION == "tier7-1"
+    assert RPC_VERSION == "tier8-1"
     assert set(LAYER_RPC_METHODS) == set(LAYER_READ_RPC_METHODS) | set(LAYER_WRITE_RPC_METHODS)
     assert HEALTH_RPC_METHODS == ("asset_health",)
     assert set(LAYER_RPC_METHODS) | set(HEALTH_RPC_METHODS) <= set(LIVE_RPC_METHODS) <= set(kit_rpc._HANDLERS)
@@ -348,7 +348,7 @@ def test_extended_rpc_parses_layer_and_health_params_strictly():
     lacking = kit_rpc.make_extended_server_class(_BasicServer)(object())._dispatch({"method": "layer_stack", "params": {}})
     assert lacking["result"]["needs_bridge_update"] is True and lacking["result"]["method"] == "layer_stack"
     info = dispatch({"method": "capabilities", "params": {}})["result"]
-    assert info["version"] == "tier7-1" and info["layer_write_methods"] == list(LAYER_WRITE_RPC_METHODS)
+    assert info["version"] == "tier8-1" and info["layer_write_methods"] == list(LAYER_WRITE_RPC_METHODS)
     assert info["layer_read_methods"] == list(LAYER_READ_RPC_METHODS) and info["health_methods"] == ["asset_health"]
 
 
@@ -395,7 +395,7 @@ def test_live_layer_manager_reads_previews_applies_and_puts_back():
         original = _layers_text(stage)
         with _server(scene=lambda: SceneMCPService(HttpSceneBridge(ISAAC))) as call, _live(stage) as (_b, _s, sent):
             capabilities = call("scene_capabilities")
-            assert capabilities["rpc_version"] == "tier7-1" and capabilities["needs_bridge_update"] is False
+            assert capabilities["rpc_version"] == "tier8-1" and capabilities["needs_bridge_update"] is False
             assert capabilities["layers"]["available"] is True and capabilities["health"]["available"] is True
             listed = call("scene_layers")
             assert listed["ok"] is True and listed["mode"] == "live" and listed["read_only"] is True, listed

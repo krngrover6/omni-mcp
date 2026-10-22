@@ -1,8 +1,7 @@
 """Tool profiles and compact results: make the router cheap to use from any MCP client.
 
-Why this exists: every MCP client (Claude Code, Claude Desktop/Pro, OpenAI Codex) loads the name, description and
-JSON schema of EVERY tool a server lists into the model's context when a session starts. With ~150 tools that is
-roughly 20-25k tokens before the first question. A *profile* is a named, smaller tool set; the server registers all
+Why this exists: tool names, descriptions and argument schemas add context for clients that expose them to a model.
+Client caching and discovery differ. A *profile* is a named, smaller tool set; the server registers all
 tools as before and then keeps only the profile's tools in the list clients see.
 
 Pure helpers (no FastMCP, no network, no files):
@@ -10,7 +9,7 @@ Pure helpers (no FastMCP, no network, no files):
 * ``PROFILES``: profile name -> tuple of tool names or fnmatch patterns ("scene_layout_*"). Names that are not
   registered (yet) are tolerated, so a profile can name tools other modules will add later.
 * ``resolve_profile(names, available_tools)`` -> {"tools", "unknown", "missing_groups", ...}.
-* ``profile_from_env(environ)`` reads ``OMNIVERSE_MCP_PROFILE`` (comma list; default "all" = old behaviour).
+* ``profile_from_env(environ)`` reads ``OMNIVERSE_MCP_PROFILE`` (comma list; default "starter").
 * ``apply_profile(tool_names_in_registration_order, profile)`` -> the names to keep, in registration order.
 * ``estimate_schema_tokens(tool_schemas)`` / ``estimate_profile_tokens(...)``: rough chars/4 cost of a tool list.
 * ``compact_result(result, ...)`` and ``compact_enabled(environ)`` (``OMNIVERSE_MCP_COMPACT=1``).
@@ -22,7 +21,7 @@ FastMCP glue (optional; duck-typed against mcp 1.28's FastMCP, tolerant of other
 * ``install_compact_outputs(app)`` wraps each tool so its dict result goes through ``compact_result``.
 
 Every profile always includes ``ALWAYS_ON`` (the natural-language front door, help and status), so a client with a
-tiny profile can still reach everything through ``router_dispatch``.
+tiny profile can discover and call other tools through the always-on meta tools.
 """
 
 from __future__ import annotations
@@ -36,11 +35,11 @@ from typing import Any, Iterable, Mapping, Sequence
 
 PROFILE_ENV = "OMNIVERSE_MCP_PROFILE"
 COMPACT_ENV = "OMNIVERSE_MCP_COMPACT"
-DEFAULT_PROFILE = "all"
+DEFAULT_PROFILE = "starter"
 _TRUE = {"1", "true", "yes", "on"}
 
 # Kept in every profile (when registered). router_enable_tools / router_list_tools / router_call_tool are the
-# proposed meta tools (see docs/USING_WITH_CODEX_AND_CLAUDE_PRO.md); they are tolerated until they exist.
+# meta tools (see docs/USING_WITH_CODEX_AND_CLAUDE_PRO.md).
 ALWAYS_ON: tuple[str, ...] = (
     "router_dispatch",
     "router_route",
@@ -103,6 +102,8 @@ PROFILES: dict[str, tuple[str, ...]] = {
     ),
     # Editing and authoring: prims, transforms, layout, materials, lights, cameras, layers, checkpoints, undo.
     "build": (
+        "animation_*",
+        "variant_*",
         "scene_summary",
         "scene_inspect",
         "scene_children",
@@ -187,6 +188,8 @@ PROFILES: dict[str, tuple[str, ...]] = {
     ),
     # Assets, import, health, performance, variants, OmniGraph, message bus, animation, reports, projects, logs.
     "pipeline": (
+        "event_*",
+        "animation_*",
         "asset_*",
         "scene_add_asset",
         "usd_asset_health",
@@ -223,7 +226,7 @@ PROFILES: dict[str, tuple[str, ...]] = {
 PROFILE_ALIASES: dict[str, str] = {
     "full": "all",
     "everything": "all",
-    "default": "all",
+    "default": "starter",
     "minimal": "starter",
     "basic": "starter",
     "learn": "study",
@@ -316,7 +319,7 @@ def resolve_profile(names: Sequence[str] | str, available_tools: Iterable[str]) 
 
 
 def profile_from_env(environ: Mapping[str, str] | None = None) -> list[str]:
-    """The requested profile tokens from ``OMNIVERSE_MCP_PROFILE`` (comma list). Empty/unset -> ["all"]."""
+    """The requested profile tokens from ``OMNIVERSE_MCP_PROFILE`` (comma list). Empty/unset -> ["starter"]."""
     env = os.environ if environ is None else environ
     tokens = _split(env.get(PROFILE_ENV, ""))
     return tokens or [DEFAULT_PROFILE]
@@ -598,6 +601,9 @@ COMPACT_EXEMPT: tuple[str, ...] = (
     "scene_journal_to_script",
     "project_report",
     "router_help",
+    "router_list_tools",
+    "router_call_tool",
+    "robot_pick_place_script",
 )
 
 

@@ -148,7 +148,7 @@ def test_round6_tools_are_registered_read_only_and_catalogued():
 
 
 def test_homework_rpc_methods_line_up_across_the_protocol_the_rpc_and_every_bridge():
-    assert RPC_VERSION == "tier7-1"
+    assert RPC_VERSION == "tier8-1"
     assert set(HOMEWORK_RPC_METHODS) == {"assignment_check", "scene_tour"}
     assert set(HOMEWORK_RPC_METHODS) <= set(LIVE_RPC_METHODS) <= set(kit_rpc._HANDLERS)
     for owner in (FakeSceneBridge, HttpSceneBridge, LiveKitSceneBridge, SceneMCPService):
@@ -198,7 +198,7 @@ def test_extended_rpc_parses_homework_params_strictly_and_budgets_the_tour():
     lacking = kit_rpc.make_extended_server_class(_BasicServer)(object())._dispatch({"method": "scene_tour", "params": {}})
     assert lacking["result"]["needs_bridge_update"] is True and lacking["result"]["method"] == "scene_tour"
     info = server._dispatch({"method": "capabilities", "params": {}})["result"]
-    assert info["version"] == "tier7-1" and info["homework_methods"] == list(HOMEWORK_RPC_METHODS)
+    assert info["version"] == "tier8-1" and info["homework_methods"] == list(HOMEWORK_RPC_METHODS)
 
 
 # --------------------------------------------------------------------------- show_python
@@ -372,7 +372,7 @@ def test_live_homework_check_and_scene_tour_through_the_rpc_change_nothing():
         original = _layers_text(stage)
         with _server(scene=lambda: SceneMCPService(HttpSceneBridge(ISAAC))) as call, _live(stage) as (_b, _s, sent):
             capabilities = call("scene_capabilities")
-            assert capabilities["rpc_version"] == "tier7-1" and capabilities["needs_bridge_update"] is False
+            assert capabilities["rpc_version"] == "tier8-1" and capabilities["needs_bridge_update"] is False
             assert capabilities["homework"]["available"] is True
             report = call("assignment_check")
             assert report["ok"] is True and report["mode"] == "live" and report["read_only"] is True, report

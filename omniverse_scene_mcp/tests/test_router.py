@@ -97,7 +97,7 @@ def test_router_runs_polite_scene_requests():
     bridge = FakeSceneBridge()
     router = OmniverseRouter(SceneMCPService(bridge))
     assert router.route("can you move the cube up in kit?").target is RouteTarget.SCENE
-    moved = asyncio.run(router.handle("could you please move /World/Props/Cube 1 2 3?")).payload
+    moved = asyncio.run(router.handle("could you please move /World/Props/Cube 1 2 3?", dry_run=False)).payload
     assert moved["ok"] is True
     assert moved["payload"]["prim"]["translation"] == (1.0, 2.0, 3.0)
     for request in ("can you explain usd schemas?", "could you find docs about usd references?"):
@@ -108,10 +108,10 @@ def test_router_never_creates_a_prim_for_requests_about_an_existing_one():
     router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
     before = router.scene_summary()
     for request in ("could you make the light brighter in usd?", "make the cube red", "add the cube to the shelf"):
-        payload = asyncio.run(router.handle(request)).payload
+        payload = asyncio.run(router.handle(request, dry_run=False)).payload
         assert payload.get("changes", [{}])[0].get("action") != "create", request
     assert router.scene_summary() == before
-    created = asyncio.run(router.handle("add a cube")).payload
+    created = asyncio.run(router.handle("add a cube", dry_run=False)).payload
     assert created["payload"]["prim"]["type_name"] == "Cube"
 
 
@@ -137,7 +137,7 @@ def test_router_uses_selection_for_natural_language_actions():
     bridge = FakeSceneBridge()
     bridge._selection = ["/World/Props/Cube"]
     router = OmniverseRouter(SceneMCPService(bridge))
-    result = asyncio.run(router.handle("move this 1 2 3"))
+    result = asyncio.run(router.handle("move this 1 2 3", dry_run=False))
     assert result.decision.target is RouteTarget.SCENE
     assert result.payload["ok"] is True
     assert result.payload["payload"]["prim"]["path"] == "/World/Props/Cube"
@@ -145,7 +145,7 @@ def test_router_uses_selection_for_natural_language_actions():
 
 def test_router_can_create_a_prim_from_plain_english():
     router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
-    result = asyncio.run(router.handle("add a cube"))
+    result = asyncio.run(router.handle("add a cube", dry_run=False))
     assert result.decision.target is RouteTarget.SCENE
     assert result.payload["ok"] is True
     assert result.payload["payload"]["prim"]["type_name"] == "Cube"
@@ -154,7 +154,7 @@ def test_router_can_create_a_prim_from_plain_english():
 
 def test_router_can_select_a_prim_from_plain_english():
     router = OmniverseRouter(SceneMCPService(FakeSceneBridge()))
-    result = asyncio.run(router.handle("select /World/Props/Cube"))
+    result = asyncio.run(router.handle("select /World/Props/Cube", dry_run=False))
     assert result.decision.target is RouteTarget.SCENE
     assert result.payload["ok"] is True
     assert result.payload["result"]["selection"] == ["/World/Props/Cube"]
@@ -164,7 +164,7 @@ def test_router_can_rename_a_selected_prim():
     bridge = FakeSceneBridge()
     bridge.set_selection(["/World/Props/Cube"])
     router = OmniverseRouter(SceneMCPService(bridge))
-    result = asyncio.run(router.handle("rename this to HeroCube"))
+    result = asyncio.run(router.handle("rename this to HeroCube", dry_run=False))
     assert result.decision.target is RouteTarget.SCENE
     assert result.payload["ok"] is True
     assert result.payload["payload"]["prim"]["path"] == "/World/Props/HeroCube"
@@ -272,7 +272,7 @@ def test_router_handles_make_this_bigger_as_a_scene_command():
     bridge = FakeSceneBridge()
     bridge.set_selection(["/World/Props/Cube"])
     router = OmniverseRouter(SceneMCPService(bridge))
-    result = asyncio.run(router.handle("make this bigger"))
+    result = asyncio.run(router.handle("make this bigger", dry_run=False))
     assert result.decision.target is RouteTarget.SCENE
     assert result.payload["ok"] is True
     assert result.payload["payload"]["prim"]["scale"] == (10.0, 10.0, 10.0)

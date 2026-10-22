@@ -1302,7 +1302,8 @@ def install_journal(
     Call it right after ``app = FastMCP(...)`` and before the first ``@app.tool``. The decorated function itself is
     returned unchanged (as FastMCP does), so direct calls in tests skip the journal. Returns app.
     """
-    names = frozenset(tools)
+    from .features import FEATURES
+    names = frozenset(tools) | {name for name, spec in FEATURES.items() if spec.mutates}
     register = app.tool
 
     def tool(name: str | None = None, *args: Any, **kwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:

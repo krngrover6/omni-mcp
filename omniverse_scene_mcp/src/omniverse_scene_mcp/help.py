@@ -587,6 +587,20 @@ _STOP_WORDS = {"a", "an", "the", "to", "how", "do", "i", "me", "my", "with", "on
                "use", "using", "tool", "tools", "can", "you", "what", "is", "are", "in"}
 
 
+from .features import FEATURES as _FEATURES
+for _name, _spec in _FEATURES.items():
+    TOOL_CATALOG[_spec.group].append(_tool(
+        _name, f"{_name.replace('_', ' ').capitalize()} ({_spec.module}); edits preview by default.",
+        _name + ('(dry_run=True, ...)' if _spec.mutates else '(...)'), _spec.mutates, _spec.location != 'local'))
+for _name, _what in (
+    ('router_list_tools', 'Discover listed and hidden tool names without loading all schemas.'),
+    ('router_enable_tools', 'Expose a tool group for this server session; changes no scene.'),
+    ('router_call_tool', 'Call a hidden tool with its normal argument validation and dry-run defaults.'),
+):
+    TOOL_CATALOG['Health & connection'].append(_tool(
+        _name, _what, _name + '(...)', _name == 'router_call_tool', False))
+
+
 def tool_names() -> list[str]:
     """Every tool name in the catalog, in catalog order."""
     return [entry["name"] for entries in TOOL_CATALOG.values() for entry in entries]

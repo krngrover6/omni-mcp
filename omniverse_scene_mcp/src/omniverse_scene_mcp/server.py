@@ -11,7 +11,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.fastmcp.exceptions import ToolError
 
 from . import assignments, docker_docs, error_explainer, physics, python_links, python_teacher, usd_insight, usd_validate
 from . import robot_inspector
@@ -657,9 +658,10 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
     install_journal(app, change_journal, target=lambda: target_from_backend(router._scene.backend_info))
 
     @app.tool(name="router_dispatch")
-    async def router_dispatch(request: str, dry_run: bool = False, show_python: bool = False) -> dict:
+    async def router_dispatch(request: str, dry_run: Any = True, show_python: bool = False) -> dict:
         """Route a natural-language or command-style request to the right Omniverse MCP backend. show_python=True
         also returns the OpenUSD Python for a scene edit (result['python'])."""
+        dry_run = dry_run is not False
         result = await router.handle(request, dry_run=dry_run)
         response = {"decision": _decision_dict(result), "payload": result.payload}
         if show_python is True:
@@ -786,23 +788,26 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return router._scene.list_children(path)
 
     @app.tool(name="scene_create")
-    def scene_create(path: str, type_name: str = "Xform", dry_run: bool = False, show_python: bool = False) -> dict:
+    def scene_create(path: str, type_name: str = "Xform", dry_run: Any = True, show_python: bool = False) -> dict:
         """Create a prim, optionally in dry-run mode.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         result = router._wrap_operation_result("scene", router._scene.create_prim(path, type_name, dry_run=dry_run))
         return _with_python(result, show_python, "scene_create", path=path, type_name=type_name)
 
     @app.tool(name="scene_delete")
-    def scene_delete(path: str, dry_run: bool = False, show_python: bool = False) -> dict:
+    def scene_delete(path: str, dry_run: Any = True, show_python: bool = False) -> dict:
         """Delete a prim, optionally in dry-run mode.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         result = router._wrap_operation_result("scene", router._scene.delete_prim(path, dry_run=dry_run))
         return _with_python(result, show_python, "scene_delete", path=path)
 
     @app.tool(name="scene_duplicate")
-    def scene_duplicate(source_path: str, target_path: str, dry_run: bool = False, show_python: bool = False) -> dict:
+    def scene_duplicate(source_path: str, target_path: str, dry_run: Any = True, show_python: bool = False) -> dict:
         """Duplicate one prim to another path.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         result = router._wrap_operation_result(
             "scene",
             router._scene.duplicate_prim(source_path, target_path, dry_run=dry_run),
@@ -810,8 +815,9 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return _with_python(result, show_python, "scene_duplicate", source_path=source_path, target_path=target_path)
 
     @app.tool(name="scene_reparent")
-    def scene_reparent(path: str, new_parent: str, dry_run: bool = False) -> dict:
+    def scene_reparent(path: str, new_parent: str, dry_run: Any = True) -> dict:
         """Reparent a prim under a new parent."""
+        dry_run = dry_run is not False
         return router._wrap_operation_result("scene", router._scene.reparent_prim(path, new_parent, dry_run=dry_run))
 
     @app.tool(name="scene_move")
@@ -820,11 +826,12 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         translation: Sequence[float] | None = None,
         rotation: Sequence[float] | None = None,
         scale: Sequence[float] | None = None,
-        dry_run: bool = False,
+        dry_run: Any = True,
         show_python: bool = False,
     ) -> dict:
         """Apply transform updates to a prim.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         result = router._wrap_operation_result(
             "scene",
             router._scene.move_prim(
@@ -839,9 +846,10 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
                             scale=scale)
 
     @app.tool(name="scene_material")
-    def scene_material(path: str, material_path: str, dry_run: bool = False, show_python: bool = False) -> dict:
+    def scene_material(path: str, material_path: str, dry_run: Any = True, show_python: bool = False) -> dict:
         """Bind a material to a prim.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         result = router._wrap_operation_result(
             "scene",
             router._scene.set_material(path, material_path, dry_run=dry_run),
@@ -849,9 +857,10 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return _with_python(result, show_python, "scene_material", path=path, material_path=material_path)
 
     @app.tool(name="scene_rename")
-    def scene_rename(path: str, new_name: str, dry_run: bool = False, show_python: bool = False) -> dict:
+    def scene_rename(path: str, new_name: str, dry_run: Any = True, show_python: bool = False) -> dict:
         """Rename a prim and keep its subtree intact.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         result = router._wrap_operation_result("scene", router._scene.rename_prim(path, new_name, dry_run=dry_run))
         return _with_python(result, show_python, "scene_rename", path=path, new_name=new_name)
 
@@ -865,11 +874,12 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         variant_set: str,
         selection: str,
         path: str = "/World/Car",
-        dry_run: bool = False,
+        dry_run: Any = True,
         show_python: bool = False,
     ) -> dict:
         """Select a native USD variant on a prim.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         result = router._wrap_operation_result(
             "scene",
             router._scene.set_variant_selection(path, variant_set, selection, dry_run=dry_run),
@@ -906,8 +916,9 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return router._scene.find_prims(query, scope_path=scope_path)
 
     @app.tool(name="scene_save")
-    def scene_save(path: str, dry_run: bool = False) -> dict:
+    def scene_save(path: str, dry_run: Any = True) -> dict:
         """Save the current live scene to a USD file; dry_run previews in-place save versus Save As."""
+        dry_run = dry_run is not False
         result = router._scene.save_scene(path, dry_run=dry_run)
         if isinstance(result, dict) and "tip" not in result:
             result = {**result, "tip": _CHECKPOINT_TIP}  # a suggestion only; saving itself is unchanged
@@ -1563,7 +1574,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         size: float | list[float] | None = None,
         translation: list[float] | None = None,
         aim_at: str | list[float] | None = None,
-        dry_run: bool = True,
+        dry_run: Any = True,
         show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan a UsdLux light (rect, sphere, disk, distant, cylinder or dome) at path in the
@@ -1571,6 +1582,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         saved; scene_undo_last can undo it). size: one number, or [width, height] for rect / [length, radius] for
         cylinder; aim_at: a prim path or an [x, y, z] point the light's -Z axis should face.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         python = dict(path=path, light_type=light_type, intensity=intensity, color=color, translation=translation)
         try:
             result = router._scene.create_light(
@@ -1598,13 +1610,14 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         translation: list[float] | None = None,
         aim_at: str | list[float] | None = None,
         copy_optics_from: str | None = None,
-        dry_run: bool = True,
+        dry_run: Any = True,
         show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan a camera at path in the LIVE open scene and show the preview to the user first.
         dry_run=False changes the user's open scene (not saved; scene_undo_last can undo it). clipping_range is
         [near, far]; aim_at is a prim path or an [x, y, z] point; copy_optics_from copies another camera's lens.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         python = dict(path=path, focal_length=focal_length, translation=translation, aim_at=aim_at)
         try:
             result = router._scene.create_camera(
@@ -1623,11 +1636,12 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return _with_python(_authoring_payload(router, result), show_python, "scene_create_camera", **python)
 
     @app.tool(name="scene_aim")
-    def scene_aim(path: str, target: str | list[float], dry_run: bool = True, show_python: bool = False) -> dict:
+    def scene_aim(path: str, target: str | list[float], dry_run: Any = True, show_python: bool = False) -> dict:
         """DRY RUN BY DEFAULT: plan rotating a light, camera or other prim in the LIVE open scene so its -Z axis faces
         target (a prim path or an [x, y, z] point), and show the preview to the user first. dry_run=False changes
         the user's open scene (not saved; scene_undo_last can undo it).
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         try:
             aimed_at = _target_arg(target, "target")
             if aimed_at is None:
@@ -1647,7 +1661,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         value: Any,
         time: float | None = None,
         create_type: str | None = None,
-        dry_run: bool = True,
+        dry_run: Any = True,
         show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan setting one attribute (e.g. inputs:intensity on a light, focalLength on a camera,
@@ -1657,6 +1671,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         undo it). time=None sets the default value, a number writes a time sample; create_type (e.g. 'float',
         'color3f') creates a missing custom attribute.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         python = dict(path=path, name=name, value=value, create_type=create_type)
         try:
             result = router._scene.set_attribute(
@@ -1685,7 +1700,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         emissive_color: list[float] | str | None = None,
         ior: float | None = None,
         create_parent: bool = True,
-        dry_run: bool = True,
+        dry_run: Any = True,
         show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan a UsdPreviewSurface material at path (a Material with a PreviewSurface shader
@@ -1694,6 +1709,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         roughness, metallic and opacity are 0-1; only the given inputs are authored. create_parent also plans a
         missing direct parent such as /World/Looks as a Scope. Bind it with scene_bind_material.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         python = dict(path=path, diffuse_color=diffuse_color, roughness=roughness, metallic=metallic)
         try:
             result = router._scene.create_material(
@@ -1721,7 +1737,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         material_path: str,
         strength: str | None = None,
         purpose: str | None = None,
-        dry_run: bool = True,
+        dry_run: Any = True,
         show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan binding a material to a prim (MaterialBindingAPI, material:binding) in the open
@@ -1730,6 +1746,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         saved; scene_undo_last can undo it). strength: weakerThanDescendants (default) or strongerThanDescendants;
         purpose: allPurpose (default), preview or full.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         python = dict(prim_path=prim_path, material_path=material_path, strength=strength)
         try:
             result = router._scene.bind_material(
@@ -1744,12 +1761,13 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return _with_python(payload, show_python, "scene_bind_material", **python)
 
     @app.tool(name="scene_undo_last")
-    def scene_undo_last(dry_run: bool = True) -> dict:
+    def scene_undo_last(dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: preview which scene change made through the router (the most recent one) would be
         undone, and show that preview to the user first. dry_run=False changes the user's open scene: it restores
         the edited prims (in Kit the same edit is also on the Ctrl+Z history). It refuses when the stage was replaced
         or the prims changed since. Saving is not undoable: undo reverts the open layers in memory; save again to
         keep it."""
+        dry_run = dry_run is not False
         result = router._scene.undo_last(dry_run=dry_run)
         payload: dict[str, Any] = {"target": "scene", **result}
         payload["applied"] = bool(result.get("ok")) and result.get("dry_run") is False
@@ -1798,7 +1816,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         instanceable: bool | None = None,
         correct_units: bool = False,
         asset_prim_path: str | None = None,
-        dry_run: bool = True,
+        dry_run: Any = True,
         show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan adding an asset file (find one with asset_search) to the open scene as a new Xform
@@ -1808,6 +1826,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         rotation/scale with the suggested up-axis and unit correction; asset_prim_path picks a prim in an asset
         without a defaultPrim. The asset file itself is only read, never changed.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         python = dict(prim_path=prim_path, asset_path=asset_path, asset_prim_path=asset_prim_path)
         try:
             result = router._scene.add_asset(
@@ -1845,7 +1864,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
     def scene_add_physics_scene(
         path: str = "/physicsScene",
         gravity: float | list[float] | None = None,
-        dry_run: bool = True,
+        dry_run: Any = True,
         show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan a UsdPhysics PhysicsScene (nothing simulates without one) in the open scene and
@@ -1853,6 +1872,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         can undo it). gravity is m/s^2: a number pointing down the stage up axis, or [x, y, z] written Z-up (default
         9.81 down); it is converted to the stage's units.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         try:
             result = router._scene.add_physics_scene(path, gravity=_scale_arg(gravity, "gravity"), dry_run=dry_run)
         except (ValueError, TypeError) as exc:
@@ -1869,7 +1889,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         kinematic: bool = False,
         add_collider: bool = True,
         approximation: str | None = None,
-        dry_run: bool = True,
+        dry_run: Any = True,
         show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan making a prim a rigid body (RigidBodyAPI, optional MassAPI with mass in kg or
@@ -1878,6 +1898,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         it). kinematic=True makes an animated body that pushes others but is not pushed; approximation is
         convexHull, convexDecomposition, boundingCube, boundingSphere, meshSimplification or none.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         python = dict(prim_path=prim_path, mass=mass, add_collider=add_collider)
         try:
             result = router._scene.make_rigid_body(
@@ -1896,13 +1917,14 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
 
     @app.tool(name="scene_make_collider")
     def scene_make_collider(
-        prim_path: str, approximation: str | None = None, dry_run: bool = True, show_python: bool = False
+        prim_path: str, approximation: str | None = None, dry_run: Any = True, show_python: bool = False
     ) -> dict:
         """DRY RUN BY DEFAULT: plan adding collision (CollisionAPI) to a gprim, or to every gprim below a group prim,
         in the open scene and show the preview to the user first. dry_run=False changes the user's open scene (not
         saved; scene_undo_last can undo it). approximation (convexHull, convexDecomposition, boundingCube,
         boundingSphere, meshSimplification or none) applies to meshes; a collider without a rigid body is static.
         show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        dry_run = dry_run is not False
         python = dict(prim_path=prim_path, approximation=approximation)
         try:
             result = router._scene.make_collider(prim_path, approximation=approximation, dry_run=dry_run)
@@ -1912,11 +1934,12 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return _with_python(_authoring_payload(router, result), show_python, "scene_make_collider", **python)
 
     @app.tool(name="scene_remove_physics")
-    def scene_remove_physics(prim_path: str, include_descendants: bool = False, dry_run: bool = True) -> dict:
+    def scene_remove_physics(prim_path: str, include_descendants: bool = False, dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan removing the RigidBody, Collision, MeshCollision and Mass APIs (and their physics
         attributes) from a prim in the open scene, and show the preview to the user first. dry_run=False changes the
         user's open scene (not saved; scene_undo_last can undo it). include_descendants=True also clears every prim
         below; articulation roots and joints are left alone."""
+        dry_run = dry_run is not False
         try:
             result = router._scene.remove_physics(
                 prim_path, include_descendants=include_descendants is True, dry_run=dry_run
@@ -2369,7 +2392,8 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
             payload["preview_table"] = inner["preview"]
         return payload
 
-    def _layout_call(name: str, paths: Any, dry_run: bool, call: Callable[[], Any]) -> dict:
+    def _layout_call(name: str, paths: Any, dry_run: Any, call: Callable[[], Any]) -> dict:
+        dry_run = dry_run is not False
         try:
             result = call()
         except (ValueError, TypeError) as exc:
@@ -2378,11 +2402,12 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return _layout_payload(result)
 
     @app.tool(name="scene_layout_snap")
-    def scene_layout_snap(paths: list[str], surface: str | float | None = None, dry_run: bool = True) -> dict:
+    def scene_layout_snap(paths: list[str], surface: str | float | None = None, dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan dropping (or lifting) prims straight down the up axis so the bottom of each one
         rests on a surface, and show the preview to the user first. surface: None finds the floor automatically,
         a prim path uses that prim's top, a number is a height. Only each prim's translation changes. dry_run=False
         changes the user's open scene (not saved; scene_undo_last can undo it)."""
+        dry_run = dry_run is not False
         return _layout_call("layout_snap", paths, dry_run,
                             lambda: router._scene.layout_snap(paths, surface=surface, dry_run=dry_run))
 
@@ -2393,13 +2418,14 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         anchor: str | list[float] | None = None,
         gap: float = 0.0,
         facing: str | None = None,
-        dry_run: bool = True,
+        dry_run: Any = True,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan stacking prims in rows like a pyramid or wall (rows bottom first; default
         [4, 3, 2, 1] for 10 boxes; the counts must add up to the number of paths), each row resting on the one below,
         and show the preview to the user first. anchor: an [x, y, z] point (bottom center), a prim path to stand on,
         or None (where the prims are now); gap: space between neighbors; facing: e.g. '-Y'. dry_run=False changes
         the user's open scene (not saved; scene_undo_last can undo it)."""
+        dry_run = dry_run is not False
         return _layout_call(
             "layout_stack", paths, dry_run,
             lambda: router._scene.layout_stack(
@@ -2408,32 +2434,35 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         )
 
     @app.tool(name="scene_layout_distribute")
-    def scene_layout_distribute(paths: list[str], surface_path: str, margin: float | None = None, dry_run: bool = True) -> dict:
+    def scene_layout_distribute(paths: list[str], surface_path: str, margin: float | None = None, dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan spreading prims evenly along the long side of a shelf or table top (surface_path),
         all resting on it and centered across its depth, with `margin` free at both ends (default 5 cm), and show the
         preview to the user first. dry_run=False changes the user's open scene (not saved; scene_undo_last can undo
         it)."""
+        dry_run = dry_run is not False
         return _layout_call(
             "layout_distribute", paths, dry_run,
             lambda: router._scene.layout_distribute(paths, surface_path, margin=margin, dry_run=dry_run),
         )
 
     @app.tool(name="scene_layout_space")
-    def scene_layout_space(paths: list[str], axis: str = "x", spacing: float | None = None, dry_run: bool = True) -> dict:
+    def scene_layout_space(paths: list[str], axis: str = "x", spacing: float | None = None, dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan making the gaps between prims equal along one world axis ('x', 'y' or 'z'), and
         show the preview to the user first. spacing=None keeps the first and last prim in place; a number sets the
         edge-to-edge gap in stage units. dry_run=False changes the user's open scene (not saved; scene_undo_last can
         undo it)."""
+        dry_run = dry_run is not False
         return _layout_call(
             "layout_space", paths, dry_run,
             lambda: router._scene.layout_space(paths, axis=axis, spacing=spacing, dry_run=dry_run),
         )
 
     @app.tool(name="scene_layout_align")
-    def scene_layout_align(paths: list[str], axis: str = "x", mode: str = "min", dry_run: bool = True) -> dict:
+    def scene_layout_align(paths: list[str], axis: str = "x", mode: str = "min", dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan lining prims up along one world axis by their bounding-box min sides ('min'),
         centers ('center') or max sides ('max'), and show the preview to the user first. dry_run=False changes the
         user's open scene (not saved; scene_undo_last can undo it)."""
+        dry_run = dry_run is not False
         return _layout_call(
             "layout_align", paths, dry_run,
             lambda: router._scene.layout_align(paths, axis=axis, mode=mode, dry_run=dry_run),
@@ -2514,12 +2543,13 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         goal: str = "",
         units: str | float | None = None,
         up_axis: str | None = None,
-        dry_run: bool = True,
+        dry_run: Any = True,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan a NEW project folder <workspace>/<name> from a template and show the preview to
         the user first. dry_run=False writes ONLY that new folder (files only; it never touches the open scene in
         Isaac Sim or Composer), refuses a folder that already exists and removes everything it wrote if a step
         fails. Then open root.usda in the app and fill in PROJECT_CONTEXT.md."""
+        dry_run = dry_run is not False
         result = project_starter.create_project(
             name, template, goal=goal or "", units=units, up_axis=up_axis, dry_run=dry_run is not False
         )
@@ -2584,6 +2614,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
 
     def _layer_write(method: str, dry_run: Any, call: Callable[[], dict]) -> dict:
         """Scene envelope for a writing layer call: preview / applied / refused, with how to put it back."""
+        dry_run = dry_run is not False
         try:
             result = call()
         except (ValueError, TypeError) as exc:
@@ -2621,7 +2652,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         allow_outside: bool = False,
         offset: float = 0.0,
         scale: float = 1.0,
-        dry_run: bool = True,
+        dry_run: Any = True,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan inserting a sublayer (a .usd/.usda/.usdc file, relative to the root layer's
         folder) into the root layer's sublayer list and show the preview to the user first. position 'strongest'
@@ -2629,43 +2660,48 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         offset/scale only shift time. Refuses duplicates, cycles and files outside the root layer's folder (unless
         allow_outside). dry_run=False changes the user's open scene (not saved); the result's restore_with is the
         call that takes it out again."""
+        dry_run = dry_run is not False
         return _layer_write("layer_add_sublayer", dry_run, lambda: router._scene.layer_add_sublayer(
             layer_path, position=position, create_if_missing=create_if_missing, relative=relative,
             allow_outside=allow_outside, offset=offset, scale=scale, dry_run=dry_run,
         ))
 
     @app.tool(name="scene_remove_sublayer")
-    def scene_remove_sublayer(layer: str, discard_unsaved_edits: bool = False, dry_run: bool = True) -> dict:
+    def scene_remove_sublayer(layer: str, discard_unsaved_edits: bool = False, dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan taking a sublayer (by file name, path or identifier) out of its parent's sublayer
         list and show the preview to the user first; the file on disk is never deleted. Refuses the root and session
         layers, the edit target, and a layer with unsaved edits unless discard_unsaved_edits=True. dry_run=False
         changes the user's open scene (not saved); restore_with puts it back."""
+        dry_run = dry_run is not False
         return _layer_write("layer_remove_sublayer", dry_run, lambda: router._scene.layer_remove_sublayer(
             layer, discard_unsaved_edits=discard_unsaved_edits, dry_run=dry_run,
         ))
 
     @app.tool(name="scene_set_edit_target")
-    def scene_set_edit_target(layer: str, dry_run: bool = True) -> dict:
+    def scene_set_edit_target(layer: str, dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan making one layer of the layer stack the edit target (where new edits are
         written) and show the preview to the user first. dry_run=False changes the user's open scene (stage state;
         no layer is edited); restore_with sets the old target back."""
+        dry_run = dry_run is not False
         return _layer_write("layer_set_edit_target", dry_run,
                             lambda: router._scene.layer_set_edit_target(layer, dry_run=dry_run))
 
     @app.tool(name="scene_mute_layer")
-    def scene_mute_layer(layer: str, discard_unsaved_edits: bool = False, dry_run: bool = True) -> dict:
+    def scene_mute_layer(layer: str, discard_unsaved_edits: bool = False, dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan muting a layer so the stage ignores its opinions (and its sublayers') and show the
         preview to the user first. Refuses the root and session layers, the edit target, and a layer with unsaved
         edits unless discard_unsaved_edits=True. dry_run=False changes the user's open scene (stage state, nothing is
         saved); scene_unmute_layer brings it back."""
+        dry_run = dry_run is not False
         return _layer_write("layer_mute", dry_run, lambda: router._scene.layer_mute(
             layer, discard_unsaved_edits=discard_unsaved_edits, dry_run=dry_run,
         ))
 
     @app.tool(name="scene_unmute_layer")
-    def scene_unmute_layer(layer: str, dry_run: bool = True) -> dict:
+    def scene_unmute_layer(layer: str, dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan unmuting a muted layer so its opinions count again and show the preview to the
         user first. dry_run=False changes the user's open scene (stage state, nothing is saved)."""
+        dry_run = dry_run is not False
         return _layer_write("layer_unmute", dry_run, lambda: router._scene.layer_unmute(layer, dry_run=dry_run))
 
     @app.tool(name="scene_move_opinions")
@@ -2676,12 +2712,13 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         include_children: bool = True,
         properties: list[str] | None = None,
         allow_changes: bool = False,
-        dry_run: bool = True,
+        dry_run: Any = True,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan moving a prim's opinions (its whole spec, or only properties=[...]) from one
         layer of the layer stack to another and show the preview to the user first. The move is simulated on copies
         and every composed value it would change is listed; dry_run=False refuses such a move unless
         allow_changes=True. dry_run=False changes the user's open scene (not saved; scene_undo_last can undo it)."""
+        dry_run = dry_run is not False
         return _layer_write("layer_move_opinions", dry_run, lambda: router._scene.layer_move_opinions(
             prim_path, src_layer, dst_layer, include_children=include_children, properties=properties,
             allow_changes=allow_changes, dry_run=dry_run,
@@ -2700,11 +2737,12 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return {**result, "action": action}
 
     @app.tool(name="scene_checkpoint")
-    def scene_checkpoint(scene_file: str | None = None, note: str = "", dry_run: bool = True) -> dict:
+    def scene_checkpoint(scene_file: str | None = None, note: str = "", dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan a checkpoint (a restorable copy of the SAVED scene file and the local layers it
         uses, inside its project folder) and show the preview to the user first. scene_file defaults to the live
         scene's saved file. dry_run=False copies the files into <project>/.checkpoints/ (a folder git ignores); the
         open scene is never changed, and unsaved changes in the app are not included: save first."""
+        dry_run = dry_run is not False
         return _checkpoint_call(
             "checkpoint", scene_file,
             lambda scene: checkpoints.create_checkpoint(scene, note or "", dry_run=dry_run is not False),
@@ -2725,12 +2763,13 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return _checkpoint_call("diff", scene_file, lambda scene: checkpoints.diff(scene, a, b))
 
     @app.tool(name="scene_restore_checkpoint")
-    def scene_restore_checkpoint(checkpoint: str | int, scene_file: str | None = None, dry_run: bool = True) -> dict:
+    def scene_restore_checkpoint(checkpoint: str | int, scene_file: str | None = None, dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan putting a checkpoint's files back over the saved scene files and show the preview
         to the user first. dry_run=False first takes a safety checkpoint of the current files, then rewrites only the
         files the checkpoint lists, inside the project folder. IMPORTANT: if the scene is open in Isaac Sim or
         Composer, reload it there afterwards (File > Reload); unsaved changes in the app are lost and saving from the
         app would overwrite the restored files."""
+        dry_run = dry_run is not False
         result = _checkpoint_call(
             "restore_checkpoint", scene_file,
             lambda scene: checkpoints.restore_checkpoint(scene, checkpoint, dry_run=dry_run is not False),
@@ -2743,10 +2782,11 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
                 "message": f"IMPORTANT: {warning} {message}".strip()}
 
     @app.tool(name="scene_prune_checkpoints")
-    def scene_prune_checkpoints(scene_file: str | None = None, keep: int = 20, dry_run: bool = True) -> dict:
+    def scene_prune_checkpoints(scene_file: str | None = None, keep: int = 20, dry_run: Any = True) -> dict:
         """DRY RUN BY DEFAULT: plan deleting all but the newest `keep` checkpoints of a scene (keep >= 1, so the
         newest is never deleted) and show the preview to the user first. dry_run=False deletes only those checkpoint
         folders; scene files are never touched."""
+        dry_run = dry_run is not False
         return _checkpoint_call(
             "prune_checkpoints", scene_file,
             lambda scene: checkpoints.prune(scene, keep, dry_run=dry_run is not False),
@@ -3024,6 +3064,53 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
             "project_report": lambda project_dir=None, write=False: project_report(project_dir=project_dir, write=False),
         }
     )
+
+    from . import features, profiles, workflows
+    feature_tools = features.register(app, router, _file_mode)
+    router.attach_learning_helpers(feature_tools)
+    workflows.register_prompts(app)
+
+    # Always-on meta tools keep a small profile useful without advertising every schema.
+    stash = None
+
+    @app.tool(name="router_list_tools")
+    def router_list_tools(pattern: str = "*", include_schema: bool = False) -> dict:
+        """List tool names and short descriptions, including tools hidden by the current profile."""
+        import fnmatch
+        rows = [{"name": t.name, "about": (t.description or "").split('\n')[0]}
+                for t in app._tool_manager.list_tools() if fnmatch.fnmatchcase(t.name, pattern)]
+        if stash is not None:
+            rows += stash.describe(pattern)
+        if include_schema:
+            registry = dict(stash.hidden) if stash is not None else {}
+            registry.update(app._tool_manager._tools)
+            for row in rows:
+                row['inputSchema'] = registry[row['name']].parameters
+        return {"ok": True, "tools": sorted(rows, key=lambda r: r['name'])}
+
+    @app.tool(name="router_enable_tools")
+    async def router_enable_tools(names: str, ctx: Context) -> dict:
+        """Expose more tools by profile, exact tool name, or pattern; no scene edits or configuration writes."""
+        enabled = stash.enable(names) if stash is not None else []
+        try:
+            await ctx.session.send_tool_list_changed()
+        except (AttributeError, RuntimeError):
+            pass
+        return {"ok": True, "enabled": enabled}
+
+    @app.tool(name="router_call_tool")
+    async def router_call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict:
+        """Call a hidden tool with normal validation. Edits preview unless arguments explicitly set dry_run=False."""
+        if name in {"router_call_tool", "router_enable_tools", "router_list_tools"}:
+            return _error('Use meta tools directly; recursive meta calls are refused.')
+        try:
+            return await stash.call(name, arguments or {})
+        except (KeyError, TypeError, ValueError, ToolError) as exc:
+            return _error(str(exc))
+
+    profiles.install_compact_outputs(app)
+    profiles.advertise_tool_list_changed(app)
+    stash, profile_report = profiles.apply_profile_to_app(app)
 
     # Tool descriptions come from raw docstrings; drop the continuation-line indentation clients would see.
     for tool in app._tool_manager.list_tools():

@@ -168,7 +168,7 @@ def _test_phrases():
 def test_round7_tools_are_registered_with_safe_defaults_and_catalogued():
     with _server() as call:
         tools = {tool.name: tool for tool in call.app._tool_manager.list_tools()}
-        assert NEW_TOOLS <= set(tools) and len(tools) == 155, len(tools)
+        assert NEW_TOOLS <= set(tools) and len(tools) == 228, len(tools)
         for name in LAYOUT_TOOLS:
             properties = tools[name].parameters["properties"]
             assert properties["dry_run"]["default"] is True, name
@@ -208,7 +208,7 @@ def test_round7_tools_are_registered_with_safe_defaults_and_catalogued():
 
 
 def test_tier6_rpc_methods_line_up_across_the_protocol_the_rpc_and_every_bridge():
-    assert RPC_VERSION == "tier7-1"
+    assert RPC_VERSION == "tier8-1"
     assert set(LAYOUT_RPC_METHODS) == {"layout_snap", "layout_stack", "layout_distribute", "layout_space", "layout_align"}
     assert ROBOT_RPC_METHODS == ("robot_inspect",)
     assert set(LAYOUT_RPC_METHODS) | set(ROBOT_RPC_METHODS) <= set(LIVE_RPC_METHODS) <= set(kit_rpc._HANDLERS)
@@ -292,7 +292,7 @@ def test_extended_rpc_parses_layout_and_robot_params_strictly():
     lacking = kit_rpc.make_extended_server_class(_BasicServer)(object())._dispatch({"method": "robot_inspect", "params": {}})
     assert lacking["result"]["needs_bridge_update"] is True and lacking["result"]["method"] == "robot_inspect"
     info = dispatch({"method": "capabilities", "params": {}})["result"]
-    assert info["version"] == "tier7-1" and info["layout_methods"] == list(LAYOUT_RPC_METHODS)
+    assert info["version"] == "tier8-1" and info["layout_methods"] == list(LAYOUT_RPC_METHODS)
     assert info["robot_methods"] == ["robot_inspect"]
 
 
@@ -333,7 +333,7 @@ def test_live_layout_previews_applies_undoes_and_is_journaled():
         original = _layers_text(stage)
         with _server(scene=lambda: SceneMCPService(HttpSceneBridge(ISAAC))) as call, _live(stage) as (_b, _s, sent):
             capabilities = call("scene_capabilities")
-            assert capabilities["rpc_version"] == "tier7-1" and capabilities["needs_bridge_update"] is False
+            assert capabilities["rpc_version"] == "tier8-1" and capabilities["needs_bridge_update"] is False
             assert capabilities["layout"]["available"] is True and capabilities["robots"]["available"] is True
             preview = call("scene_layout_snap", paths=["/World/B1", "/World/B2"])
             assert preview["ok"] is True and preview["preview"] is True and preview["applied"] is False, preview
@@ -508,7 +508,8 @@ def test_drills_start_answer_and_status_use_the_memory_progress_store():
 
 def test_today_and_reminder_only_read_and_create_nothing():
     with _server() as call:
-        before = json.dumps(call("learning_exam_progress"), sort_keys=True)
+        before = call("learning_exam_progress")
+        before.pop("as_of", None)
         brief = call("learning_today", minutes=30)
         assert brief["ok"] is True and brief["minutes"] == 30 and brief["plan"], brief
         assert call("learning_today", minutes=5)["ok"] is False
@@ -521,7 +522,9 @@ def test_today_and_reminder_only_read_and_create_nothing():
         assert said["executed"] is True and said["commands_run"] is False
         today = call.dispatch("what should I do today")
         assert today["tool"] == "learning_today" and today["ok"] is True
-        assert json.dumps(call("learning_exam_progress"), sort_keys=True) == before
+        after = call("learning_exam_progress")
+        after.pop("as_of", None)
+        assert after == before
 
 
 # --------------------------------------------------------------------------- Docker docs

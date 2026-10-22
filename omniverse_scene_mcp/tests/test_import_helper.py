@@ -13,7 +13,12 @@ import types
 from collections import namedtuple
 from pathlib import Path
 
-from pxr import Sdf, Usd, UsdGeom
+try:
+    from pxr import Sdf, Usd, UsdGeom
+except ImportError:
+    import unittest
+
+    raise unittest.SkipTest("USD Python bindings (pxr) are not installed")
 
 from omniverse_scene_mcp import import_helper as ih
 

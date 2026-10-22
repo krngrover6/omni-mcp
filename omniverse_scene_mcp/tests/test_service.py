@@ -24,7 +24,7 @@ def test_dry_run_create_returns_preview():
 
 def test_move_prim_updates_fake_scene():
     service = SceneMCPService(FakeSceneBridge())
-    result = service.move_prim("/World/Props/Cube", translation=(1.0, 2.0, 3.0))
+    result = service.move_prim("/World/Props/Cube", translation=(1.0, 2.0, 3.0), dry_run=False)
     prim = result.payload["prim"]
     assert prim["translation"] == (1.0, 2.0, 3.0)
 
@@ -33,7 +33,7 @@ def test_variant_selection_updates_fake_scene():
     bridge = FakeSceneBridge()
     service = SceneMCPService(bridge)
 
-    result = service.set_variant_selection("/World/Props", "color", "blue")
+    result = service.set_variant_selection("/World/Props", "color", "blue", dry_run=False)
 
     assert result.payload["selections"] == {"color": "blue"}
     assert service.get_variant_selections("/World/Props")["selections"] == {"color": "blue"}
@@ -160,9 +160,9 @@ def test_save_dry_run_requires_a_path():
         raise AssertionError("empty path should be rejected")
 
 
-def test_save_without_dry_run_still_calls_bridge():
+def test_save_with_explicit_apply_calls_bridge():
     service = SceneMCPService(FakeSceneBridge())
-    assert service.save_scene("C:/Scenes/Out.usda") == {"saved_path": "C:/Scenes/Out.usda"}
+    assert service.save_scene("C:/Scenes/Out.usda", dry_run=False) == {"saved_path": "C:/Scenes/Out.usda"}
 
 
 def test_backend_info_defaults_for_direct_construction():
@@ -363,7 +363,7 @@ def test_service_forwards_live_authoring_through_the_http_client_with_dry_run_de
         camera = service.create_camera("/World/Cam", clipping_range=(0.1, 500.0), dry_run=False)
         aimed = service.aim("/World/Cam", "/World/Key", up_axis="Z")
 
-    assert capabilities["version"] == "tier7-1" and capabilities["endpoint"] == "http://127.0.0.1:9911"
+    assert capabilities["version"] == "tier8-1" and capabilities["endpoint"] == "http://127.0.0.1:9911"
     assert insight == {"ok": True, "mode": "live", "query": "explain_value", "value": 1.5}
     assert bridge.calls[0] == ("insight", "explain_value", {"prim_path": "/World/Box", "attribute": "size", "time": 24})
     assert preview.ok is True and preview.dry_run is True

@@ -13,7 +13,12 @@ import sys
 import tempfile
 import types
 
-from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade, Vt
+try:
+    from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade, Vt
+except ImportError:
+    import unittest
+
+    raise unittest.SkipTest("USD Python bindings (pxr) are not installed")
 
 from omniverse_scene_mcp import perf_advisor as pa
 from omniverse_scene_mcp import undo

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from enum import Enum
@@ -10,7 +11,7 @@ from typing import Any, Protocol
 from urllib.parse import unquote
 
 from . import help as tool_guide
-from . import nl_tier4, nl_tier5, nl_tier6, nl_tier7
+from . import nl_tier4, nl_tier5, nl_tier6, nl_tier7, nl_tier8
 from .service import OperationResult, SceneMCPService
 
 _LEARNING_PHRASES = (
@@ -563,7 +564,8 @@ class OmniverseRouter:
         """Use these callbacks (kind -> callable) for the learning-helper sentences in nl_tier5.py."""
         self._learning_helpers.update(helpers)
 
-    async def handle(self, request: str, dry_run: bool = False) -> RoutedResult:
+    async def handle(self, request: str, dry_run: bool = True) -> RoutedResult:
+        dry_run = dry_run is not False
         decision = self.route(request)
         payload = await self._dispatch(decision, request, dry_run=dry_run)
         return RoutedResult(decision=decision, payload=payload)
@@ -581,6 +583,10 @@ class OmniverseRouter:
 
     def route(self, request: str) -> RoutingDecision:
         normalized = self._normalize(request)
+        feature = nl_tier8.parse(request)
+        if feature is not None:
+            return RoutingDecision(RouteTarget.SCENE if feature['scene'] else RouteTarget.LEARN, 0.98,
+                                   f"Handoff feature ({feature['tool']}; edits preview only)", normalized)
         if self._practice_session is not None and normalized in {"done", "next", "continue", "ok", "finished"}:
             return RoutingDecision(RouteTarget.LEARN, 0.99, "Active practice session advance request", normalized)
         core = self._strip_politeness(normalized)
@@ -669,6 +675,16 @@ class OmniverseRouter:
         return {"backends": backends}
 
     async def _dispatch(self, decision: RoutingDecision, request: str, dry_run: bool) -> dict[str, Any]:
+        feature = nl_tier8.parse(request)
+        if feature is not None:
+            helper = self._learning_helpers.get(feature['tool'])
+            if helper is None:
+                return {'ok': False, 'tool': feature['tool'], 'arguments': feature['arguments'],
+                        'message': 'Call this tool from the MCP server; no action was executed.'}
+            result = helper(**feature['arguments'])
+            if inspect.isawaitable(result):
+                result = await result
+            return result
         if decision.target is RouteTarget.SCENE:
             round7 = nl_tier6.parse(request)
             if round7 is not None and round7["kind"] in nl_tier6.SCENE_KINDS:
@@ -860,7 +876,7 @@ class OmniverseRouter:
                     "result": {"path": parsed["path"]},
                     "message": f"Would save the current scene to {parsed['path']}",
                 }
-            return {"ok": True, "target": "scene", "result": self._scene.save_scene(parsed["path"])}
+            return {"ok": True, "target": "scene", "result": self._scene.save_scene(parsed["path"], dry_run=dry_run)}
 
         return {"ok": False, "message": f"Unsupported scene action: {action}"}
 
@@ -2018,7 +2034,7 @@ class OmniverseRouter:
 
     # --- round 7: drills, today's plan, reminder, change journal, layout previews, robots, Docker (nl_tier6.py) ----
 
-    async def _run_round7(self, spec: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
+    async def _run_round7(self, spec: dict[str, Any], dry_run: bool = True) -> dict[str, Any]:
         """Run one nl_tier6 request. Layout sentences only ever preview; a dry run never starts a drill."""
         kind = spec["kind"]
         if kind == "layout":

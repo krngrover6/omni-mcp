@@ -58,9 +58,9 @@ def test_always_on_tools_survive_every_profile():
         assert {"router_dispatch", "router_route", "router_help"} <= set(tools), name
 
 
-def test_profile_from_env_parses_comma_lists_and_defaults_to_all():
-    assert profiles.profile_from_env({}) == ["all"]
-    assert profiles.profile_from_env({"OMNIVERSE_MCP_PROFILE": "   "}) == ["all"]
+def test_profile_from_env_parses_comma_lists_and_defaults_to_starter():
+    assert profiles.profile_from_env({}) == ["starter"]
+    assert profiles.profile_from_env({"OMNIVERSE_MCP_PROFILE": "   "}) == ["starter"]
     assert profiles.profile_from_env({"OMNIVERSE_MCP_PROFILE": " starter , study,,starter "}) == ["starter", "study"]
     assert profiles.profile_from_env({"OMNIVERSE_MCP_PROFILE": "build"}) == ["build"]
 
@@ -76,7 +76,7 @@ def test_apply_profile_keeps_registration_order_without_duplicates():
 
 def test_apply_profile_all_and_misspelled_profiles_keep_everything():
     assert profiles.apply_profile(REGISTRATION_ORDER, "all") == REGISTRATION_ORDER
-    assert profiles.apply_profile(REGISTRATION_ORDER, profiles.profile_from_env({})) == REGISTRATION_ORDER
+    assert profiles.apply_profile(REGISTRATION_ORDER, profiles.profile_from_env({"OMNIVERSE_MCP_PROFILE": "all"})) == REGISTRATION_ORDER
     # Nothing matches at all (and no ALWAYS_ON tool is registered): keep everything rather than an empty server.
     assert profiles.apply_profile(["a_tool", "b_tool"], "stater") == ["a_tool", "b_tool"]
 
@@ -189,7 +189,7 @@ def test_prune_stash_enable_and_call_with_real_fastmcp():
 
 def test_profile_all_leaves_the_app_unchanged():
     app = _small_app()
-    stash, report = profiles.apply_profile_to_app(app, {})
+    stash, report = profiles.apply_profile_to_app(app, {"OMNIVERSE_MCP_PROFILE": "all"})
     assert _listed(app) == ["router_dispatch", "scene_layers", "learning_exam_quiz"]
     assert stash.names() == [] and report["hidden"] == 0
 
@@ -228,7 +228,8 @@ def test_fastmcp_glue_tolerates_non_fastmcp_objects():
 # ------------------------------------------------------------------------------------------ example client configs
 
 _SECRET_HINTS = re.compile(
-    r"(api[_-]?key|secret|password|passwd|bearer\s+[a-z0-9]|authorization|sk-[a-z0-9]{8}|ghp_[a-z0-9]|token\s*=)",
+    r"((?:api[_-]?key|secret|password|passwd|authorization|token)\b\s*[:=]\s*[\"']?[^\s\"']{8,}"
+    r"|bearer\s+[a-z0-9]{8,}|sk-[a-z0-9]{8,}|ghp_[a-z0-9]{8,})",
     re.IGNORECASE,
 )
 

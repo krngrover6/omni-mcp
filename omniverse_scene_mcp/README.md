@@ -25,6 +25,38 @@ the right upstream MCP:
 - a router front door that chooses the correct backend for each request
 - a FastMCP server that exposes the router as a single MCP surface
 
+## Handoff integration (2026-10-22)
+
+The complete surface has **228 tools** and **9 workflow prompts**. The default `starter` profile lists **21**
+tools; discover the rest with `router_list_tools(pattern="robot_*", include_schema=True)`, call them through
+`router_call_tool`, or expose a group with `router_enable_tools(names="robotics")`.
+Set `OMNIVERSE_MCP_PROFILE=all` before an approved router restart to advertise everything.
+See [profiles and client examples](docs/USING_WITH_CODEX_AND_CLAUDE_PRO.md).
+
+The handoff modules now cover projects/layers/checkpoints, asset health/import, graph recipes and events,
+variants, performance, animation, robot imports/joints, sensors, pick-and-place script generation, and ROS 2
+checks. New live operations use the allowlisted `feature_call` RPC in **tier8-1**; pure planning and teaching
+operations run without Kit. Runtime-only tools report missing Kit capabilities rather than pretending to work.
+
+**Scene edit tools preview by default.** Only literal `dry_run=False` permits a write. Natural-language routes
+for the new tools always preview edits, even when their JSON contains false. Reading a saved `scene_file`
+cannot edit it. Pick-and-place code is generated as text and is never executed by its generation tool.
+Runtime robot motion, converter jobs and sensors still need verification in the running app after an approved
+bridge reload. Unit tests and standalone USD checks do not prove physical simulation or ROS connectivity.
+
+### Verification without starting apps
+
+From the workspace root, using the existing matching Python and dependencies:
+
+```powershell
+& 'C:/Program Files/Python312/python.exe' -I omniverse_scene_mcp/tools/run_tests.py -q
+& 'C:/Program Files/Python312/python.exe' -I omniverse_scene_mcp/tools/check_kit_usd.py isaacsim-6.1.0
+```
+
+The second command loads the installed USD 25.11 libraries into a separate Python process and runs the suite
+on temporary stages. It does not start Isaac, reload a bridge, or contact live MCP services. Tests also exercise
+fake bridge-reload scripts: their printed reload messages describe mocks, not the running apps.
+
 ## Running
 
 By default, `python -m omniverse_scene_mcp` uses the fake scene so it works
@@ -33,7 +65,7 @@ outside Kit.
 For the easiest full-stack startup from the repo root, use:
 
 ```powershell
-cd C:\Users\krngr\Downloads\Omniverse
+cd C:\Users\krngr\Omniverse
 .\start-omniverse.ps1
 ```
 
