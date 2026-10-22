@@ -7,8 +7,8 @@ Read C:\Users\krngr\Omniverse\AGENTS.md, then OMNIVERSE_WORKSPACE_CONTEXT.md, th
 I am a Python beginner learning OpenUSD for the NCP-OUSD exam, using Isaac Sim 6.1 and USD Composer.
 My custom MCP lives in omniverse_scene_mcp/ (router on http://127.0.0.1:9905/mcp).
 Work on git branch wip/round7-9-handoff. Keep the dry-run-by-default rule for every scene edit.
-Do not edit my scenes (isaacsim-mentorship/**, working_scene.usda, course scenes) and do not edit kit-app-template or kit-usd-agents.
-Ask before: reloading Isaac/Composer bridges, restarting the router, committing, pushing, installing anything.
+You (Codex) built the original setup (kit-app-template live bridge, start scripts, AGENTS.md), so you may edit any of it where needed. Claude only added the newer modules in omniverse_scene_mcp/ since then.
+Ask me before editing my own scene files (isaacsim-mentorship/**, working_scene.usda, course scenes), reloading Isaac/Composer bridges, restarting the router, pushing, or installing anything.
 Step 1: run the full test suite (see below) and tell me the result.
 Step 2: finish the unfinished list in this file, in order, smallest first.
 Explain things simply, one step at a time.
