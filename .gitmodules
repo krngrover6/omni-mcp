@@ -1,0 +1,6 @@
+[submodule "kit-app-template"]
+	path = kit-app-template
+	url = https://github.com/NVIDIA-Omniverse/kit-app-template
+[submodule "kit-usd-agents"]
+	path = kit-usd-agents
+	url = https://github.com/NVIDIA-Omniverse/kit-usd-agents
