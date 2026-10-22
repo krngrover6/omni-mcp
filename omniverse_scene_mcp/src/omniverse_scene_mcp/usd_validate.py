@@ -2,6 +2,11 @@
 
 Nothing here authors, fixes or saves. Every public function returns JSON-serializable data.
 Objective ids follow the NCP-OUSD study guide numbering (1.x Composition ... 8.x Visualization).
+
+Time budgets: validate/validate_file take deadline (a time.monotonic() value or a usd_insight.TimeBudget) or
+budget_ms, and also honor an ambient ``with usd_insight.TimeBudget(ms):``. The exam checks stop cooperatively and
+return partial results (truncated_by_time, time_budget); OpenUSD's validators are one uninterruptible C++ call, so
+under a budget they only start when the estimated cost fits the time left.
 """
 
 from __future__ import annotations
@@ -9,8 +14,11 @@ from __future__ import annotations
 import contextlib
 import math
 import re
+import time
 from collections.abc import Iterator
 from typing import Any
+
+from .usd_insight import TimeBudget, resolve_budget
 
 try:
     from pxr import Ar, Kind, Pcp, Sdf, Usd, UsdGeom, UsdShade, UsdUtils
@@ -28,6 +36,9 @@ _MAX_SPECS = 500_000
 _MAX_COMPOSITION_ERRORS = 5000
 _MAX_TEXT = 400
 _MAX_EXAMPLES = 5
+# Under a time budget, OpenUSD's validators (one C++ call) start only if a quick prim count, times this factor
+# (measured: validators ~13 us/prim vs ~0.5 us/prim to list prims), fits in the time left.
+_USD_VALIDATION_COST_FACTOR = 40.0
 
 _ABSOLUTE_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/])")
 _URI_SCHEME = re.compile(r"^([A-Za-z][A-Za-z0-9+.\-]+):")
@@ -163,18 +174,29 @@ def exam_rules() -> list[dict[str, Any]]:
     ]
 
 
-def validate(stage: Any, profile: str = "exam", max_issues: int = 200, *, max_prims: int = DEFAULT_MAX_PRIMS) -> dict[str, Any]:
+def validate(
+    stage: Any,
+    profile: str = "exam",
+    max_issues: int = 200,
+    *,
+    max_prims: int = DEFAULT_MAX_PRIMS,
+    deadline: Any = None,
+    budget_ms: float | None = None,
+) -> dict[str, Any]:
     """Validate an opened Usd.Stage without changing it.
 
     profile: 'exam' (lint checks tied to exam objectives), 'usd' (OpenUSD's UsdValidation, physics excluded)
     or 'all' (both, physics included). ok is False only when an error-severity issue was found.
+    deadline (time.monotonic() value or TimeBudget), budget_ms or an ambient TimeBudget bound the run; the result then
+    has truncated_by_time and time_budget, and a truncated run only covers what it reached.
     """
     if _PXR_IMPORT_ERROR is not None:
         raise ImportError("usd_validate needs the USD Python bindings (pxr)") from _PXR_IMPORT_ERROR
     profile = _normalize_profile(profile)
     if stage is None or not hasattr(stage, "GetRootLayer"):
         raise ValueError("validate() needs an opened Usd.Stage")
-    report = _Report(_clamp(max_issues, 0, MAX_ISSUES_LIMIT))
+    budget = resolve_budget(deadline, budget_ms, now=time.monotonic())
+    report = _Report(_clamp(max_issues, 0, MAX_ISSUES_LIMIT), budget)
     with _captured_diagnostics(report.notes, "while validating"):
         if profile in ("exam", "all"):
             _run_exam_checks(stage, report, _clamp(max_prims, 1, 10_000_000))
@@ -192,11 +214,14 @@ def validate_file(
     *,
     load_payloads: bool = True,
     max_prims: int = DEFAULT_MAX_PRIMS,
+    deadline: Any = None,
+    budget_ms: float | None = None,
 ) -> dict[str, Any]:
-    """Open a saved USD file, validate it and never save it."""
+    """Open a saved USD file, validate it and never save it (the time budget also counts the time to open it)."""
     profile = _normalize_profile(profile)
     if _PXR_IMPORT_ERROR is not None:
         return {"ok": False, "file": path, "error": f"USD Python bindings (pxr) are not available: {_PXR_IMPORT_ERROR}"}
+    budget = resolve_budget(deadline, budget_ms, now=time.monotonic())
     open_notes: list[str] = []
     load = Usd.Stage.LoadAll if load_payloads else Usd.Stage.LoadNone
     try:
@@ -206,7 +231,7 @@ def validate_file(
         return {"ok": False, "file": path, "error": _clip(f"Could not open the stage: {exc}")}
     if stage is None:
         return {"ok": False, "file": path, "error": "Could not open the stage."}
-    result = validate(stage, profile, max_issues, max_prims=max_prims)
+    result = validate(stage, profile, max_issues, max_prims=max_prims, deadline=budget)
     if not load_payloads:
         open_notes.append("Payloads were not loaded, so prims inside payloads were not checked.")
     result["notes"] = open_notes + result["notes"]
@@ -215,12 +240,28 @@ def validate_file(
 
 
 class _Report:
-    def __init__(self, max_issues: int) -> None:
+    def __init__(self, max_issues: int, budget: TimeBudget | None = None) -> None:
         self.max_issues = max_issues
         self.counts = {severity: 0 for severity in SEVERITIES}
         self.kept: dict[str, list[dict[str, Any]]] = {severity: [] for severity in SEVERITIES}
         self.validators_run: list[str] = []
         self.notes: list[str] = []
+        self.budget = budget
+        self.stopped: list[str] = []  # checks the time budget cut short
+        self.skipped: list[str] = []  # checks the time budget did not let start
+        self.prims_checked = 0
+        self.specs_scanned = 0
+
+    def out_of_time(self, check: str) -> bool:
+        """True (and check recorded as skipped) when the budget is already used up before check starts."""
+        if self.budget is None or not self.budget.expired():
+            return False
+        self.skipped.append(check)
+        return True
+
+    def stop_now(self) -> bool:
+        """Cheap in-loop check of the time budget."""
+        return self.budget is not None and self.budget.tick()
 
     def add(
         self,
@@ -255,10 +296,25 @@ class _Report:
         issues = [issue for severity in SEVERITIES for issue in self.kept[severity]][: self.max_issues]
         total = sum(self.counts.values())
         notes = list(self.notes)
+        time_note = None
+        truncated_by_time = bool(self.stopped or self.skipped)
+        if truncated_by_time:
+            parts = [f"{', '.join(self.stopped)} stopped early" if self.stopped else "",
+                     f"{', '.join(self.skipped)} did not run" if self.skipped else ""]
+            if any(name.startswith("exam:") for name in self.stopped + self.skipped):
+                coverage = (f"The exam issues cover only the {self.prims_checked} prim(s) and {self.specs_scanned} "
+                            "prim spec(s) checked, so ok=True only means no error was found in that part.")
+            else:
+                coverage = "ok=True only means no error was found by the checks that ran."
+            time_note = (
+                f"Stopped at the {self.budget.budget_ms:g} ms time budget: {'; '.join(part for part in parts if part)}. "
+                f"{coverage} Narrow the scene or allow more time."
+            )
+            notes.insert(0, time_note)
         if total > len(issues):
             notes.append(f"Showing {len(issues)} of {total} issues (errors first); raise max_issues to see more.")
         notes.append("Read-only: nothing was changed, fixed or saved.")
-        return {
+        result = {
             "ok": self.counts["error"] == 0,
             "profile": profile,
             "stage": _layer_name(stage.GetRootLayer(), full=True),
@@ -271,6 +327,14 @@ class _Report:
             "validators_run": list(self.validators_run),
             "notes": notes,
         }
+        if self.budget is not None:
+            result["truncated_by_time"] = truncated_by_time
+            result["time_budget"] = self.budget.report(
+                self.prims_checked, truncated_by_time, time_note,
+                prims_checked=self.prims_checked, specs_scanned=self.specs_scanned,
+                stopped_early=list(self.stopped), not_run=list(self.skipped),
+            )
+        return result
 
 
 def _run_exam_checks(stage: Any, report: _Report, max_prims: int) -> None:
@@ -302,6 +366,8 @@ def _check_stage_metadata(stage: Any, report: _Report) -> None:
 
 
 def _check_asset_paths(stage: Any, report: _Report, resolver: Any) -> None:
+    if report.out_of_time("exam:asset_paths"):
+        return
     report.validators_run.append("exam:asset_paths")
     schemes = {scheme.lower() for scheme in (Ar.GetRegisteredURISchemes() if hasattr(Ar, "GetRegisteredURISchemes") else [])}
     found: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -328,8 +394,15 @@ def _check_asset_paths(stage: Any, report: _Report, resolver: Any) -> None:
         if len(entry["sites"]) < _MAX_EXAMPLES:
             entry["sites"].append(site)
 
+    stopped = False
     for layer in _ordered_layers(stage):
-        for usage, site, authored in _layer_asset_paths(layer, budget):
+        if stopped or report.stop_now():
+            stopped = True
+            break
+        for usage, site, authored in _layer_asset_paths(layer, budget, report):
+            if report.stop_now():
+                stopped = True
+                break
             if any(token in authored for token in _TILE_TOKENS):
                 tiles += 1
                 continue
@@ -360,6 +433,9 @@ def _check_asset_paths(stage: Any, report: _Report, resolver: Any) -> None:
                 note("absolute_asset_path", layer, usage, site, authored, resolved=resolved)
             if "\\" in target:
                 note("asset_path_backslashes", layer, usage, site, authored, resolved=resolved)
+    report.specs_scanned = _MAX_SPECS - budget[0]
+    if stopped or (report.budget is not None and report.budget.exhausted):
+        report.stopped.append("exam:asset_paths")
 
     for (code, _identifier, authored), entry in found.items():
         layer = entry.pop("layer")
@@ -388,11 +464,14 @@ def _check_asset_paths(stage: Any, report: _Report, resolver: Any) -> None:
         report.notes.append(f"Asset path scan stopped after {_MAX_SPECS} prim specs.")
 
 
-def _layer_asset_paths(layer: Any, budget: list[int]) -> Iterator[tuple[str, str, str]]:
+def _layer_asset_paths(layer: Any, budget: list[int], report: _Report | None = None) -> Iterator[tuple[str, str, str]]:
+    """Asset paths authored in layer; budget[0] counts down prim specs, and report's time budget can stop the walk."""
     for sublayer in layer.subLayerPaths:
         yield "sublayer", "/", str(sublayer)
     stack = list(reversed(layer.pseudoRoot.nameChildren))
     while stack and budget[0] > 0:
+        if report is not None and report.stop_now():
+            return
         spec = stack.pop()
         budget[0] -= 1
         site = str(spec.path)
@@ -421,12 +500,17 @@ def _layer_asset_paths(layer: Any, budget: list[int]) -> Iterator[tuple[str, str
 
 
 def _check_composition_errors(stage: Any, report: _Report, resolver: Any) -> None:
+    if report.out_of_time("exam:composition_errors"):
+        return
     report.validators_run.append("exam:composition_errors")
     if not hasattr(stage, "GetCompositionErrors"):
         report.notes.append("This USD build has no Usd.Stage.GetCompositionErrors; reference target checks were skipped.")
         return
     seen: set[tuple[str, str]] = set()
     for error in list(stage.GetCompositionErrors())[:_MAX_COMPOSITION_ERRORS]:
+        if report.stop_now():
+            report.stopped.append("exam:composition_errors")
+            break
         kind = type(error).__name__
         message = str(error).strip()
         site = getattr(error, "rootSite", None)
@@ -474,6 +558,8 @@ class _PrimChecks:
         self.animated = 0
 
     def run(self, max_prims: int) -> None:
+        if self.report.out_of_time("exam:prim_checks"):
+            return
         self.report.validators_run.extend([
             "exam:model_hierarchy", "exam:extent", "exam:mesh_topology", "exam:primvars", "exam:material_bindings",
             "exam:instancing", "exam:layer_units", "exam:time_samples", "exam:visibility",
@@ -484,14 +570,24 @@ class _PrimChecks:
             example = instances[0].GetPath() if instances else prototype.GetPath()
             sources.append(((prototype.GetPath(), example, len(instances)), Usd.PrimRange(prototype)))
         visited = 0
+        stop = None
         for prototype, prims in sources:
             for prim in prims:
                 if visited >= max_prims:
-                    self.report.notes.append(f"Prim checks stopped after {max_prims} prims.")
-                    self._finish()
-                    return
+                    stop = "max_prims"
+                    break
+                if self.report.stop_now():  # extents/bounds and topology per prim: the costly part on big scenes
+                    stop = "time"
+                    break
                 visited += 1
                 self._visit(prim, prototype)
+            if stop:
+                break
+        if stop == "max_prims":
+            self.report.notes.append(f"Prim checks stopped after {max_prims} prims.")
+        elif stop == "time":
+            self.report.stopped.append("exam:prim_checks")
+        self.report.prims_checked = visited
         self._finish()
 
     def _add(self, code: str, path: str, message: str, prototype: Any = None, **details: Any) -> None:
@@ -717,6 +813,8 @@ class _PrimChecks:
                 continue
             stack = list(spec.nameChildren)
             while stack:
+                if self.report.stop_now():  # the prim loop records the stop on its next check
+                    break
                 child = stack.pop()
                 stack.extend(child.nameChildren)
                 keys = set(child.ListInfoKeys()) - {"specifier"}
@@ -817,12 +915,47 @@ def _validation_api() -> Any:
     return None
 
 
+def _usd_validation_fits(stage: Any, report: _Report) -> bool:
+    """Under a time budget, whether the uninterruptible UsdValidation call is expected to finish in the time left."""
+    budget = report.budget
+    if budget is None:
+        return True
+    if report.stopped or report.skipped:
+        reason = "the exam checks already ran out of time"
+    elif budget.expired():
+        reason = "the time budget was used up"
+    else:
+        # Listing the prims is ~40x cheaper than validating them: estimate from a quick count, which stops as soon as
+        # the estimate no longer fits.
+        started = budget.elapsed_ms()
+        allowed = budget.remaining_ms()
+        reason = None
+        for count, _prim in enumerate(stage.Traverse(), 1):
+            if count % 256 == 0 and (budget.elapsed_ms() - started) * _USD_VALIDATION_COST_FACTOR > allowed:
+                reason = f"the stage is too big to validate in the time left (stopped estimating after {count} prims)"
+                break
+        else:
+            if (budget.elapsed_ms() - started) * _USD_VALIDATION_COST_FACTOR > allowed:
+                reason = "the stage is too big to validate in the time left"
+    if reason is None:
+        return True
+    report.skipped.append("usd:validators")
+    report.notes.append(
+        f"OpenUSD's validators did not run: they are one uninterruptible C++ call and {reason}. "
+        "Allow more time, or validate the saved file outside Kit."
+    )
+    return False
+
+
 def _run_usd_validation(stage: Any, report: _Report, include_physics: bool) -> None:
     api = _validation_api()
     version = ".".join(str(part) for part in Usd.GetVersion())
     if api is None:
         report.notes.append(f"OpenUSD's UsdValidation framework is not available in USD {version}; only exam checks can run.")
         return
+    if not _usd_validation_fits(stage, report):
+        return
+    started = report.budget.elapsed_ms() if report.budget is not None else None
     try:
         registry = api.ValidationRegistry()
         names = sorted(
@@ -835,10 +968,18 @@ def _run_usd_validation(stage: Any, report: _Report, include_physics: bool) -> N
         report.notes.append(_clip(f"UsdValidation could not run in USD {version}: {exc}"))
         return
     report.validators_run.extend(names)
+    if started is not None and report.budget.expired():
+        report.notes.append(
+            f"OpenUSD's validators ran as one C++ call for {report.budget.elapsed_ms() - started:.0f} ms, "
+            "past the time budget."
+        )
     if not include_physics:
         report.notes.append("Physics validators were skipped; use profile='all' to include them.")
     severities = {"Error": "error", "Warn": "warning", "Info": "info"}
-    for error in errors:
+    for index, error in enumerate(errors):
+        if started is not None and index % 64 == 63 and report.budget.elapsed_ms() > report.budget.budget_ms * 1.5:
+            report.stopped.append("usd:results")  # past the budget by half again: stop converting results
+            break
         try:
             if error.HasNoError():
                 continue

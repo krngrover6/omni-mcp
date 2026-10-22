@@ -1,6 +1,11 @@
 """Read-only USD insight: stage, composition, value resolution, properties and bounds as JSON-safe dicts.
 
 Imports only pxr and the standard library so the same functions can run on a file stage or inside Kit.
+
+Time budgets: stage_info, properties and bounds accept budget_ms (or deadline=TimeBudget) and stop their traversal
+loops cooperatively, returning partial results marked truncated_by_time plus a time_budget record. Inside
+``with TimeBudget(ms):`` they (and usd_validate) use that ambient budget when none is passed; kit_rpc wraps live
+insight this way so a big scene cannot hold Kit's main thread.
 """
 
 from __future__ import annotations
@@ -10,9 +15,9 @@ from collections import Counter
 from typing import Any
 
 try:
-    from pxr import Kind, Sdf, Tf, Usd, UsdGeom
+    from pxr import Gf, Kind, Sdf, Tf, Usd, UsdGeom
 except ImportError as exc:  # pragma: no cover - depends on the local environment
-    Kind = Sdf = Tf = Usd = UsdGeom = None  # type: ignore[assignment]
+    Gf = Kind = Sdf = Tf = Usd = UsdGeom = None  # type: ignore[assignment]
     _PXR_IMPORT_ERROR: ImportError | None = exc
 else:
     _PXR_IMPORT_ERROR = None
@@ -26,6 +31,15 @@ MAX_LAYERS = 200
 MAX_TRAVERSAL = 200_000
 MAX_TYPE_BUCKETS = 50
 MAX_DEPTH = 8
+# Loops read the clock on every BUDGET_CHECK_EVERY-th TimeBudget.tick(), starting with the first.
+BUDGET_CHECK_EVERY = 16
+# With a budget, bounds fills the BBoxCache bottom-up and checks the budget between BBoxCache calls. A subtree gets
+# its own call once it holds at least the current batch size of unmeasured prims (smaller ones ride along with their
+# parent's call). The batch starts at BOUNDS_BATCH_PRIMS and is then sized from the measured cost per prim so one
+# call takes about BOUNDS_CALL_SHARE of the remaining budget: few calls (fast) when time is plentiful.
+BOUNDS_BATCH_PRIMS = 64
+BOUNDS_MAX_BATCH = 1_000_000
+BOUNDS_CALL_SHARE = 0.1
 
 LIVERPS = "Local, Inherits, VariantSets, rElocates, References, Payloads, Specializes"
 _LIVERPS_LETTERS = "LIVERPS"
@@ -55,6 +69,116 @@ _OPINION_PHRASES = {
 _UNHANDLED = object()
 
 
+class TimeBudget:
+    """A cooperative time limit for long read-only traversals, timed with pxr's Tf.Stopwatch.
+
+    Loops call tick() and stop with partial results once it returns True. ``with TimeBudget(3000):`` also makes it
+    the ambient budget that budget-aware functions here and in usd_validate use when no explicit budget is given.
+    The ambient stack is process-wide (not per thread): enter it only on the thread that runs the queries.
+    """
+
+    def __init__(self, budget_ms: float) -> None:
+        _require_pxr()
+        self.budget_ms = _budget_ms_value(budget_ms)
+        self.exhausted = self.budget_ms <= 0
+        self.truncated = False
+        self._ticks = 0
+        self._watch = Tf.Stopwatch()
+        self._watch.Start()
+
+    @classmethod
+    def until(cls, deadline: float, now: float) -> TimeBudget:
+        """A budget ending at deadline; deadline and now must come from one clock, e.g. time.monotonic()."""
+        for name, value in (("deadline", deadline), ("now", now)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                raise ValueError(f"{name} must be a finite clock value in seconds, e.g. from time.monotonic()")
+        return cls(max(0.0, (float(deadline) - float(now)) * 1000.0))
+
+    def elapsed_ms(self) -> float:
+        """Milliseconds since the budget started."""
+        self._watch.Stop()
+        seconds = self._watch.seconds
+        self._watch.Start()
+        return seconds * 1000.0
+
+    def remaining_ms(self) -> float:
+        return max(0.0, self.budget_ms - self.elapsed_ms())
+
+    def expired(self) -> bool:
+        """Read the clock now; once the budget is used up this stays True."""
+        if not self.exhausted and self.elapsed_ms() >= self.budget_ms:
+            self.exhausted = True
+        return self.exhausted
+
+    def tick(self) -> bool:
+        """Cheap per-iteration check that reads the clock on every BUDGET_CHECK_EVERY-th call."""
+        self._ticks += 1
+        if self.exhausted:
+            return True
+        if (self._ticks - 1) % BUDGET_CHECK_EVERY:
+            return False
+        return self.expired()
+
+    def report(self, processed: int, truncated: bool, note: str | None = None, **details: Any) -> dict[str, Any]:
+        """The time_budget record for a result; a truncated report also marks the budget truncated."""
+        if truncated:
+            self.truncated = True
+        default = "Stopped at the time budget; the results are partial." if truncated else "Finished within the time budget."
+        record: dict[str, Any] = {
+            "truncated_by_time": bool(truncated),
+            "elapsed_ms": round(self.elapsed_ms(), 1),
+            "budget_ms": round(self.budget_ms, 1),
+            "processed": int(processed),
+            "note": note or default,
+        }
+        record.update(_jsonable(details, MAX_ARRAY_ITEMS, 0))
+        return record
+
+    def __enter__(self) -> TimeBudget:
+        _ACTIVE_BUDGETS.append(self)
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        for index in range(len(_ACTIVE_BUDGETS) - 1, -1, -1):
+            if _ACTIVE_BUDGETS[index] is self:
+                del _ACTIVE_BUDGETS[index]
+                break
+
+
+_ACTIVE_BUDGETS: list[TimeBudget] = []
+
+
+def active_budget() -> TimeBudget | None:
+    """The innermost ``with TimeBudget(...)`` budget, or None."""
+    return _ACTIVE_BUDGETS[-1] if _ACTIVE_BUDGETS else None
+
+
+def resolve_budget(deadline: Any = None, budget_ms: float | None = None, *, now: float | None = None) -> TimeBudget | None:
+    """The tightest of deadline, budget_ms and the ambient budget, or None when there is no limit at all.
+
+    deadline is a TimeBudget (to share one limit across calls), or a clock value such as time.monotonic() + 2 when
+    now (read from the same clock) is also given; usd_insight never reads the system clock itself.
+    """
+    candidates: list[TimeBudget] = []
+    if isinstance(deadline, TimeBudget):
+        candidates.append(deadline)
+    elif deadline is not None:
+        if now is None:
+            raise TypeError(
+                "deadline must be a TimeBudget here, e.g. TimeBudget.until(deadline, time.monotonic()); "
+                "or pass budget_ms instead"
+            )
+        candidates.append(TimeBudget.until(deadline, now))
+    if budget_ms is not None:
+        candidates.append(TimeBudget(budget_ms))
+    ambient = active_budget()
+    if ambient is not None:
+        candidates.append(ambient)
+    if not candidates:
+        return None
+    return min(candidates, key=lambda budget: budget.remaining_ms())
+
+
 def to_jsonable(value: Any, max_items: int = MAX_ARRAY_ITEMS) -> Any:
     """Convert Gf/Vt/Sdf/Usd values to JSON-safe data.
 
@@ -63,25 +187,33 @@ def to_jsonable(value: Any, max_items: int = MAX_ARRAY_ITEMS) -> Any:
     return _jsonable(value, max_items, 0)
 
 
-def stage_info(stage: Any) -> dict[str, Any]:
-    """Summarize layers, stage metadata, prim census and model hierarchy."""
+def stage_info(stage: Any, *, deadline: TimeBudget | None = None, budget_ms: float | None = None) -> dict[str, Any]:
+    """Summarize layers, stage metadata, prim census and model hierarchy.
+
+    With budget_ms (or deadline, or an ambient TimeBudget) the layer walk and prim census stop at the limit and
+    the result carries truncated_by_time and time_budget; without one nothing changes.
+    """
     _require_pxr()
+    budget = resolve_budget(deadline, budget_ms)
     root = stage.GetRootLayer()
     session = stage.GetSessionLayer()
     stack_ids = {layer.identifier for layer in stage.GetLayerStack(True)}
     layers: list[dict[str, Any]] = []
     visited: set[str] = set()
+    layers_complete = True
     if session is not None:
-        _walk_layers(stage, session, "session", None, None, 0, None, layers, frozenset(), visited)
-    _walk_layers(stage, root, "root", None, None, 0, None, layers, frozenset(), visited)
+        layers_complete = _walk_layers(stage, session, "session", None, None, 0, None, layers, frozenset(), visited, budget)
+    if layers_complete:
+        layers_complete = _walk_layers(stage, root, "root", None, None, 0, None, layers, frozenset(), visited, budget)
     for entry in layers:
         entry["in_layer_stack"] = entry["identifier"] in stack_ids
 
     used = [layer.identifier for layer in stage.GetUsedLayers(True)]
     target = stage.GetEditTarget().GetLayer()
     default_prim = stage.GetDefaultPrim()
-    census, models = _census(stage)
-    return {
+    census, models, census_stopped = _census(stage, budget)
+    errors_skipped = budget is not None and budget.expired()
+    result = {
         "root_layer": _layer_record(stage, root),
         "session_layer": {
             "present": session is not None,
@@ -111,13 +243,32 @@ def stage_info(stage: Any) -> dict[str, Any]:
         "has_authored_time_code_range": stage.HasAuthoredTimeCodeRange(),
         "prims": census,
         "model_hierarchy": models,
-        "composition_errors": _composition_errors(stage),
+        "composition_errors": [] if errors_skipped else _composition_errors(stage),
     }
+    if budget is not None:
+        parts = []
+        if not layers_complete:
+            parts.append(f"layer_stack lists only the first {len(layers)} layer(s)")
+        if census_stopped:
+            parts.append(f"the prim census and model hierarchy cover only the first {census['total']} prim(s)")
+        if errors_skipped:
+            parts.append("composition errors were not collected")
+        truncated = bool(parts)
+        note = _budget_note(budget, parts) if truncated else None
+        result["truncated_by_time"] = truncated
+        result["time_budget"] = budget.report(census["total"], truncated, note, layers_walked=len(layers))
+    return result
 
 
-def composition(stage: Any, prim_path: str) -> dict[str, Any]:
-    """Explain how a prim is composed: arcs, variant sets, instancing and the prim stack."""
+def composition(
+    stage: Any, prim_path: str, *, deadline: TimeBudget | None = None, budget_ms: float | None = None
+) -> dict[str, Any]:
+    """Explain how a prim is composed: arcs, variant sets, instancing and the prim stack.
+
+    One prim, capped at MAX_LIST_ITEMS arcs and specs, so it never stops early; under a budget it only reports it.
+    """
     prim = _require_prim(stage, prim_path)
+    budget = resolve_budget(deadline, budget_ms)
     arcs, arcs_truncated = _arc_records(prim)
     pairs = _prim_stack(prim)
     prim_stack = []
@@ -136,7 +287,7 @@ def composition(stage: Any, prim_path: str) -> dict[str, Any]:
                 "fields": sorted(str(key) for key in spec.ListInfoKeys())[:MAX_LIST_ITEMS],
             }
         )
-    return {
+    result = {
         "prim_path": str(prim.GetPath()),
         "type_name": prim.GetTypeName() or None,
         "specifier": _enum_word(prim.GetSpecifier(), "Specifier"),
@@ -154,11 +305,28 @@ def composition(stage: Any, prim_path: str) -> dict[str, Any]:
         "prim_stack_count": len(pairs),
         "strength_order": LIVERPS,
     }
+    if budget is not None:
+        result["truncated_by_time"] = False
+        result["time_budget"] = budget.report(len(arcs) + len(prim_stack), False)
+    return result
 
 
-def explain_value(stage: Any, prim_path: str, attribute: str | None = None, time: Any = None) -> dict[str, Any]:
-    """Resolve an attribute and explain which opinion wins and why (LIVERPS, layer order, time)."""
+def explain_value(
+    stage: Any,
+    prim_path: str,
+    attribute: str | None = None,
+    time: Any = None,
+    *,
+    deadline: TimeBudget | None = None,
+    budget_ms: float | None = None,
+) -> dict[str, Any]:
+    """Resolve an attribute and explain which opinion wins and why (LIVERPS, layer order, time).
+
+    One attribute, capped at MAX_LIST_ITEMS specs, so it never stops early (a partial property stack would give a
+    wrong 'why'); under a budget it only reports it.
+    """
     prim, attr = _require_attribute(stage, prim_path, attribute)
+    budget = resolve_budget(deadline, budget_ms)
     time_code = _time_code(time)
     numeric = not time_code.IsDefault()
     info = attr.GetResolveInfo(time_code)
@@ -230,6 +398,9 @@ def explain_value(stage: Any, prim_path: str, attribute: str | None = None, time
         "strength_order": LIVERPS,
     }
     result["why"] = _why(stage, result, numeric, time_code)
+    if budget is not None:
+        result["truncated_by_time"] = False
+        result["time_budget"] = budget.report(len(stack), False)
     return result
 
 
@@ -239,17 +410,40 @@ def properties(
     include_values: bool = True,
     time: Any = None,
     authored_only: bool = False,
+    *,
+    deadline: TimeBudget | None = None,
+    budget_ms: float | None = None,
 ) -> dict[str, Any]:
-    """List attributes, relationships and prim metadata with capped values."""
+    """List attributes, relationships and prim metadata with capped values (time-budgeted like stage_info)."""
     prim = _require_prim(stage, prim_path)
+    budget = resolve_budget(deadline, budget_ms)
     time_code = _time_code(time)
+    examined = 0
+    stopped = False
     attributes = []
-    all_attributes = [attr for attr in prim.GetAttributes() if not authored_only or attr.IsAuthored()]
-    for attr in all_attributes[:MAX_PROPERTIES]:
-        attributes.append(_attribute_record(attr, time_code, include_values))
+    attribute_count = 0
+    for attr in prim.GetAttributes():
+        if budget is not None and budget.tick():
+            stopped = True
+            break
+        examined += 1
+        if authored_only and not attr.IsAuthored():
+            continue
+        attribute_count += 1
+        if len(attributes) < MAX_PROPERTIES:
+            attributes.append(_attribute_record(attr, time_code, include_values))
     relationships = []
-    all_relationships = [rel for rel in prim.GetRelationships() if not authored_only or rel.IsAuthored()]
-    for rel in all_relationships[:MAX_PROPERTIES]:
+    relationship_count = 0
+    for rel in [] if stopped else prim.GetRelationships():
+        if budget is not None and budget.tick():
+            stopped = True
+            break
+        examined += 1
+        if authored_only and not rel.IsAuthored():
+            continue
+        relationship_count += 1
+        if len(relationships) >= MAX_PROPERTIES:
+            continue
         targets = [str(path) for path in rel.GetTargets()]
         relationships.append(
             {
@@ -260,18 +454,28 @@ def properties(
                 "target_count": len(targets),
             }
         )
-    return {
+    result = {
         "prim_path": str(prim.GetPath()),
         "type_name": prim.GetTypeName() or None,
         "time": _time_label(time_code),
         "attributes": attributes,
-        "attribute_count": len(all_attributes),
-        "attributes_truncated": len(all_attributes) > MAX_PROPERTIES,
+        "attribute_count": attribute_count,
+        "attributes_truncated": attribute_count > MAX_PROPERTIES,
         "relationships": relationships,
-        "relationship_count": len(all_relationships),
-        "relationships_truncated": len(all_relationships) > MAX_PROPERTIES,
+        "relationship_count": relationship_count,
+        "relationships_truncated": relationship_count > MAX_PROPERTIES,
         "metadata": _prim_metadata(prim),
     }
+    if budget is not None:
+        note = None
+        if stopped:
+            note = _budget_note(budget, [
+                f"only the first {examined} properties were examined, so the attribute and relationship lists and "
+                "counts are incomplete"
+            ])
+        result["truncated_by_time"] = stopped
+        result["time_budget"] = budget.report(examined, stopped, note)
+    return result
 
 
 def bounds(
@@ -280,9 +484,17 @@ def bounds(
     purposes: tuple[str, ...] | list[str] = ("default", "render"),
     time: Any = None,
     use_extents_hint: bool = False,
+    *,
+    deadline: TimeBudget | None = None,
+    budget_ms: float | None = None,
 ) -> dict[str, Any]:
-    """World-space bounds via UsdGeom.BBoxCache, authored versus computed extent, visibility and purpose."""
+    """World-space bounds via UsdGeom.BBoxCache, authored versus computed extent, visibility and purpose.
+
+    With a time budget the cache is filled subtree by subtree; if time runs out the bounds cover only the finished
+    subtrees (truncated_by_time, time_budget.processed = prims measured) instead of blocking until the end.
+    """
     prim = _require_prim(stage, prim_path)
+    budget = resolve_budget(deadline, budget_ms)
     time_code = _time_code(time)
     tokens = {
         "default": UsdGeom.Tokens.default_,
@@ -295,26 +507,45 @@ def bounds(
     if unknown or not names:
         raise ValueError(f"Unknown purposes {unknown}; use any of default, render, proxy, guide.")
     cache = UsdGeom.BBoxCache(time_code, [tokens[name] for name in names], useExtentsHint=use_extents_hint)
+    complete, measured, partial = (True, 0, None) if budget is None else _fill_bbox_cache(cache, prim, time_code, budget)
     result: dict[str, Any] = {
         "prim_path": str(prim.GetPath()),
         "time": _time_label(time_code),
         "purposes": names,
-        "world_bound": _range_record(cache.ComputeWorldBound(prim).ComputeAlignedRange()),
-        "local_bound": _range_record(cache.ComputeLocalBound(prim).ComputeAlignedRange()),
-        "untransformed_bound": _range_record(cache.ComputeUntransformedBound(prim).ComputeAlignedRange()),
-        "imageable": prim.IsA(UsdGeom.Imageable),
-        "boundable": prim.IsA(UsdGeom.Boundable),
     }
     notes: list[str] = []
+    budget_parts: list[str] = []
+    if complete:
+        result["world_bound"] = _range_record(cache.ComputeWorldBound(prim).ComputeAlignedRange())
+        result["local_bound"] = _range_record(cache.ComputeLocalBound(prim).ComputeAlignedRange())
+        result["untransformed_bound"] = _range_record(cache.ComputeUntransformedBound(prim).ComputeAlignedRange())
+    else:
+        # Every finished subtree's bound is in this prim's space (untransformed); add its own and its world transform.
+        xform_cache = UsdGeom.XformCache(time_code)
+        local_matrix = xform_cache.GetLocalTransformation(prim)[0]
+        world_matrix = xform_cache.GetLocalToWorldTransform(prim)
+        for key, matrix in (("world_bound", world_matrix), ("local_bound", local_matrix), ("untransformed_bound", None)):
+            box = partial if matrix is None else Gf.BBox3d(partial.GetRange(), partial.GetMatrix() * matrix)
+            result[key] = dict(_range_record(box.ComputeAlignedRange()), partial=True)
+        budget_parts.append(
+            f"world_bound, local_bound and untransformed_bound include only the {measured} prim(s) measured so far, "
+            "so the real bounds may be larger"
+        )
+    result["imageable"] = prim.IsA(UsdGeom.Imageable)
+    result["boundable"] = prim.IsA(UsdGeom.Boundable)
     extent: dict[str, Any] = {"authored": None, "computed": None, "matches": None}
     if result["boundable"]:
         boundable = UsdGeom.Boundable(prim)
         extent_attr = boundable.GetExtentAttr()
         authored = extent_attr.Get(time_code) if extent_attr.HasAuthoredValue() else None
-        try:
-            computed = UsdGeom.Boundable.ComputeExtentFromPlugins(boundable, time_code)
-        except Exception:
-            computed = None
+        computed = None
+        if budget is not None and budget.expired():
+            budget_parts.append("the extent was not recomputed from the geometry")
+        else:
+            try:
+                computed = UsdGeom.Boundable.ComputeExtentFromPlugins(boundable, time_code)
+            except Exception:
+                computed = None
         extent["authored"] = to_jsonable(authored)
         extent["computed"] = to_jsonable(computed)
         if authored is not None and computed is not None:
@@ -359,10 +590,101 @@ def bounds(
     else:
         result["visibility"] = None
         result["purpose"] = None
+    if budget is not None and budget_parts:
+        notes.insert(0, _budget_note(budget, budget_parts))
     if result["world_bound"]["empty"] and not notes:
         notes.append("The bound is empty: nothing below this prim is boundable geometry with the included purposes.")
     result["notes"] = notes
+    if budget is not None:
+        truncated = bool(budget_parts)
+        result["truncated_by_time"] = truncated
+        result["time_budget"] = budget.report(measured, truncated, notes[0] if truncated else None)
     return result
+
+
+def _fill_bbox_cache(cache: Any, prim: Any, time_code: Any, budget: TimeBudget) -> tuple[bool, int, Any]:
+    """Fill cache bottom-up in batches of subtrees, checking budget between BBoxCache calls.
+
+    Returns (complete, prims measured, partial bound): the partial bound combines the finished subtrees in prim's
+    untransformed space and is None when complete. Each open level is [unmeasured prims below it, all prims below
+    it, finished (prim, size, bound) subtrees below it whose ancestors are not measured yet].
+    """
+    root_path = prim.GetPath()
+    predicate = Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate) if prim.IsInstanceProxy() else Usd.PrimDefaultPredicate
+    levels: list[list[Any]] = [[0, 0, []]]
+    batch = BOUNDS_BATCH_PRIMS
+    spent_ms = 0.0
+    computed = 0
+    iterator = iter(Usd.PrimRange.PreAndPostVisit(prim, predicate))
+    for current in iterator:
+        if not iterator.IsPostVisit():
+            if budget.tick():
+                return _partial_bbox(levels, root_path, time_code)
+            levels.append([0, 0, []])
+            continue
+        level = levels.pop()
+        parent = levels[-1]
+        unmeasured, total = 1 + level[0], 1 + level[1]
+        is_root = current.GetPath() == root_path
+        # A crowded parent (many unmeasured prims already) measures its bigger children one by one instead.
+        crowded = parent[0] >= batch and unmeasured >= BOUNDS_BATCH_PRIMS
+        if not (is_root or unmeasured >= batch or crowded):
+            parent[0] += unmeasured
+            parent[1] += total
+            parent[2].extend(level[2])
+            continue
+        if budget.expired():
+            levels.append(level)
+            return _partial_bbox(levels, root_path, time_code)
+        started = budget.elapsed_ms()
+        bound = cache.ComputeUntransformedBound(current) if is_root else cache.ComputeRelativeBound(current, prim)
+        spent_ms += budget.elapsed_ms() - started
+        computed += unmeasured
+        parent[1] += total
+        parent[2].append((current, total, bound))
+        per_prim_ms = max(spent_ms / computed, 0.0005)
+        batch = int(min(BOUNDS_MAX_BATCH, max(BOUNDS_BATCH_PRIMS, budget.remaining_ms() * BOUNDS_CALL_SHARE / per_prim_ms)))
+    if levels[0][2]:
+        return True, levels[0][2][0][1], None
+    if budget.expired():  # the range skipped the prim itself (for example an inactive prim)
+        return False, 0, Gf.BBox3d()
+    cache.ComputeUntransformedBound(prim)
+    return True, 1, None
+
+
+def _partial_bbox(levels: list[list[Any]], root_path: Any, time_code: Any) -> tuple[bool, int, Any]:
+    combined = Gf.BBox3d()
+    measured = 0
+    for _unmeasured, _total, finished in levels:
+        for prim, size, bound in finished:
+            measured += size
+            if not _hidden_below(prim, root_path, time_code):
+                combined = Gf.BBox3d.Combine(combined, bound)
+    return False, measured, combined
+
+
+def _hidden_below(prim: Any, root_path: Any, time_code: Any) -> bool:
+    """True when prim or an ancestor below root_path authors visibility = invisible, which BBoxCache leaves out."""
+    current = prim
+    while current and current.GetPath() != root_path:
+        if current.IsA(UsdGeom.Imageable):
+            if UsdGeom.Imageable(current).GetVisibilityAttr().Get(time_code) == UsdGeom.Tokens.invisible:
+                return True
+        current = current.GetParent()
+    return False
+
+
+def _budget_ms_value(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"budget_ms must be a number of milliseconds, not {type(value).__name__}")
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise ValueError("budget_ms must be a finite number of milliseconds, zero or more")
+    return number
+
+
+def _budget_note(budget: TimeBudget, parts: list[str]) -> str:
+    return f"Stopped at the {budget.budget_ms:g} ms time budget: {'; '.join(parts)}. Narrow the query or allow more time."
 
 
 def _require_pxr() -> None:
@@ -598,17 +920,21 @@ def _walk_layers(
     out: list[dict[str, Any]],
     ancestors: frozenset[str],
     visited: set[str],
-) -> None:
+    budget: TimeBudget | None = None,
+) -> bool:
     """Walk sublayers depth-first. Only a layer that is its own ancestor is a cycle; a layer reached again through
-    another parent (a diamond, which Pcp composes fine) is marked 'repeated' and walked again, as Pcp lists it."""
+    another parent (a diamond, which Pcp composes fine) is marked 'repeated' and walked again, as Pcp lists it.
+    Returns False when the time budget ran out before the walk finished."""
     if len(out) > MAX_LAYERS:
-        return
+        return True
+    if budget is not None and budget.tick():
+        return False
     record = _layer_record(stage, layer)
     record.update(role=role, authored_path=authored_path, depth=depth, parent=parent, offset=_offset(offset), missing=False)
     out.append(record)
     if layer.identifier in ancestors:
         record["cycle"] = True
-        return
+        return True
     if layer.identifier in visited:
         record["repeated"] = True
     visited.add(layer.identifier)
@@ -616,7 +942,9 @@ def _walk_layers(
     for sub_path, sub_offset in zip(layer.subLayerPaths, layer.subLayerOffsets):
         sub_layer = Sdf.Layer.FindRelativeToLayer(layer, sub_path)
         if sub_layer is not None:
-            _walk_layers(stage, sub_layer, "sublayer", sub_path, sub_offset, depth + 1, layer.identifier, out, inner, visited)
+            args = (stage, sub_layer, "sublayer", sub_path, sub_offset, depth + 1, layer.identifier, out, inner, visited)
+            if not _walk_layers(*args, budget):
+                return False
             continue
         identifier = Sdf.ComputeAssetPathRelativeToLayer(layer, sub_path) or sub_path
         muted = bool(stage.IsLayerMuted(identifier) or stage.IsLayerMuted(sub_path))
@@ -636,9 +964,10 @@ def _walk_layers(
                 "missing": not muted,
             }
         )
+    return True
 
 
-def _census(stage: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+def _census(stage: Any, budget: TimeBudget | None = None) -> tuple[dict[str, Any], dict[str, Any], bool]:
     by_type: Counter[str] = Counter()
     by_specifier: Counter[str] = Counter()
     by_kind: Counter[str] = Counter()
@@ -646,9 +975,13 @@ def _census(stage: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     models: list[dict[str, str]] = []
     broken: list[dict[str, str]] = []
     truncated = False
+    stopped = False
     for prim in Usd.PrimRange.Stage(stage, Usd.PrimAllPrimsPredicate):
         if counts["total"] >= MAX_TRAVERSAL:
             truncated = True
+            break
+        if budget is not None and budget.tick():
+            stopped = True
             break
         counts["total"] += 1
         by_type[prim.GetTypeName() or "(typeless)"] += 1
@@ -690,7 +1023,10 @@ def _census(stage: Any) -> tuple[dict[str, Any], dict[str, Any]]:
         "broken_model_kinds": broken,
         "note": "broken_model_kinds lists prims with a model kind whose ancestors are not all group/assembly, so IsModel() is False.",
     }
-    return census, hierarchy
+    if budget is not None:
+        census["truncated_by_time"] = stopped
+        hierarchy["truncated_by_time"] = stopped
+    return census, hierarchy, stopped
 
 
 def _composition_errors(stage: Any) -> list[str]:

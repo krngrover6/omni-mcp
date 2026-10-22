@@ -8,6 +8,32 @@ import re
 from typing import Any
 
 from .bridge import INSIGHT_QUERIES, ChangeRecord, PrimRecord, SceneBridge, unsupported_result
+from .fake_bridge import SAVE_NOTE
+
+# The SceneBridge protocol methods every service call relies on; swap_bridge refuses an object without them.
+_BRIDGE_METHODS: tuple[str, ...] = (
+    "ping",
+    "snapshot",
+    "get_selection",
+    "set_selection",
+    "get_prim",
+    "list_children",
+    "create_prim",
+    "delete_prim",
+    "duplicate_prim",
+    "reparent_prim",
+    "rename_prim",
+    "move_prim",
+    "set_material",
+    "get_variant_selections",
+    "set_variant_selection",
+    "get_timeline_state",
+    "set_timeline_time",
+    "play_timeline",
+    "stop_timeline",
+    "find_prims",
+    "save_scene",
+)
 
 
 @dataclass(slots=True)
@@ -23,19 +49,43 @@ class SceneMCPService:
 
     def __init__(self, bridge: SceneBridge, backend_info: dict[str, Any] | None = None) -> None:
         self._bridge = bridge
-        self._backend_info = dict(backend_info) if backend_info else {
-            "mode": "direct",
-            "bridge": type(bridge).__name__,
-            "endpoint": getattr(bridge, "endpoint", None),
-            "reason": "Service built directly around a bridge, not through runtime",
-            "silent_fallback": False,
-            "warnings": [],
-        }
+        self._backend_info = (
+            dict(backend_info)
+            if backend_info
+            else _direct_backend_info(bridge, "Service built directly around a bridge, not through runtime")
+        )
 
     @property
     def backend_info(self) -> dict[str, Any]:
         """How the scene bridge was chosen: mode, bridge class, endpoint, reason and warnings."""
         return {**self._backend_info, "warnings": list(self._backend_info.get("warnings", []))}
+
+    # --- bridge swapping (runtime.switch_scene_target: Composer <-> Isaac Sim <-> fake without a restart) --------
+
+    def bridge_info(self) -> dict[str, Any]:
+        """The bridge this service uses right now: backend_info with the live class and endpoint; never calls it."""
+        info = self.backend_info
+        info["bridge"] = type(self._bridge).__name__
+        endpoint = getattr(self._bridge, "endpoint", None)
+        info["endpoint"] = endpoint if isinstance(endpoint, str) else None
+        return info
+
+    def swap_bridge(self, bridge: SceneBridge, backend_info: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Send every later call to another scene bridge; return the previous bridge_info().
+
+        The router and server tools hold this same service, so they switch with it (no restart). The old bridge is
+        dropped, not closed; nothing is sent to either bridge. Raises TypeError, changing nothing, when bridge lacks a
+        basic SceneBridge method. A call already running may finish on the old bridge.
+        """
+        missing = [name for name in _BRIDGE_METHODS if not callable(getattr(bridge, name, None))]
+        if bridge is None or missing:
+            raise TypeError(f"{type(bridge).__name__} is not a scene bridge; missing {missing[:5]}")
+        previous = self.bridge_info()
+        self._backend_info = (
+            dict(backend_info) if backend_info else _direct_backend_info(bridge, "Bridge swapped in with swap_bridge")
+        )
+        self._bridge = bridge
+        return previous
 
     def ping(self) -> dict[str, Any]:
         return {"status": self._bridge.ping()}
@@ -415,6 +465,148 @@ class SceneMCPService:
             dry_run,
         )
 
+    # --- safe attribute/material edits and undo (RPC tier3-1; the fake scene does them in memory) ---------------
+
+    def set_attribute(
+        self,
+        path: str,
+        name: str,
+        value: Any,
+        time: float | None = None,
+        create_type: str | None = None,
+        dry_run: bool = True,
+    ) -> OperationResult:
+        """Set one attribute on the scene; dry_run (the default) previews the coerced value and what wins after it.
+
+        time=None sets the default value, a number writes a time sample; create_type (an Sdf type name such as
+        'float' or 'color3f') creates a missing custom attribute. Bridge refusals (missing prim, value of the wrong
+        type) come back as ok=False; only an empty path or name, or value=None, raises ValueError.
+        """
+        dry_run = dry_run is not False  # only an explicit False authors (None, 0 and [] stay a preview)
+        _require_text(path, "Prim path")
+        _require_text(name, "Attribute name")
+        if value is None:
+            raise ValueError("value is required (None cannot be authored as an attribute value)")
+        options = _without_none(time=time, create_type=create_type)
+        return self._live_authoring(
+            "set_attribute",
+            path,
+            f"Set {name} on {path} to {_short(value)}",
+            {"name": name, "value": value, **options},
+            lambda author: author(path, name, value, dry_run=dry_run, **options),
+            dry_run,
+        )
+
+    def create_material(
+        self,
+        path: str,
+        diffuse_color: tuple[float, float, float] | str | None = None,
+        roughness: float | None = None,
+        metallic: float | None = None,
+        opacity: float | None = None,
+        emissive_color: tuple[float, float, float] | str | None = None,
+        ior: float | None = None,
+        dry_run: bool = True,
+        *,
+        create_parent: bool = True,
+    ) -> OperationResult:
+        """Create a UsdPreviewSurface material at path; dry_run (the default) previews the material and its inputs.
+
+        Only the given inputs are authored. create_parent (on by default) also plans a missing direct parent such
+        as /World/Looks as a Scope; the preview lists it under would_create.creates_parent.
+        """
+        dry_run = dry_run is not False  # only an explicit False authors (None, 0 and [] stay a preview)
+        _require_text(path, "Material path")
+        options = _without_none(
+            diffuse_color=diffuse_color,
+            roughness=roughness,
+            metallic=metallic,
+            opacity=opacity,
+            emissive_color=emissive_color,
+            ior=ior,
+        )
+        if create_parent is True:
+            options["create_parent"] = True
+        return self._live_authoring(
+            "create_material",
+            path,
+            f"Create material {path}",
+            dict(options),
+            lambda author: author(path, dry_run=dry_run, **options),
+            dry_run,
+        )
+
+    def bind_material(
+        self,
+        prim_path: str,
+        material_path: str,
+        strength: str | None = None,
+        purpose: str | None = None,
+        dry_run: bool = True,
+    ) -> OperationResult:
+        """Bind a material to a prim; dry_run (the default) previews the binding and the material it resolves to.
+
+        strength: weakerThanDescendants (default) or strongerThanDescendants; purpose: allPurpose (default), preview
+        or full. On a bridge that predates bind_material, a plain binding (no strength or purpose) falls back to the
+        basic 'material' method (set_material); the result then says fallback='set_material'.
+        """
+        dry_run = dry_run is not False  # only an explicit False authors (None, 0 and [] stay a preview)
+        _require_text(prim_path, "Prim path")
+        _require_text(material_path, "Material path")
+        options = _without_none(strength=strength, purpose=purpose)
+        result = self._live_authoring(
+            "bind_material",
+            prim_path,
+            f"Bind {material_path} to {prim_path}",
+            {"material_path": material_path, **options},
+            lambda author: author(prim_path, material_path, dry_run=dry_run, **options),
+            dry_run,
+        )
+        if result.ok or not result.payload.get("needs_bridge_update") or options:
+            return result
+        fallback = self.set_material(prim_path, material_path, dry_run=dry_run)
+        fallback.payload = {
+            **fallback.payload,
+            "fallback": "set_material",
+            "note": "This scene bridge has no bind_material yet, so the basic material binding was used (no "
+            "strength, purpose or binding preview); reload the bridge for the full preview.",
+        }
+        return fallback
+
+    def undo_last(self, dry_run: bool = True) -> dict[str, Any]:
+        """Undo the newest MCP edit the scene bridge recorded; dry_run (the default) only says what would be undone.
+
+        Saving is not undoable: undo reverts the open layers in memory, so save again to write the reverted state.
+        Never raises: a bridge without undo returns needs_bridge_update.
+        """
+        dry = dry_run is not False
+        payload = self._call_undo("undo_last", lambda undo: undo(dry_run=dry))
+        payload.setdefault("dry_run", dry)
+        return payload
+
+    def undo_history(self, limit: int = 20) -> dict[str, Any]:
+        """The newest recorded MCP edits (newest first, 1-50); read-only and never raises."""
+        try:
+            count = max(1, min(int(limit), 50))
+        except (TypeError, ValueError):
+            count = 20
+        return self._call_undo("undo_history", lambda history: history(count))
+
+    def _call_undo(self, method: str, call: Callable[[Callable[..., Any]], Any]) -> dict[str, Any]:
+        runner = getattr(self._bridge, method, None)  # one of the two fixed undo names, never user input
+        if not callable(runner):
+            payload = self._bridge_lacks(method)
+        else:
+            try:
+                result = call(runner)
+            except Exception as exc:  # noqa: BLE001 - a down bridge or refused undo is reported, not raised
+                result = {"ok": False, "method": method, "message": _error_text(exc)}
+            payload = dict(result) if isinstance(result, dict) else {"ok": True, "result": result}
+        payload.setdefault("ok", True)
+        payload.setdefault("note", SAVE_NOTE)
+        payload["action"] = method
+        return payload
+
     def _live_authoring(
         self,
         method: str,
@@ -441,7 +633,8 @@ class SceneMCPService:
         name = type(self._bridge).__name__
         return unsupported_result(
             method,
-            f"The {name} scene bridge has no {method}(); connect an up-to-date live Isaac Sim bridge.",
+            f"The {name} scene bridge has no {method}(); connect an up-to-date live bridge (Isaac Sim: run "
+            "isaacsim-study/reload_mcp_bridge.py; Composer: run composer-study/reload_composer_bridge.py).",
             needs_bridge_update=True,
             bridge=name,
         )
@@ -475,6 +668,17 @@ class SceneMCPService:
         return f"{parent}/{new_name}" if parent else f"/{new_name}"
 
 
+def _direct_backend_info(bridge: Any, reason: str) -> dict[str, Any]:
+    return {
+        "mode": "direct",
+        "bridge": type(bridge).__name__,
+        "endpoint": getattr(bridge, "endpoint", None),
+        "reason": reason,
+        "silent_fallback": False,
+        "warnings": [],
+    }
+
+
 def _layer_key(path: str) -> str:
     """Comparable form of a layer identifier or file path: no file: prefix, forward slashes, lower case."""
     text = path.strip()
@@ -495,6 +699,11 @@ def _require_text(value: Any, label: str) -> None:
 
 def _without_none(**values: Any) -> dict[str, Any]:
     return {key: value for key, value in values.items() if value is not None}
+
+
+def _short(value: Any, limit: int = 80) -> str:
+    text = repr(value)
+    return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
 def _error_text(exc: Exception) -> str:

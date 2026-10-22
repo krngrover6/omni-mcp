@@ -10,9 +10,10 @@ from pathlib import Path
 try:
     from pxr import Gf, Sdf, Usd, Vt
 except ImportError:  # pragma: no cover - depends on the local environment
-    import pytest
+    import unittest
 
-    pytest.skip("USD Python bindings (pxr) are not installed", allow_module_level=True)
+    # unittest.SkipTest at import is a module skip for pytest and tools/run_tests.py alike, with or without pytest.
+    raise unittest.SkipTest("USD Python bindings (pxr) are not installed")
 
 from omniverse_scene_mcp import file_stage, usd_insight
 
@@ -740,3 +741,179 @@ def test_stage_info_marks_diamond_sublayers_repeated_not_cycles():
     with _stage_from(cyclic) as stage:
         layers = usd_insight.stage_info(stage)["layer_stack"]
         assert any(entry.get("cycle") for entry in layers)
+
+
+# --- cooperative time budgets ------------------------------------------------------------------------------------
+
+BUDGET_TOTAL = 1 + 200 + 200 * 100  # /World, 200 groups, 100 cubes each
+
+
+def _translate(spec, offset):
+    attr = Sdf.AttributeSpec(spec, "xformOp:translate", Sdf.ValueTypeNames.Double3)
+    attr.default = Gf.Vec3d(*offset)
+    order = Sdf.AttributeSpec(spec, "xformOpOrder", Sdf.ValueTypeNames.TokenArray, variability=Sdf.VariabilityUniform)
+    order.default = Vt.TokenArray(["xformOp:translate"])
+
+
+def _budget_stage(groups=200, per=100):
+    """In-memory /World (moved up 10 in y) > G<i> (x = 3 * i) > C<j> cubes with authored extents: 20,201 prims."""
+    layer = Sdf.Layer.CreateAnonymous(".usda")
+    with Sdf.ChangeBlock():
+        world = Sdf.PrimSpec(layer, "World", Sdf.SpecifierDef, "Xform")
+        _translate(world, (0.0, 10.0, 0.0))
+        for group_index in range(groups):
+            group = Sdf.PrimSpec(world, f"G{group_index}", Sdf.SpecifierDef, "Xform")
+            _translate(group, (3.0 * group_index, 0.0, 0.0))
+            for cube_index in range(per):
+                cube = Sdf.PrimSpec(group, f"C{cube_index}", Sdf.SpecifierDef, "Cube")
+                extent = Sdf.AttributeSpec(cube, "extent", Sdf.ValueTypeNames.Float3Array)
+                extent.default = Vt.Vec3fArray([Gf.Vec3f(-1, -1, -1), Gf.Vec3f(1, 1, 1)])
+    return Usd.Stage.Open(layer)
+
+
+class _Countdown(usd_insight.TimeBudget):
+    """Deterministic budget: the first `checks` clock checks pass, every later one reports the time as used up."""
+
+    def __init__(self, checks):
+        super().__init__(60_000)
+        self.checks = checks
+
+    def expired(self):
+        self.checks -= 1
+        if self.checks < 0:
+            self.exhausted = True
+        return self.exhausted
+
+
+def _without_time_keys(value):
+    if isinstance(value, dict):
+        return {key: _without_time_keys(item) for key, item in value.items() if key not in ("truncated_by_time", "time_budget")}
+    if isinstance(value, list):
+        return [_without_time_keys(item) for item in value]
+    return value
+
+
+def test_time_budget_counts_down_resolves_the_tightest_and_nests_as_ambient():
+    roomy = usd_insight.TimeBudget(60_000)
+    assert not roomy.expired() and not roomy.tick() and 0 < roomy.remaining_ms() <= 60_000 and roomy.elapsed_ms() >= 0
+    spent = usd_insight.TimeBudget(0)
+    assert spent.expired() and spent.tick() and spent.remaining_ms() == 0
+    assert usd_insight.TimeBudget.until(10.0, 9.0).budget_ms == 1000.0
+    assert usd_insight.TimeBudget.until(5.0, 9.0).expired()
+    for bad in (-1, float("nan"), float("inf"), True, "5", None):
+        _raises(ValueError, usd_insight.TimeBudget, bad)
+    _raises(ValueError, usd_insight.TimeBudget.until, "soon", 1.0)
+
+    assert usd_insight.resolve_budget() is None
+    assert usd_insight.resolve_budget(budget_ms=5).budget_ms == 5.0
+    assert usd_insight.resolve_budget(deadline=roomy) is roomy
+    assert usd_insight.resolve_budget(deadline=12.0, now=10.0).budget_ms == 2000.0
+    assert "TimeBudget" in str(_raises(TypeError, usd_insight.resolve_budget, 12.0))
+    assert usd_insight.resolve_budget(deadline=roomy, budget_ms=1).budget_ms == 1.0  # the tighter limit wins
+
+    assert usd_insight.active_budget() is None
+    with usd_insight.TimeBudget(50_000) as outer:
+        assert usd_insight.active_budget() is outer
+        with usd_insight.TimeBudget(20_000) as inner:
+            assert usd_insight.active_budget() is inner
+            assert usd_insight.resolve_budget(budget_ms=55_000) is inner
+            assert usd_insight.resolve_budget(budget_ms=1).budget_ms == 1.0
+        assert usd_insight.active_budget() is outer
+    assert usd_insight.active_budget() is None
+    try:
+        with usd_insight.TimeBudget(5):
+            raise RuntimeError("query failed")
+    except RuntimeError:
+        pass
+    assert usd_insight.active_budget() is None
+
+    record = roomy.report(7, False, extra=(1, 2))
+    assert record["truncated_by_time"] is False and record["processed"] == 7 and record["budget_ms"] == 60_000.0
+    assert record["extra"] == [1, 2] and record["note"] and not roomy.truncated
+    assert roomy.report(3, True)["truncated_by_time"] is True and roomy.truncated
+    _json(record)
+
+
+def test_stage_info_time_budget_on_a_20k_prim_stage():
+    stage = _budget_stage()
+    before = stage.GetRootLayer().ExportToString()
+    plain = usd_insight.stage_info(stage)
+    assert plain["prims"]["total"] == BUDGET_TOTAL
+    assert "truncated_by_time" not in plain and "time_budget" not in plain
+
+    for tiny in (usd_insight.stage_info(stage, budget_ms=0), usd_insight.stage_info(stage, budget_ms=1)):
+        assert tiny["truncated_by_time"] is True and tiny["prims"]["truncated_by_time"] is True
+        budget = tiny["time_budget"]
+        assert budget["truncated_by_time"] is True and budget["processed"] == tiny["prims"]["total"] < BUDGET_TOTAL
+        assert "time budget" in budget["note"] and budget["elapsed_ms"] >= 0 and budget["budget_ms"] <= 1
+        _json(tiny)
+
+    partial = usd_insight.stage_info(stage, deadline=_Countdown(6))
+    assert partial["truncated_by_time"] is True and partial["model_hierarchy"]["truncated_by_time"] is True
+    assert 0 < partial["time_budget"]["processed"] == partial["prims"]["total"] < BUDGET_TOTAL
+    assert partial["layer_stack"] and "composition errors were not collected" in partial["time_budget"]["note"]
+
+    generous = usd_insight.stage_info(stage, budget_ms=600_000)
+    assert generous["truncated_by_time"] is False and generous["prims"]["truncated_by_time"] is False
+    assert generous["time_budget"]["processed"] == BUDGET_TOTAL
+    assert generous["time_budget"]["note"] == "Finished within the time budget."
+    assert _without_time_keys(generous) == plain
+    with usd_insight.TimeBudget(0):
+        assert usd_insight.stage_info(stage)["truncated_by_time"] is True  # the ambient budget applies
+    assert usd_insight.active_budget() is None
+    assert stage.GetRootLayer().ExportToString() == before
+
+
+def test_bounds_time_budget_returns_partial_bounds_or_the_exact_ones():
+    stage = _budget_stage()
+    plain = usd_insight.bounds(stage, "/World")
+    assert plain["world_bound"]["min"] == [-1.0, 9.0, -1.0] and plain["world_bound"]["max"] == [598.0, 11.0, 1.0]
+    assert "truncated_by_time" not in plain
+
+    generous = usd_insight.bounds(stage, "/World", budget_ms=600_000)
+    assert generous["truncated_by_time"] is False and generous["time_budget"]["processed"] == BUDGET_TOTAL
+    for key in ("world_bound", "local_bound", "untransformed_bound", "extent", "visibility", "purpose", "notes"):
+        assert generous[key] == plain[key], key
+
+    spent = usd_insight.bounds(stage, "/World", budget_ms=0)
+    assert spent["truncated_by_time"] is True and spent["time_budget"]["processed"] == 0
+    assert spent["world_bound"] == {"empty": True, "min": None, "max": None, "size": None, "center": None, "partial": True}
+    assert "time budget" in spent["notes"][0] and spent["notes"][0] == spent["time_budget"]["note"]
+
+    # Stopped after the first group was measured: only G0's cubes (x -1..1) count; the transforms still apply.
+    partial = usd_insight.bounds(stage, "/World", deadline=_Countdown(20))
+    measured = partial["time_budget"]["processed"]
+    assert partial["truncated_by_time"] is True and 0 < measured < BUDGET_TOTAL
+    world, local, untransformed = partial["world_bound"], partial["local_bound"], partial["untransformed_bound"]
+    assert world["partial"] is True and not world["empty"]
+    assert world["min"] == [-1.0, 9.0, -1.0] and world["max"][0] < plain["world_bound"]["max"][0]
+    assert local == world  # /World's parent is the pseudo-root, so local space is world space here
+    assert untransformed["min"] == [-1.0, -1.0, -1.0] and untransformed["max"][1] == 1.0
+    _json(partial)
+
+    one_group = usd_insight.bounds(stage, "/World/G5", budget_ms=600_000)
+    assert one_group["truncated_by_time"] is False and one_group["time_budget"]["processed"] == 101
+    assert one_group["world_bound"] == usd_insight.bounds(stage, "/World/G5")["world_bound"]
+
+
+def test_properties_time_budget_stops_on_a_prim_with_many_attributes():
+    layer = Sdf.Layer.CreateAnonymous(".usda")
+    with Sdf.ChangeBlock():
+        spec = Sdf.PrimSpec(layer, "P", Sdf.SpecifierDef, "Xform")
+        for index in range(2000):
+            Sdf.AttributeSpec(spec, f"a{index:04d}", Sdf.ValueTypeNames.Double).default = float(index)
+    stage = Usd.Stage.Open(layer)
+    plain = usd_insight.properties(stage, "/P", authored_only=True)
+    assert plain["attribute_count"] == 2000 and len(plain["attributes"]) == usd_insight.MAX_PROPERTIES
+    generous = usd_insight.properties(stage, "/P", authored_only=True, budget_ms=600_000)
+    assert generous["truncated_by_time"] is False and generous["time_budget"]["processed"] >= 2000
+    assert _without_time_keys(generous) == plain
+
+    spent = usd_insight.properties(stage, "/P", budget_ms=0)
+    assert spent["truncated_by_time"] is True and spent["attributes"] == [] and spent["time_budget"]["processed"] == 0
+    partial = usd_insight.properties(stage, "/P", authored_only=True, deadline=_Countdown(3))
+    examined = partial["time_budget"]["processed"]
+    assert partial["truncated_by_time"] is True and 0 < examined < 2000
+    assert partial["attribute_count"] == examined == len(partial["attributes"])
+    assert "incomplete" in partial["time_budget"]["note"]
+    _json(partial)

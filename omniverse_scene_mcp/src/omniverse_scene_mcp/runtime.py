@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from http.client import HTTPException
 from pathlib import Path
 from typing import Any, Callable, Mapping
+from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, build_opener
 
-# Loopback only: never route the scene-bridge probe through HTTP(S)_PROXY.
-urlopen = build_opener(ProxyHandler({})).open
+from .http_bridge import NoRedirect
+
+# Loopback only: never route the scene-bridge probe through HTTP(S)_PROXY, and never follow a redirect to another
+# host (a 3xx raises HTTPError, an OSError, so the probe reports the endpoint as not reachable).
+urlopen = build_opener(ProxyHandler({}), NoRedirect()).open
 
 from .exam import daily as exam_daily
 from .exam.mock import FILE_NAME as MOCK_FILE_NAME
@@ -27,6 +32,9 @@ from .knowledge import (
     build_omni_ui_backend,
     build_usd_backend,
 )
+from .offline_docs_knowledge import DOMAINS as DOCS_DOMAINS
+from .offline_docs_knowledge import OfflineDocsKnowledge, OfflineDocsKnowledgeBackend
+from .offline_docs_knowledge import normalize_domain as normalize_docs_domain
 from .offline_knowledge import FallbackKnowledgeBackend, OfflineUSDKnowledge, OfflineUSDKnowledgeBackend
 from .router import NullKnowledgeBackend, OmniverseRouter
 from .service import SceneMCPService
@@ -34,6 +42,31 @@ from .service import SceneMCPService
 TEST_ENV = "OMNIVERSE_SCENE_MCP_TEST"
 AUTO_SCENE_ENDPOINT = "http://127.0.0.1:9910"
 _OFF_VALUES = {"", "0", "false", "no", "off"}
+
+# Scene targets the running router can switch between without a restart (switch_scene_target).
+SCENE_TARGET_HOST = "127.0.0.1"
+SCENE_TARGET_PROBE_TIMEOUT = 0.3
+DEFAULT_SCENE_TARGETS: dict[str, str | None] = {
+    "isaac": "http://127.0.0.1:9911",
+    "composer": "http://127.0.0.1:9910",
+    "fake": None,
+}
+SCENE_TARGET_ENV: dict[str, str] = {
+    "isaac": "OMNIVERSE_ISAAC_SCENE_ENDPOINT",
+    "composer": "OMNIVERSE_COMPOSER_SCENE_ENDPOINT",
+}
+_SCENE_TARGET_ALIASES = {
+    "isaac sim": "isaac",
+    "isaacsim": "isaac",
+    "isaac_sim": "isaac",
+    "isaac-sim": "isaac",
+    "usd composer": "composer",
+    "usd_composer": "composer",
+    "usd-composer": "composer",
+    "in-memory": "fake",
+    "memory": "fake",
+}
+_SWITCH_LOCK = threading.Lock()
 
 
 def is_test_mode(environ: Mapping[str, str] | None = None) -> bool:
@@ -102,6 +135,201 @@ def build_scene_service(
     return SceneMCPService(bridge, backend_info=info)
 
 
+def scene_targets(environ: Mapping[str, str] | None = None) -> dict[str, str | None]:
+    """Named scene bridges switch_scene_target can use: isaac (9911), composer (9910) and the in-memory fake.
+
+    $OMNIVERSE_ISAAC_SCENE_ENDPOINT / $OMNIVERSE_COMPOSER_SCENE_ENDPOINT override a URL; an override that is not
+    exactly http://127.0.0.1:<port> is ignored, so a switch only ever probes this machine's loopback.
+    """
+    env = os.environ if environ is None else environ
+    targets = dict(DEFAULT_SCENE_TARGETS)
+    for name, variable in SCENE_TARGET_ENV.items():
+        override = _loopback_endpoint(env.get(variable, ""))
+        if override:
+            targets[name] = override
+    return targets
+
+
+def probe_scene_health(endpoint: str, timeout: float = SCENE_TARGET_PROBE_TIMEOUT) -> dict[str, Any]:
+    """GET <endpoint>/health (short timeout, http://127.0.0.1:<port> only); {reachable, probed, status|error}."""
+    url = _loopback_endpoint(endpoint)
+    if url is None:
+        return {"reachable": False, "probed": False, "error": "only http://127.0.0.1:<port> endpoints are probed"}
+    try:
+        with urlopen(f"{url}/health", timeout=timeout) as response:
+            data = json.loads(response.read(4096).decode("utf-8"))
+    except (OSError, HTTPException, ValueError) as exc:
+        return {"reachable": False, "probed": True, "error": _clip(f"{type(exc).__name__}: {exc}")}
+    if isinstance(data, dict) and data.get("ok") is True:
+        return {"reachable": True, "probed": True, "status": _clip(str(data.get("status", "ok")))}
+    return {"reachable": False, "probed": True, "error": "/health answered without ok=true"}
+
+
+def switch_scene_target(
+    service: SceneMCPService,
+    target: str,
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+    environ: Mapping[str, str] | None = None,
+    probe: Callable[[str, float], Any] | None = None,
+    bridge_factory: Callable[[str], Any] | None = None,
+) -> dict[str, Any]:
+    """Point the running router's scene service at 'isaac', 'composer' or 'fake' without restarting anything.
+
+    An HTTP target is probed first (GET /health, 300 ms, 127.0.0.1 only) and refused when it does not answer unless
+    force=True. Then a new HttpSceneBridge (or a fresh FakeSceneBridge) is swapped into the SAME service, so the
+    router and every server tool use it at once; no scene or layer is touched. dry_run=True only probes and reports.
+    Under OMNIVERSE_SCENE_MCP_TEST nothing opens a socket: without an injected probe the target counts as not
+    reachable, and capabilities are never fetched from an HttpSceneBridge. Never raises for a bad or down target.
+    Returns {ok, target, endpoint, previous, current, changed, reachable, health?, capabilities?, warnings, error?}.
+    """
+    scene = getattr(service, "_scene", None)
+    if not callable(getattr(service, "swap_bridge", None)) and callable(getattr(scene, "swap_bridge", None)):
+        service = scene  # an OmniverseRouter was passed; switch its scene service
+    env = os.environ if environ is None else environ
+    test_mode = is_test_mode(env)
+    targets = scene_targets(env)
+    name = _scene_target_name(target)
+    with _SWITCH_LOCK:
+        previous = service.bridge_info()
+        result: dict[str, Any] = {
+            "ok": False,
+            "target": name or _clip(repr(target)),
+            "endpoint": None,
+            "previous": previous,
+            "current": previous,
+            "changed": False,
+            "dry_run": bool(dry_run),
+            "forced": bool(force),
+            "reachable": None,
+            "warnings": [],
+        }
+        if name not in targets:
+            result["error"] = f"Unknown scene target {_clip(repr(target))}; use one of {sorted(targets)}"
+            result["targets"] = targets
+            return result
+        endpoint = targets[name]
+        result["endpoint"] = endpoint
+        if endpoint is None:
+            _switch_to_fake(service, result, dry_run)
+        else:
+            if probe is None and test_mode:
+                health = {"reachable": False, "probed": False, "error": f"{TEST_ENV} is set: not probed (no sockets)"}
+            else:
+                health = _health_result(probe or probe_scene_health, endpoint)
+            reachable = health["reachable"]
+            result["reachable"], result["health"] = reachable, health
+            if not reachable and not force:
+                result["error"] = (
+                    f"The {name} scene bridge at {endpoint} did not answer /health "
+                    f"({health.get('error') or 'no details'}); {_SCENE_TARGET_HINTS[name]}, or pass force=True to "
+                    "switch anyway."
+                )
+                return result
+            same = previous.get("endpoint") == endpoint
+            if dry_run:
+                result.update(ok=True, would_change=not same)
+            else:
+                # Same endpoint: keep the (stateless) bridge; only an earlier switch's record is refreshed.
+                bridge = None if same else (bridge_factory or HttpSceneBridge)(endpoint)
+                if bridge is None and previous.get("mode") == "http_switch":
+                    bridge = service._bridge
+                if bridge is not None:
+                    how = "answered /health" if reachable else "did not answer /health (force=True)"
+                    reason = f"switch_scene_target('{name}'): {endpoint} {how}"
+                    info = _backend_info("http_switch", type(bridge).__name__, reason, endpoint)
+                    info["target"] = name
+                    if not reachable:
+                        info["warnings"].append(f"Switched with force=True; scene tools fail until {endpoint} is up.")
+                    service.swap_bridge(bridge, info)
+                result.update(ok=True, changed=not same, current=service.bridge_info())
+            if not reachable:
+                result["warnings"].append(f"{endpoint} did not answer /health; scene tools fail until it is up.")
+    if result["ok"] and not dry_run and (endpoint is None or result["reachable"]):
+        if test_mode and result["current"].get("bridge") == "HttpSceneBridge":
+            result["warnings"].append(f"Capabilities not fetched: {TEST_ENV} is set and test mode opens no sockets.")
+        else:
+            result["capabilities"] = service.live_capabilities()  # never raises
+    return result
+
+
+_SCENE_TARGET_HINTS = {
+    "isaac": (
+        "start Isaac Sim with start-isaacsim.ps1 (or run isaacsim-study/reload_mcp_bridge.py in its Script Editor)"
+    ),
+    "composer": (
+        "start Composer with start-composer-study.ps1 (or run composer-study/reload_composer_bridge.py in its "
+        "Script Editor)"
+    ),
+}
+
+
+def _switch_to_fake(service: SceneMCPService, result: dict[str, Any], dry_run: bool) -> None:
+    """Swap a fresh FakeSceneBridge in, unless the service already uses one (its in-memory edits are kept)."""
+    same = result["previous"].get("bridge") == "FakeSceneBridge"
+    if dry_run:
+        result.update(ok=True, would_change=not same)
+        return
+    if same:
+        result["warnings"].append("Already on the in-memory fake scene; kept it and its edits.")
+    else:
+        info = _backend_info("fake", "FakeSceneBridge", "switch_scene_target('fake'): in-memory fake scene")
+        info["target"] = "fake"
+        info["warnings"].append("Scene tools use an in-memory fake scene; changes do not reach Composer or Isaac Sim.")
+        service.swap_bridge(FakeSceneBridge(), info)
+    result.update(ok=True, changed=not same, current=service.bridge_info())
+
+
+def _health_result(probe: Callable[[str, float], Any], endpoint: str) -> dict[str, Any]:
+    """Run a probe (bool or dict result) and normalize it; a probe that raises counts as not reachable."""
+    try:
+        raw = probe(endpoint, SCENE_TARGET_PROBE_TIMEOUT)
+    except Exception as exc:  # noqa: BLE001 - a failing probe is a down target, not a router error
+        return {"reachable": False, "probed": True, "error": _clip(f"{type(exc).__name__}: {exc}")}
+    if isinstance(raw, bool):
+        return {"reachable": raw, "probed": True}
+    if not isinstance(raw, dict):
+        return {"reachable": False, "probed": True, "error": "the probe returned no result"}
+    health = {key: _clip(str(raw[key])) for key in ("status", "error") if raw.get(key) is not None}
+    health["reachable"] = raw.get("reachable") is True
+    health["probed"] = raw.get("probed", True) is not False
+    return health
+
+
+def _scene_target_name(target: Any) -> str:
+    text = " ".join(target.strip().lower().split()) if isinstance(target, str) else ""
+    return _SCENE_TARGET_ALIASES.get(text, text)
+
+
+def _loopback_endpoint(text: Any) -> str | None:
+    """'http://127.0.0.1:<port>' for such a URL (trailing slash allowed), else None: other hosts, paths or creds."""
+    raw = text.strip().rstrip("/") if isinstance(text, str) else ""
+    if not raw:
+        return None
+    try:
+        parts = urlsplit(raw)
+        port = parts.port
+    except ValueError:
+        return None
+    if (
+        parts.scheme.lower() != "http"
+        or parts.hostname != SCENE_TARGET_HOST
+        or not port
+        or parts.username
+        or parts.password
+        or parts.path
+        or parts.query
+        or parts.fragment
+    ):
+        return None
+    return f"http://{SCENE_TARGET_HOST}:{port}"
+
+
+def _clip(text: str, limit: int = 300) -> str:
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
 def build_router(
     environ: Mapping[str, str] | None = None,
     detect_endpoint: Callable[[], str | None] | None = None,
@@ -109,11 +337,14 @@ def build_router(
     offline_knowledge: OfflineUSDKnowledge | None = None,
     progress_store: ProgressStore | None = None,
     mock_store: MockExamStore | None = None,
+    docs_knowledge: Mapping[str, OfflineDocsKnowledge] | None = None,
 ) -> OmniverseRouter:
     """Build the single interface used to route Omniverse requests.
 
-    Outside test mode the USD backend falls back to the bundled offline docs when the USD docs MCP is down;
-    ``offline_knowledge`` lets the server share one lazily loaded offline index with its doc tools.
+    Outside test mode the USD backend falls back to the bundled offline docs when the USD docs MCP is down, and the
+    Kit, OmniUI and Isaac Sim backends fall back to the installed Isaac Sim extension docs (offline_docs_knowledge);
+    ``offline_knowledge`` / ``docs_knowledge`` let the server share its lazily loaded indexes with its doc tools.
+    Under the test switch every knowledge backend is a NullKnowledgeBackend: no socket, no install folder read.
     With ``progress_store`` the router answers "start day 3" / "next lesson" with the daily lesson itself; with
     ``mock_store`` its mock-exam instructions mention an open mock. Without them it only names the tool to call.
     """
@@ -130,15 +361,50 @@ def build_router(
             bowerbot_backend=NullKnowledgeBackend("bowerbot"),
             **exam_hooks,
         )
+    docs = docs_knowledge or {}
     return OmniverseRouter(
         scene,
         usd_backend=build_usd_backend_with_fallback(offline_knowledge),
-        kit_backend=build_kit_backend(),
-        omni_ui_backend=build_omni_ui_backend(),
-        isaac_sim_backend=build_isaac_sim_backend(),
+        kit_backend=build_docs_backend_with_fallback("kit", docs.get("kit")),
+        omni_ui_backend=build_docs_backend_with_fallback("omni_ui", docs.get("omni_ui")),
+        isaac_sim_backend=build_docs_backend_with_fallback("isaac_sim", docs.get("isaac_sim")),
         bowerbot_backend=build_bowerbot_backend(),
         **exam_hooks,
     )
+
+
+# Upstream docs MCP builders for the domains the installed Isaac Sim / Kit extension docs can answer offline.
+_DOCS_BACKEND_BUILDERS: dict[str, Callable[..., Any]] = {
+    "kit": build_kit_backend,
+    "omni_ui": build_omni_ui_backend,
+    "isaac_sim": build_isaac_sim_backend,
+}
+
+
+def build_docs_knowledge(roots: Any = None) -> dict[str, OfflineDocsKnowledge]:
+    """One OfflineDocsKnowledge per domain (kit, isaac_sim, omni_ui), sharing the process-wide docs catalog.
+
+    Building them only resolves folder paths; the catalog and each domain's index load on the first question.
+    """
+    return {domain: OfflineDocsKnowledge(domain, roots=roots) for domain in DOCS_DOMAINS}
+
+
+def build_docs_backend_with_fallback(
+    domain: str,
+    knowledge: OfflineDocsKnowledge | None = None,
+    *,
+    endpoint: str | None = None,
+    probe: Callable[..., Any] | None = None,
+) -> FallbackKnowledgeBackend:
+    """The Kit / OmniUI / Isaac Sim docs MCP backend, answered from the installed extension docs when it is down.
+
+    Building it opens nothing; the fallback's 300 ms TCP probe of the upstream endpoint only runs when a question
+    is asked (probe= replaces it in tests). The offline answer carries a note and primary_error.
+    """
+    name = normalize_docs_domain(domain)
+    primary = _DOCS_BACKEND_BUILDERS[name](endpoint)
+    offline = OfflineDocsKnowledgeBackend(name, knowledge)
+    return FallbackKnowledgeBackend(primary, offline, probe=probe)
 
 
 def _exam_hooks(

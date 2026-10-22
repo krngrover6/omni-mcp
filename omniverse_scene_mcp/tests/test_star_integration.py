@@ -264,6 +264,16 @@ def _wrong_choice(item):
 # --------------------------------------------------------------------------- registration and defaults
 
 
+def _require_pxr() -> None:
+    """Skip (not fail) a test that needs the USD Python bindings when pxr is missing or does not import."""
+    try:
+        import pxr  # noqa: F401
+    except ImportError:
+        import unittest
+
+        raise unittest.SkipTest("USD Python bindings (pxr) are not installed")
+
+
 def test_star_tools_are_registered_with_safe_defaults():
     with _server() as (call, _root):
         tools = {tool.name: tool for tool in call.app._tool_manager.list_tools()}
@@ -439,6 +449,7 @@ def test_mock_and_lesson_state_persist_only_in_the_chosen_exam_prep_dir():
 
 
 def test_insight_modes_fall_back_to_the_saved_file_on_the_fake_scene():
+    _require_pxr()
     with _server() as (call, root):
         shot = str(root / "shot.usda")
         explicit = call("scene_explain_value", prim_path="/World/Box", attribute="size", file=shot)
@@ -474,6 +485,7 @@ def test_insight_modes_fall_back_to_the_saved_file_on_the_fake_scene():
 
 
 def test_old_live_bridge_reports_reload_needed_and_falls_back_to_its_saved_file():
+    _require_pxr()
     def scene(root):
         return SceneMCPService(HttpSceneBridge("http://127.0.0.1:9911"))
 
@@ -512,7 +524,7 @@ def test_live_insight_and_authoring_through_the_extended_rpc():
         server = kit_rpc.make_extended_server_class(_BasicServer)(bridge, stage.GetRootLayer().identifier)
         with _server(scene=scene) as (call, root), _in_process_transport(server):
             capabilities = call("scene_capabilities")
-            assert capabilities["needs_bridge_update"] is False and capabilities["rpc_version"] == "tier2-1"
+            assert capabilities["needs_bridge_update"] is False and capabilities["rpc_version"] == "tier3-1"
             assert capabilities["live_insight"]["available"] is True and capabilities["live_authoring"]["available"] is True
             assert "how_to_enable" not in capabilities
 

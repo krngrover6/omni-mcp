@@ -103,7 +103,8 @@ duplicating the underlying documentation tools.
 
 ## MCP Tools
 
-The server exposes these tools:
+The server exposes 82 tools; `router_help()` lists all of them grouped by task.
+The main ones:
 
 - `router_dispatch`
 - `router_route`
@@ -117,6 +118,10 @@ The server exposes these tools:
 - `scene_reparent`
 - `scene_move`
 - `scene_material`
+- `router_help`, `router_scene_targets`, `router_set_scene_target`
+- `scene_set_attribute`, `scene_create_material`, `scene_bind_material`
+- `scene_undo_last`, `scene_undo_history`
+- `docs_search`, `extension_info`
 - `usd_knowledge`
 - `kit_knowledge`
 - `omni_ui_knowledge`
@@ -248,13 +253,98 @@ Live scene tools (need the extended Isaac Sim bridge, see `kit_rpc.py`):
 
 The three authoring tools are DRY RUN BY DEFAULT: show the preview to the user
 and call again with `dry_run=False` only after they agree. Applying changes the
-user's open scene in memory (not saved, not on Kit's undo stack). On the fake
-scene or an old bridge they return `ok: false` with `needs_bridge_update`.
+user's open scene in memory (not saved; since RPC `tier3-1` the edit is also
+recorded for `scene_undo_last` and Kit's Ctrl+Z). On the fake scene or an old
+bridge they return `ok: false` with `needs_bridge_update`.
 
 To turn the live tools on: run `isaacsim-study/reload_mcp_bridge.py` in Isaac
 Sim's Script Editor (it self-tests on Isaac's USD, then restarts the bridge on
-9911 with RPC version `tier2-1`), restart the router so it loads this code,
-then check `scene_capabilities()`.
+9911 with RPC version `tier3-1`; it was `tier2-1` before Tier 3), restart the
+router so it loads this code (or use `router_set_scene_target`), then check
+`scene_capabilities()`.
+
+### Safe edits, undo, offline docs, help and scene targets (Tier 3)
+
+Safe edits (`edits.py`; DRY RUN BY DEFAULT at every layer: server tool, service,
+HTTP client, RPC and Kit bridge; a dry run leaves every layer byte-identical):
+
+- `scene_set_attribute(path, name, value, time=None, create_type=None,
+  dry_run=True)` - the value is coerced to the attribute's USD type (colors as
+  `[r, g, b]` or `[[r, g, b]]` for `primvars:displayColor`, `#RRGGBB`, 0-255
+  whole numbers); the preview shows the value before, where it comes from, and
+  whether a stronger opinion would hide the edit
+- `scene_create_material(path, diffuse_color=None, roughness=None,
+  metallic=None, opacity=None, emissive_color=None, ior=None,
+  create_parent=True, dry_run=True)` - a `Material` with a `PreviewSurface`
+  (UsdPreviewSurface) shader wired to `outputs:surface`; `create_parent` also
+  plans a missing direct parent such as `/World/Looks` as a `Scope`
+- `scene_bind_material(prim_path, material_path, strength=None, purpose=None,
+  dry_run=True)` - MaterialBindingAPI binding with an optional
+  `strongerThanDescendants` strength and `preview`/`full` purpose; the preview
+  predicts the material the prim resolves to. On a bridge older than `tier3-1`
+  a plain binding falls back to the basic `material` method
+  (`fallback: "set_material"`)
+
+Undo (`undo.py`, `kit_commands.py`):
+
+- `scene_undo_last(dry_run=True)` - the preview names the edit that would be
+  undone; `dry_run=False` restores the edited specs (inside Kit through the
+  `MCPEdit` command, so Ctrl+Z / Ctrl+Y in the app work too). It refuses when
+  the stage was replaced or the prims changed since. Saving is not undoable:
+  undo reverts the open layers in memory, so save again afterwards
+- `scene_undo_history(limit=20)` - read-only list of recorded edits, newest
+  first
+
+Offline Kit / Isaac Sim / omni.ui docs (`offline_docs_knowledge.py`, reads the
+installed `isaacsim-6.1.0` or `$OMNIVERSE_KIT_DOCS_ROOT`, never writes it):
+
+- `docs_search(query, domain="isaac_sim", top_k=5)` - domains `isaac_sim`,
+  `kit`, `omni_ui`; every hit has a `path:line` source; deprecated extensions
+  are flagged
+- `extension_info(name)` - version, docs, dependencies, deprecation and latest
+  changelog entry of one installed extension (renamed `omni.isaac.*` ids get
+  suggestions)
+- `kit_knowledge`, `omni_ui_knowledge` and `isaac_sim_knowledge` now fall back
+  to these docs when their docs MCP (9902 / 9901 / 9904) is not running (the
+  answer carries `note` and `primary_error`), like `usd_knowledge` does
+
+Guide and scene targets:
+
+- `router_help(topic=None)` - every tool grouped by task with examples and
+  `router_dispatch` phrases; `topic` is a group (`lights`, `undo`), a tool
+  name or a keyword. `router_dispatch("help")` gives the same guide
+- `router_scene_targets()` - read-only: `isaac` (9911), `composer` (9910) and
+  `fake`, and which one is active
+- `router_set_scene_target(target, force=False)` - switch the scene tools to
+  another app without restarting the router; the app's `/health` is probed
+  first (300 ms, 127.0.0.1 only) and a target that does not answer is refused
+  unless `force=True`. No scene data changes
+
+`router_dispatch` phrases that reach these: "set intensity of /World/RectLight
+to 5000", "make a red material", "paint /World/Props/Cube red", "bind
+/World/Looks/Steel to /World/Props/Cube", "undo" (preview), "confirm undo"
+(applies with `dry_run=False`), "what did you change", "help undo". Materials
+and paint from a sentence always preview and return the exact tool calls that
+apply them.
+
+The in-memory fake scene implements the edits and undo in memory too (results
+say `fake_scene: true`), so these flows work offline and in tests.
+
+## Testing
+
+Run the whole suite offline (it sets `OMNIVERSE_SCENE_MCP_TEST=1`, refuses
+non-loopback and live-stack connections, and never touches your scenes or
+`exam-prep/`):
+
+```powershell
+& 'C:/Program Files/Python312/python.exe' -I omniverse_scene_mcp/tools/run_tests.py
+& 'C:/Program Files/Python312/python.exe' -I omniverse_scene_mcp/tools/run_tests.py test_twelve_gaps_integration
+```
+
+With pytest installed outside Kit (`pip install -e "omniverse_scene_mcp[usd,test]"`;
+never into Kit, Isaac Sim or Composer): `pytest -q omniverse_scene_mcp/tests`.
+The Isaac Sim bridge reload runs `test_kit_bridge_usd.py`, `test_kit_rpc.py`,
+`test_edits.py` and `test_undo.py` inside Isaac before it swaps the bridge.
 
 ## Next step
 

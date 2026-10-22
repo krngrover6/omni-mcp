@@ -305,3 +305,80 @@ scene_aim(path="/World/KeyLight", target=[0, 0, 0])
 
 Until then, the live tools return `ok: false` with `needs_bridge_update`, and `auto` falls back to the
 saved file. Composer's bridge on port 9910 only serves the basic scene commands.
+
+## 10) Safe edits, undo, Composer and help
+
+This section updates section 9: the bridge RPC version is now `tier3-1`, router edits are undoable, and
+Composer can serve the same live tools as Isaac Sim.
+
+### What to say
+
+```text
+help                                         # every tool, grouped by task (same as router_help())
+help undo                                    # one group; "help lights", "help exam" work too
+set intensity of /World/RectLight to 5000    # explicit path + dry_run=False applies; dry_run=True previews
+set the color of /World/Props/Cube to 1 0 0  # becomes primvars:displayColor [[1, 0, 0]]
+make a red material                          # always a preview; the answer names the tool call to apply it
+paint /World/Props/Cube red                  # preview: create /World/Looks/RedMaterial, then bind it
+bind /World/Looks/Steel to /World/Props/Cube
+what did you change                          # the undo history
+undo                                         # preview of what would be undone
+confirm undo                                 # undoes it (send with dry_run=False)
+```
+
+A prim named in words ("the cube") is never edited directly: you get a preview and the exact command.
+
+### The tools behind them
+
+```text
+scene_set_attribute(path="/World/RectLight", name="inputs:intensity", value=5000)       # preview
+scene_create_material(path="/World/Looks/Steel", diffuse_color=[0.8, 0.8, 0.8], roughness=0.2, metallic=1)
+scene_bind_material(prim_path="/World/Props/Cube", material_path="/World/Looks/Steel")
+scene_undo_history()
+scene_undo_last()                    # preview
+scene_undo_last(dry_run=False)       # undo it
+```
+
+- Every edit tool is a dry run by default. Read the preview (value before, value after, which layer
+  wins), then repeat the call with `dry_run=False`.
+- `scene_create_material` also creates a missing `/World/Looks` as a Scope (`create_parent=True`).
+- Undo restores the edited prims in memory. In Kit the same edit is on Ctrl+Z / Ctrl+Y too.
+- Saving is not undoable. After an undo, save again if the file should lose the edit as well.
+- Undo refuses when the stage was replaced or the prims were changed since; use Ctrl+Z in Kit then.
+
+### Composer: the upgraded bridge
+
+- Start Composer with `start-composer-study.ps1`. The upgraded bridge answers on port 9910 (same tools as
+  Isaac Sim) and the stock Composer server moves to port 9909.
+- Composer already running: run `composer-study/reload_composer_bridge.py` in its Script Editor, then read
+  `composer-study/bridge-reload-result.json` (status `reloaded`, rpc_version `tier3-1`).
+- Switch the router without restarting it:
+
+```text
+router_scene_targets()                          # isaac 9911, composer 9910, fake; which one is active
+router_set_scene_target(target="composer")      # probes 127.0.0.1:9910/health first
+router_set_scene_target(target="isaac")
+router_set_scene_target(target="fake")          # offline in-memory scene
+scene_capabilities()                            # live insight, authoring, scene_edits and undo available?
+```
+
+A target that does not answer is refused; `force=True` switches anyway.
+
+### Kit and Isaac Sim docs offline
+
+```text
+docs_search(query="articulation controller", domain="isaac_sim")
+docs_search(query="VStack spacing", domain="omni_ui")
+extension_info(name="isaacsim.sensors.rtx")
+```
+
+These read the installed Isaac Sim 6.1 extension docs and never write them. `kit_knowledge`,
+`omni_ui_knowledge` and `isaac_sim_knowledge` use the same docs when their MCP servers are not running.
+
+### Turning it on (tier3-1)
+
+1. Isaac Sim: run `isaacsim-study/reload_mcp_bridge.py` again. It now also self-tests `test_edits.py` and
+   `test_undo.py` on Isaac's USD. The result file should show rpc_version `tier3-1`.
+2. Composer: relaunch with `start-composer-study.ps1`, or run `composer-study/reload_composer_bridge.py`.
+3. Restart the router (or use `router_set_scene_target`), then check `scene_capabilities()`:
+   `needs_bridge_update` is `false` and `scene_edits` and `undo` are available.

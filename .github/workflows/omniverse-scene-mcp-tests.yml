@@ -1,0 +1,116 @@
+# Automatic tests for the Omniverse scene MCP router (omniverse_scene_mcp/).
+# Offline only: OMNIVERSE_SCENE_MCP_TEST=1 gives the fake scene and offline knowledge, tests/conftest.py blocks
+# network access, and nothing here starts Kit, Isaac Sim, Composer or any service. No secrets are used.
+# Submodules (kit-app-template, kit-usd-agents) and untracked workspace data (LearnOpenUSD-main, AGENTS.md,
+# bowerbot-venv) are absent on the runner; the tests that need them skip or return early (see tests/conftest.py).
+name: omniverse-scene-mcp tests
+
+on:
+  push:
+    paths:
+      - "omniverse_scene_mcp/**"
+      # Bridge start/reload scripts the tests exercise with faked omni modules.
+      - "isaacsim-study/**"
+      - "composer-study/**"
+      # Composer launcher that tests/test_composer_scripts.py reads (it moves the stock server to 9909).
+      - "start-composer-study.ps1"
+      - ".github/workflows/omniverse-scene-mcp-tests.yml"
+  pull_request:
+    paths:
+      - "omniverse_scene_mcp/**"
+      # Bridge start/reload scripts the tests exercise with faked omni modules.
+      - "isaacsim-study/**"
+      - "composer-study/**"
+      # Composer launcher that tests/test_composer_scripts.py reads (it moves the stock server to 9909).
+      - "start-composer-study.ps1"
+      - ".github/workflows/omniverse-scene-mcp-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: omniverse-scene-mcp-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: tests (${{ matrix.os }}, Python 3.12)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            experimental: false
+          - os: ubuntu-latest
+            # Linux has not been run yet (the laptop is Windows-only), so a failure here is reported but does not
+            # fail the workflow. Set this to false once the ubuntu job has passed.
+            experimental: true
+    continue-on-error: ${{ matrix.experimental }}
+    env:
+      OMNIVERSE_SCENE_MCP_TEST: "1"
+      PYTHONIOENCODING: "utf-8"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the repository (submodules stay empty)
+        uses: actions/checkout@v5
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: omniverse_scene_mcp/pyproject.toml
+
+      - name: Use the runner temp folder for temporary files
+        # Same drive as the checkout on Windows and no 8.3 short names (C:\Users\RUNNER~1\...), like the laptop.
+        run: |
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "TEMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "TMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+      - name: Install the package with the usd and test extras
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "./omniverse_scene_mcp[usd,test]"
+
+      - name: Show installed versions
+        run: |
+          python --version
+          python -m pip list
+          python -c "from pxr import Usd; print('OpenUSD', Usd.GetVersion())"
+
+      - name: Run tests with the stdlib runner
+        run: python omniverse_scene_mcp/tools/run_tests.py --no-extra-site
+
+      - name: Run tests with pytest
+        run: python -m pytest -q -rs omniverse_scene_mcp/tests
+
+      - name: Check that the wheel ships the package data
+        run: |
+          python -m pip wheel --no-deps --wheel-dir "$RUNNER_TEMP/wheel" ./omniverse_scene_mcp
+          python - "$RUNNER_TEMP/wheel" <<'EOF'
+          import pathlib
+          import sys
+          import zipfile
+
+          wheel = next(pathlib.Path(sys.argv[1]).glob("omniverse_scene_mcp-*.whl"))
+          names = set(zipfile.ZipFile(wheel).namelist())
+          src = pathlib.Path("omniverse_scene_mcp/src")
+          data = sorted(
+              path.relative_to(src).as_posix()
+              for path in (src / "omniverse_scene_mcp").rglob("*")
+              if path.is_file() and path.suffix not in {".py", ".pyc"} and "__pycache__" not in path.parts
+          )
+          missing = [name for name in data if name not in names]
+          print(f"{wheel.name}: {len(names)} files; package data: {data}")
+          sys.exit(f"missing from the wheel: {missing}" if missing else 0)
+          EOF

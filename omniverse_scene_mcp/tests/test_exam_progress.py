@@ -19,7 +19,9 @@ DAY = timedelta(days=1)
 
 @contextlib.contextmanager
 def _env(value: str | None):
+    """Set (or clear) $OMNIVERSE_EXAM_PREP_DIR and clear $OMNIVERSE_ROOT for the block, then restore both."""
     saved = os.environ.get(progress.ENV_DIR)
+    saved_root = os.environ.pop("OMNIVERSE_ROOT", None)  # a shell pointing at another checkout must not leak in
     if value is None:
         os.environ.pop(progress.ENV_DIR, None)
     else:
@@ -31,6 +33,10 @@ def _env(value: str | None):
             os.environ.pop(progress.ENV_DIR, None)
         else:
             os.environ[progress.ENV_DIR] = saved
+        if saved_root is None:
+            os.environ.pop("OMNIVERSE_ROOT", None)
+        else:
+            os.environ["OMNIVERSE_ROOT"] = saved_root
 
 
 def _answer(store, qid, ok, *, domain="Composition", objectives=("1.1",), now=T0, **extra):
@@ -128,6 +134,21 @@ def test_default_path_resolves_to_workspace_exam_prep_without_creating_it():
         assert store.path == expected
     assert expected.exists() == file_existed
     assert expected.parent.exists() == folder_existed
+
+
+def test_workspace_root_follows_omniverse_root_like_the_server_does():
+    """A wheel installed in a venv has no workspace above its files: $OMNIVERSE_ROOT must place exam-prep."""
+    from omniverse_scene_mcp.exam import mock
+
+    with tempfile.TemporaryDirectory() as tmp, _env(None):
+        os.environ["OMNIVERSE_ROOT"] = tmp
+        assert progress.workspace_root() == Path(tmp)
+        assert progress.default_progress_path() == Path(tmp) / "exam-prep" / "progress.json"
+        assert mock.default_sessions_path() == Path(tmp) / "exam-prep" / mock.FILE_NAME
+        os.environ["OMNIVERSE_ROOT"] = "   "
+        assert progress.workspace_root() == Path(progress.__file__).resolve().parents[4]
+        assert not (Path(tmp) / "exam-prep").exists()  # resolving paths creates nothing
+    assert os.environ.get("OMNIVERSE_ROOT", "") != tmp
 
 
 def test_env_dir_is_used_and_created_only_on_first_write():

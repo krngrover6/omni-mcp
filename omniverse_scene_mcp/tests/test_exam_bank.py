@@ -17,6 +17,16 @@ MIN_BANK_SIZE = 200
 HIDDEN_KEYS = {"answer", "explanations", "verify", "citations"}
 
 
+def _require_pxr() -> None:
+    """Skip (not fail) a test that needs the USD Python bindings when pxr is missing or does not import."""
+    try:
+        import pxr  # noqa: F401
+    except ImportError:
+        import unittest
+
+        raise unittest.SkipTest("USD Python bindings (pxr) are not installed")
+
+
 def _items() -> list[dict]:
     return bank.load_bank()
 
@@ -92,6 +102,7 @@ def test_usda_questions_always_carry_verify_blocks():
 
 
 def test_every_usda_snippet_parses():
+    _require_pxr()
     from pxr import Sdf
 
     count = 0
@@ -104,6 +115,7 @@ def test_every_usda_snippet_parses():
 
 
 def test_every_verify_block_passes_with_pxr():
+    _require_pxr()
     from pxr import Usd
 
     assert Usd.GetVersion() >= (0, 25, 0)
@@ -119,6 +131,7 @@ def test_every_verify_block_passes_with_pxr():
 
 
 def test_verify_rejects_a_wrong_expectation():
+    _require_pxr()
     item = copy.deepcopy(_first(lambda i: i["id"] == "comp-001"))
     assert bank.verify_question(item)["passed"] is True
     item["verify"]["checks"][0]["expect"] = 1
@@ -128,6 +141,7 @@ def test_verify_rejects_a_wrong_expectation():
 
 
 def test_verify_scenarios_and_load_options_run():
+    _require_pxr()
     result = bank.verify_question("comp-019")
     labels = {check["scenario"] for check in result["checks"]}
     assert result["passed"] is True
@@ -170,6 +184,7 @@ def test_verify_results_are_json_serializable():
 
 
 def test_plain_converts_usd_values():
+    _require_pxr()
     from pxr import Gf, Sdf, Vt
 
     assert bank._plain(Gf.Vec3f(1, 2, 3)) == [1.0, 2.0, 3.0]
@@ -343,6 +358,7 @@ def test_no_ten_word_sequence_copied_from_study_guide():
 
 def test_instance_mask_and_surface_source_pin_the_keyed_results():
     """ca-014/ca-015 check PointInstancer visibility and vis-016 the per-context surface, so a wrong key fails."""
+    _require_pxr()
     for qid in ("ca-014", "ca-015", "vis-016"):
         assert bank.verify_question(qid)["passed"] is True, qid
     lanterns = copy.deepcopy(_first(lambda i: i["id"] == "ca-014"))

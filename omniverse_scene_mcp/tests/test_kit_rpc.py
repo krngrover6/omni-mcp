@@ -140,7 +140,7 @@ def test_extended_class_subclasses_the_given_base():
     cls = kit_rpc.make_extended_server_class(_FakeBaseServer)
     assert issubclass(cls, _FakeBaseServer)
     assert cls.__name__ == "Extended_FakeBaseServer"
-    assert cls.rpc_version == RPC_VERSION == "tier2-1"
+    assert cls.rpc_version == RPC_VERSION == "tier3-1"
     assert set(cls.rpc_methods) == set(BASIC_RPC_METHODS) | set(LIVE_RPC_METHODS)
     _raises(lambda: kit_rpc.make_extended_server_class(object()), "_dispatch", error=TypeError)
     _raises(lambda: kit_rpc.make_extended_server_class(int), "_dispatch", error=TypeError)
@@ -151,7 +151,7 @@ def test_capabilities_reports_version_methods_and_queries():
     response = _call(server, "capabilities")
     assert response["ok"] is True
     result = response["result"]
-    assert result["version"] == "tier2-1"
+    assert result["version"] == "tier3-1"
     assert set(result["methods"]) == set(BASIC_RPC_METHODS) | set(LIVE_RPC_METHODS)
     assert result["insight_queries"] == list(INSIGHT_QUERIES)
     assert result["dry_run_default"] is True
@@ -450,3 +450,347 @@ def test_insight_counts_unsaved_edits_in_a_muted_layer():
             assert [layer["identifier"] for layer in result["unsaved_layers"]] == [sub.identifier], result
         assert sub.dirty
         del stage, sub
+
+
+# --- insight time budget -----------------------------------------------------------------------------------------
+
+import time as _time  # noqa: E402
+
+from omniverse_scene_mcp import usd_insight  # noqa: E402
+
+
+class _BudgetSeeingBridge(_RecordingBridge):
+    """Reports the ambient time budget kit_rpc set, as usd_insight's queries do (or raises, to test cleanup)."""
+
+    def __init__(self, fail=False) -> None:
+        super().__init__()
+        self.fail = fail
+
+    def insight(self, query, args=None):
+        self.calls.append(("insight", query, args))
+        active = usd_insight.active_budget()
+        if self.fail:
+            raise ValueError("query failed")
+        result = {"ok": True, "query": query, "seen_budget_ms": active.budget_ms if active else None, "elapsed_ms": 7}
+        if active is not None:
+            result["truncated_by_time"] = False
+            result["time_budget"] = active.report(12, False)
+        return result
+
+
+def test_insight_time_budget_defaults_caps_and_argument_checks():
+    if Usd is None:  # pragma: no cover - pxr missing: TimeBudget (Tf.Stopwatch) cannot be built
+        return
+    bridge = _BudgetSeeingBridge()
+    server = _server(bridge)
+    result = _call(server, "insight", query="stage_info")["result"]
+    assert result["budget_ms"] == kit_rpc.INSIGHT_DEFAULT_BUDGET_MS == 3000.0
+    assert result["seen_budget_ms"] == 3000.0 and result["truncated_by_time"] is False
+    info = result["time_budget"]
+    assert info["enforced"] is True and info["limited_by_queue_wait"] is False and info["requested_budget_ms"] == 3000.0
+    assert info["processed"] == 12 and info["note"]  # the query's own record is kept, kit_rpc's fields are added
+    assert info["elapsed_ms"] >= 0 and result["elapsed_ms"] == 7  # the bridge's own elapsed_ms is kept
+    assert bridge.calls[-1] == ("insight", "stage_info", {}) and usd_insight.active_budget() is None
+    json.dumps(result)
+    # A bridge that reports no timing (older or test bridges) gets its result back unchanged.
+    plain = _call(_server(_RecordingBridge()), "insight", query="stage_info", budget_ms=20)["result"]
+    assert plain == {"ok": True, "mode": "live", "query": "stage_info"}
+
+    # budget_ms may sit in params or in args; the bridge never sees it (its argument allowlist would reject it).
+    result = _call(server, "insight", query="bounds", args={"prim_path": "/World", "budget_ms": 50})["result"]
+    assert result["budget_ms"] == result["seen_budget_ms"] == 50.0
+    assert bridge.calls[-1] == ("insight", "bounds", {"prim_path": "/World"})
+    capped = _call(server, "insight", query="stage_info", budget_ms=10**6)["result"]
+    assert capped["budget_ms"] == kit_rpc.INSIGHT_MAX_BUDGET_MS == 10000.0
+    assert capped["time_budget"]["requested_budget_ms"] == 1e6 and capped["seen_budget_ms"] == 10000.0
+    calls = len(bridge.calls)
+    for bad in (0, -5, True, "fast", math.nan, math.inf, [100]):
+        _raises(lambda: _call(server, "insight", query="stage_info", budget_ms=bad), "budget_ms")
+    _raises(lambda: _call(server, "insight", query="stage_info", budget_ms=5, args={"budget_ms": 5}), "given twice")
+    assert len(bridge.calls) == calls
+
+    failing = _server(_BudgetSeeingBridge(fail=True))
+    _raises(lambda: _call(failing, "insight", query="stage_info"), "query failed")
+    assert usd_insight.active_budget() is None
+    capabilities = _call(server, "capabilities")["result"]
+    assert capabilities["insight_budget_ms"] == {"default": 3000.0, "max": 10000.0}
+    # A bridge without insight still gets the structured needs_bridge_update result.
+    lacking = _call(_server(_PingOnlyBridge()), "insight", query="stage_info", budget_ms=100)["result"]
+    assert lacking["needs_bridge_update"] is True and "time_budget" not in lacking
+
+
+def test_insight_time_budget_shrinks_to_what_is_left_of_the_callers_wait():
+    if Usd is None:  # pragma: no cover - pxr missing
+        return
+    bridge = _BudgetSeeingBridge()
+    server = kit_rpc.make_extended_server_class(_QueueingBaseServer)(bridge)
+    server._submit({"method": "insight", "params": {"query": "stage_info", "budget_ms": 10_000}})
+    [queued] = server.queued
+    fresh = server._dispatch(queued)["result"]
+    assert fresh["budget_ms"] == 10_000.0 and fresh["time_budget"]["limited_by_queue_wait"] is False
+    waited = server._dispatch(dict(queued, _queued_at=_time.monotonic() - 12.0))["result"]
+    left = (kit_rpc._CALLER_WAIT_S - kit_rpc._RESULT_MARGIN_S - 12.0) * 1000.0
+    assert waited["time_budget"]["limited_by_queue_wait"] is True and 0 < waited["budget_ms"] <= left
+    assert waited["seen_budget_ms"] == waited["budget_ms"] and waited["time_budget"]["queue_wait_ms"] >= 12_000
+    gone = server._dispatch(dict(queued, _queued_at=_time.monotonic() - 60.0))["result"]
+    assert gone["budget_ms"] == kit_rpc._MIN_BUDGET_MS and gone["time_budget"]["limited_by_queue_wait"] is True
+    assert kit_rpc._CALLER_WAIT_S - kit_rpc._RESULT_MARGIN_S > kit_rpc.INSIGHT_MAX_BUDGET_MS / 1000.0
+
+
+def _big_live_stage(groups=50, per=100):
+    """In-memory /World > G<i> > C<j> cubes: 5,051 prims, built with Sdf in one change block."""
+    layer = Sdf.Layer.CreateAnonymous(".usda")
+    with Sdf.ChangeBlock():
+        world = Sdf.PrimSpec(layer, "World", Sdf.SpecifierDef, "Xform")
+        for group_index in range(groups):
+            group = Sdf.PrimSpec(world, f"G{group_index}", Sdf.SpecifierDef, "Xform")
+            for cube_index in range(per):
+                Sdf.PrimSpec(group, f"C{cube_index}", Sdf.SpecifierDef, "Cube")
+    return Usd.Stage.Open(layer)
+
+
+def test_live_insight_on_a_big_stage_stops_at_the_time_budget():
+    if Usd is None:  # pragma: no cover - pxr missing
+        return
+    total = 1 + 50 + 50 * 100
+    stage = _big_live_stage()
+    before = stage.GetRootLayer().ExportToString()
+    with _live_bridge(stage) as (bridge, _context):
+        server = _server(bridge)
+        insight = lambda query, **params: _call(server, "insight", query=query, **params)["result"]  # noqa: E731
+        tiny = {
+            "stage_info": insight("stage_info", budget_ms=1),
+            "bounds": insight("bounds", args={"prim_path": "/World", "budget_ms": 1}),
+            "validate": insight("validate", budget_ms=1),
+        }
+        roomy = insight("stage_info")
+        roomy_bounds = insight("bounds", args={"prim_path": "/World"}, budget_ms=10_000)
+        # Every live query reports its budget, elapsed time and truncation (even the one-prim ones).
+        for query, args in (
+            ("composition", {"prim_path": "/World/G0"}),
+            ("explain_value", {"prim_path": "/World/G0/C0", "attribute": "size"}),
+            ("properties", {"prim_path": "/World/G0/C0"}),
+            ("validate", {"max_prims": 100}),
+        ):
+            reported = insight(query, args=args)
+            assert reported["truncated_by_time"] is False and reported["budget_ms"] == 3000.0, query
+            assert reported["time_budget"]["elapsed_ms"] >= 0 and reported["elapsed_ms"] >= 0, query
+            assert reported["time_budget"]["enforced"] is True and args.items() <= reported["args"].items(), query
+            assert "budget_ms" not in reported["args"], query
+    for query, result in tiny.items():
+        json.dumps(result)
+        assert result["mode"] == "live" and result["query"] == query, query
+        assert result["truncated_by_time"] is True and result["time_budget"]["truncated_by_time"] is True, query
+        assert result["budget_ms"] == 1.0 and result["time_budget"]["processed"] < total, query
+        assert any("time budget" in warning for warning in result["warnings"]), query
+        assert "budget_ms" not in result["args"], query
+    assert tiny["stage_info"]["prims"]["total"] < total
+    assert tiny["bounds"]["world_bound"]["partial"] is True
+    assert roomy["truncated_by_time"] is False and roomy["prims"]["total"] == total and roomy["budget_ms"] == 3000.0
+    assert "warnings" not in roomy or not any("time budget" in warning for warning in roomy["warnings"])
+    assert roomy_bounds["truncated_by_time"] is False and roomy_bounds["time_budget"]["processed"] == total
+    assert stage.GetRootLayer().ExportToString() == before and usd_insight.active_budget() is None
+
+
+# --- tier3-1: safe attribute/material edits and MCP undo over the extended RPC ---------------------------------
+
+from omniverse_scene_mcp.bridge import EDIT_RPC_METHODS, UNDO_RPC_METHODS  # noqa: E402 - appended section
+
+
+class _RecordingEditBridge(_RecordingBridge):
+    """Records the edit/undo calls the extended server forwards; never touches a stage."""
+
+    def set_attribute(self, path, name, value, **options):
+        self.calls.append(("set_attribute", path, name, value, options))
+        return {"ok": True, "dry_run": options["dry_run"], "path": path}
+
+    def create_material(self, path, **options):
+        self.calls.append(("create_material", path, options))
+        return {"ok": True, "dry_run": options["dry_run"], "path": path}
+
+    def bind_material(self, prim_path, material_path, **options):
+        self.calls.append(("bind_material", prim_path, material_path, options))
+        return {"ok": True, "dry_run": options["dry_run"], "path": prim_path}
+
+    def undo_last(self, dry_run=True):
+        self.calls.append(("undo_last", dry_run))
+        return {"ok": True, "dry_run": dry_run}
+
+    def undo_history(self, limit=20):
+        self.calls.append(("undo_history", limit))
+        return {"ok": True, "count": 0, "entries": []}
+
+
+def test_edit_and_undo_methods_are_published_in_the_tier3_capabilities():
+    assert RPC_VERSION == "tier3-1"
+    assert set(EDIT_RPC_METHODS) | set(UNDO_RPC_METHODS) <= set(LIVE_RPC_METHODS)
+    assert not (set(EDIT_RPC_METHODS) | set(UNDO_RPC_METHODS)) & set(BASIC_RPC_METHODS)
+    assert set(LIVE_RPC_METHODS) <= set(kit_rpc._HANDLERS)
+    result = _call(_server(_RecordingEditBridge()), "capabilities")["result"]
+    assert result["version"] == "tier3-1" and result["dry_run_default"] is True
+    assert result["edit_methods"] == list(EDIT_RPC_METHODS) and result["undo_methods"] == list(UNDO_RPC_METHODS)
+    assert set(EDIT_RPC_METHODS) | set(UNDO_RPC_METHODS) <= set(result["methods"])
+    # Every write is dropped when it waited too long in Kit's queue; undo_history only reads.
+    assert set(EDIT_RPC_METHODS) | {"undo_last"} <= set(kit_rpc._WRITE_METHODS)
+    assert "undo_history" not in kit_rpc._WRITE_METHODS
+
+
+def test_edit_and_undo_methods_forward_a_dry_run_unless_dry_run_is_false():
+    bridge = _RecordingEditBridge()
+    server = _server(bridge)
+
+    preview = _call(server, "set_attribute", path="/World/Key", name="inputs:intensity", value=5000)["result"]
+    assert preview == {"ok": True, "dry_run": True, "path": "/World/Key"}  # missing dry_run: a quiet dry run
+    assert bridge.calls[-1] == ("set_attribute", "/World/Key", "inputs:intensity", 5000,
+                                {"time": None, "create_type": None, "dry_run": True})
+    _call(server, "set_attribute", path="/World/Key", name="inputs:color", value=[1, 0.5, 0], time=24,
+          create_type="color3f", dry_run=False)
+    assert bridge.calls[-1][4] == {"time": 24.0, "create_type": "color3f", "dry_run": False}
+    _call(server, "set_attribute", path="/World/Key", name="size", value=2, dry_run="FALSE")
+    assert bridge.calls[-1][4]["dry_run"] is False
+    for malformed in (0, 1, "no", "off", "maybe", [], {}):
+        result = _call(server, "set_attribute", path="/World/Key", name="size", value=2, dry_run=malformed)["result"]
+        assert bridge.calls[-1][4]["dry_run"] is True, malformed
+        assert result["dry_run"] is True and "nothing was written" in result["warnings"][-1], malformed
+
+    _call(server, "create_material", path="/World/Looks/Steel", diffuse_color=[0.8, 0.8, 0.8], roughness=0.2,
+          metallic=1, emissive_color="#ff8800", create_parent=True)
+    _, path, options = bridge.calls[-1]
+    assert path == "/World/Looks/Steel" and options["dry_run"] is True and options["create_parent"] is True
+    assert options["diffuse_color"] == (0.8, 0.8, 0.8) and options["metallic"] == 1.0
+    assert options["emissive_color"] == "#ff8800" and options["opacity"] is None and options["ior"] is None
+    _call(server, "create_material", path="/World/Looks/Steel")
+    assert bridge.calls[-1][2]["create_parent"] is False  # only an explicit true creates a missing parent
+
+    _call(server, "bind_material", prim_path="/World/Cube", material_path="/World/Looks/Steel", strength="stronger",
+          purpose="preview", dry_run=False)
+    assert bridge.calls[-1] == ("bind_material", "/World/Cube", "/World/Looks/Steel",
+                                {"strength": "stronger", "purpose": "preview", "dry_run": False})
+    _call(server, "bind_material", prim_path="/World/Cube", material_path="/World/Looks/Steel")
+    assert bridge.calls[-1][3]["dry_run"] is True
+
+    assert _call(server, "undo_last")["result"]["dry_run"] is True and bridge.calls[-1] == ("undo_last", True)
+    _call(server, "undo_last", dry_run=False)
+    assert bridge.calls[-1] == ("undo_last", False)
+    risky = _call(server, "undo_last", dry_run="yes")["result"]
+    assert bridge.calls[-1] == ("undo_last", True) and risky["warnings"]
+    for limit, expected in ((None, 20), (0, 1), (5, 5), (999, 50)):
+        params = {} if limit is None else {"limit": limit}
+        _call(server, "undo_history", **params)
+        assert bridge.calls[-1] == ("undo_history", expected), limit
+    assert server.base_calls == []
+    json.dumps(bridge.calls)
+
+
+def test_edit_and_undo_parameters_are_checked_before_forwarding():
+    bridge = _RecordingEditBridge()
+    server = _server(bridge)
+    bad = [
+        ("set_attribute", {"path": "/World/Key", "name": "size", "value": 1, "dryrun": False}, "Unknown parameter"),
+        ("set_attribute", {"path": "", "name": "size", "value": 1}, "path"),
+        ("set_attribute", {"path": "/World/Key", "value": 1}, "name"),
+        ("set_attribute", {"path": "/World/Key", "name": "x" * 300, "value": 1}, "name"),
+        ("set_attribute", {"path": "/World/Key", "name": "size"}, "value"),
+        ("set_attribute", {"path": "/World/Key", "name": "size", "value": math.nan}, "finite"),
+        ("set_attribute", {"path": "/World/Key", "name": "size", "value": [[[[[1]]]]]}, "nested"),
+        ("set_attribute", {"path": "/World/Key", "name": "size", "value": [1, None]}, "value"),
+        ("set_attribute", {"path": "/World/Key", "name": "size", "value": 1, "time": True}, "time"),
+        ("set_attribute", {"path": "/World/Key", "name": "size", "value": 1, "time": "later"}, "time"),
+        ("set_attribute", {"path": "/World/Key", "name": "size", "value": 1, "create_type": "f" * 80}, "create_type"),
+        ("create_material", {"path": "/World/Looks/M", "diffuse_color": [1, 0]}, "diffuse_color"),
+        ("create_material", {"path": "/World/Looks/M", "roughness": "shiny"}, "roughness"),
+        ("create_material", {"path": "/World/Looks/M", "create_parent": "maybe"}, "create_parent"),
+        ("create_material", {"path": "/World/Looks/M", "shader": "MDL"}, "Unknown parameter"),
+        ("bind_material", {"prim_path": "/World/Cube"}, "material_path"),
+        ("bind_material", {"prim_path": "/World/Cube", "material_path": "/M", "strength": ""}, "strength"),
+        ("undo_last", {"dry_run": False, "force": True}, "Unknown parameter"),
+        ("undo_history", {"limit": "5"}, "limit"),
+        ("undo_history", {"limit": True}, "limit"),
+    ]
+    for method, params, fragment in bad:
+        _raises(lambda: _call(server, method, **params), fragment)
+    assert bridge.calls == []
+
+
+def test_bridge_without_edit_or_undo_methods_gets_needs_bridge_update_results():
+    server = _server(_PingOnlyBridge())
+    for method, params in (
+        ("set_attribute", {"path": "/World/Key", "name": "size", "value": 1}),
+        ("create_material", {"path": "/World/Looks/M"}),
+        ("bind_material", {"prim_path": "/World/Cube", "material_path": "/World/Looks/M"}),
+        ("undo_last", {}),
+        ("undo_history", {}),
+    ):
+        result = _call(server, method, **params)["result"]
+        assert result["ok"] is False and result["needs_bridge_update"] is True and result["method"] == method, method
+
+
+def test_queued_edit_and_undo_writes_are_dropped_when_stale():
+    bridge = _RecordingEditBridge()
+    server = kit_rpc.make_extended_server_class(_QueueingBaseServer)(bridge)
+    writes = (
+        ("set_attribute", {"path": "/World/Key", "name": "size", "value": 1, "dry_run": False}),
+        ("create_material", {"path": "/World/Looks/M", "dry_run": False}),
+        ("bind_material", {"prim_path": "/World/Cube", "material_path": "/World/Looks/M", "dry_run": False}),
+        ("undo_last", {"dry_run": False}),
+    )
+    for method, params in writes:
+        server._submit({"method": method, "params": params})
+    server._submit({"method": "undo_history", "params": {}})
+    for payload in server.queued[:-1]:
+        late = dict(payload, _queued_at=payload["_queued_at"] - kit_rpc._STALE_AFTER_S - 1.0)
+        result = server._dispatch(late)["result"]
+        assert result["ok"] is False and result["written"] is False, payload["method"]
+    assert bridge.calls == []
+    history = server.queued[-1]
+    assert server._dispatch(dict(history, _queued_at=history["_queued_at"] - 60.0))["result"]["ok"] is True
+    assert bridge.calls == [("undo_history", 20)]
+
+
+def test_edits_and_undo_round_trip_over_the_rpc_on_a_live_stage():
+    if Usd is None:  # pragma: no cover - pxr missing
+        return
+    from pxr import UsdShade
+
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.Xform.Define(stage, "/World")
+    UsdGeom.Cube.Define(stage, "/World/Cube").CreateSizeAttr(1.0)
+    layer = stage.GetRootLayer()
+    original = layer.ExportToString()
+    with _live_bridge(stage) as (bridge, context):
+        server = _server(bridge)
+        result = lambda method, **params: _call(server, method, **params)["result"]  # noqa: E731
+        previews = [
+            result("set_attribute", path="/World/Cube", name="size", value=3),
+            result("create_material", path="/World/Looks/Red", diffuse_color=[1, 0, 0], create_parent=True),
+            result("set_attribute", path="/World/Cube", name="size", value=4, dry_run=0),
+            result("undo_last"),
+        ]
+        assert layer.ExportToString() == original  # previews never write
+        assert all(item["dry_run"] is True for item in previews[:3]), previews
+        assert previews[1]["would_create"]["creates_parent"] == {"path": "/World/Looks", "type": "Scope"}
+        assert previews[3]["ok"] is False  # nothing recorded yet
+
+        sized = result("set_attribute", path="/World/Cube", name="size", value=3, dry_run=False)
+        made = result("create_material", path="/World/Looks/Red", diffuse_color=[1, 0, 0], create_parent=True,
+                      dry_run=False)
+        bound = result("bind_material", prim_path="/World/Cube", material_path="/World/Looks/Red", dry_run="false")
+        assert sized["ok"] and sized["written"] and sized["undoable"] is True, sized
+        assert made["ok"] and made["created"]["created_parent"] == "/World/Looks", made
+        assert bound["ok"] and bound["written"], bound
+        assert stage.GetPrimAtPath("/World/Cube").GetAttribute("size").Get() == 3.0
+        assert stage.GetPrimAtPath("/World/Looks").GetTypeName() == "Scope"
+        material, _ = UsdShade.MaterialBindingAPI(stage.GetPrimAtPath("/World/Cube")).ComputeBoundMaterial()
+        assert material and str(material.GetPath()) == "/World/Looks/Red"
+        assert context.selection.paths == []  # edits never change the selection
+
+        history = result("undo_history", limit=10)
+        assert history["count"] == 3 and history["entries"][0]["label"].startswith("Bind /World/Looks/Red")
+        before_undo = layer.ExportToString()
+        assert result("undo_last")["would_undo"]["label"].startswith("Bind") and layer.ExportToString() == before_undo
+        for _ in range(3):
+            undone = result("undo_last", dry_run=False)
+            assert undone["ok"] is True and undone["verified"] is True, undone
+            assert "not undoable" in undone["note"]
+        assert layer.ExportToString() == original
+        json.dumps([previews, sized, made, bound, history])

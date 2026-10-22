@@ -255,6 +255,16 @@ def _bank_items() -> dict[str, dict]:
 # --------------------------------------------------------------------------- registration
 
 
+def _require_pxr() -> None:
+    """Skip (not fail) a test that needs the USD Python bindings when pxr is missing or does not import."""
+    try:
+        import pxr  # noqa: F401
+    except ImportError:
+        import unittest
+
+        raise unittest.SkipTest("USD Python bindings (pxr) are not installed")
+
+
 def test_new_tools_are_registered_exactly_once():
     with _server() as (call, _files, _root):
         app = call.app
@@ -321,7 +331,12 @@ def test_router_usd_backend_falls_back_to_shared_offline_docs():
                 assert isinstance(backend, FallbackKnowledgeBackend)
                 assert backend.offline.knowledge is shared
                 assert backend.selector is backend.primary.selector
-                assert isinstance(router._backends[RouteTarget.KIT], StreamableMCPKnowledgeBackend)
+                # Kit / OmniUI / Isaac Sim also fall back offline now: to the installed extension docs.
+                for target in (RouteTarget.KIT, RouteTarget.OMNI_UI, RouteTarget.ISAAC_SIM):
+                    docs_backend = router._backends[target]
+                    assert isinstance(docs_backend, FallbackKnowledgeBackend), target
+                    assert isinstance(docs_backend.primary, StreamableMCPKnowledgeBackend), target
+                    assert docs_backend.offline.domain == target.value and docs_backend.offline.endpoint == "offline"
                 status = {row["target"]: row for row in router.backend_status()["backends"]}
                 assert status["usd"]["endpoint"] == backend.primary.endpoint
 
@@ -441,6 +456,7 @@ def test_exam_progress_persists_only_in_the_chosen_exam_prep_dir():
 
 
 def test_composition_puzzle_tools_record_composition_progress():
+    _require_pxr()
     with _server() as (call, _files, _root):
         puzzle = call("learning_composition_puzzle", difficulty="medium", seed=42)
         assert puzzle["ok"] is True and puzzle["puzzle_id"] == "liverps-medium-42"
@@ -474,6 +490,7 @@ def test_composition_puzzle_tools_record_composition_progress():
 
 
 def test_usd_playground_compose_explains_strength():
+    _require_pxr()
     layers = {
         "shot.usda": '#usda 1.0\n(\n    subLayers = [@./strong.usda@, @./weak.usda@]\n)\n\ndef Xform "World"\n{\n}\n',
         "strong.usda": '#usda 1.0\n\nover "World"\n{\n    double size = 5\n}\n',
@@ -494,6 +511,7 @@ def test_usd_playground_compose_explains_strength():
 
 
 def test_file_mode_tools_read_the_saved_file_read_only():
+    _require_pxr()
     with _server() as (call, files, root):
         before = {name: _file_state(path) for name, path in files.items()}
         shot = str(files["shot"])
@@ -548,6 +566,7 @@ def test_file_mode_tools_read_the_saved_file_read_only():
 
 
 def test_file_mode_defaults_to_the_live_scenes_saved_root_layer():
+    _require_pxr()
     with _server() as (call, files, _root):
         fake = call("scene_stage_info")
         assert fake["ok"] is False and fake["mode"] == "saved_file"

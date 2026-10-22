@@ -5,10 +5,18 @@ from dataclasses import asdict
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
-# The scene bridge is a loopback service: never route its RPCs through HTTP(S)_PROXY.
-urlopen = build_opener(ProxyHandler({})).open
+
+class NoRedirect(HTTPRedirectHandler):
+    """Refuse 3xx: a loopback-only request must never be sent on to another host (it raises HTTPError instead)."""
+
+    def redirect_request(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+
+# The scene bridge is a loopback service: never route its RPCs through HTTP(S)_PROXY or follow a redirect.
+urlopen = build_opener(ProxyHandler({}), NoRedirect()).open
 
 from .bridge import UNSUPPORTED_METHOD_PREFIX, PrimRecord, SceneSnapshot, unsupported_result
 
@@ -195,6 +203,80 @@ class HttpSceneBridge:
         params = _without_none(path=path, target=_listed(target), up_axis=up_axis, dry_run=dry_run is not False)
         return self._rpc_optional("aim", params, timeout=LIVE_TIMEOUT)
 
+    # --- safe edits and undo (RPC tier3-1); only an explicit dry_run=False is sent as false ------------------------
+
+    def set_attribute(
+        self,
+        path: str,
+        name: str,
+        value: Any,
+        *,
+        time: float | None = None,
+        create_type: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        params = _without_none(
+            path=path,
+            name=name,
+            value=_listed(value),
+            time=time,
+            create_type=create_type,
+            dry_run=dry_run is not False,
+        )
+        return self._rpc_optional("set_attribute", params, timeout=LIVE_TIMEOUT)
+
+    def create_material(
+        self,
+        path: str,
+        *,
+        diffuse_color: tuple[float, float, float] | str | None = None,
+        roughness: float | None = None,
+        metallic: float | None = None,
+        opacity: float | None = None,
+        emissive_color: tuple[float, float, float] | str | None = None,
+        ior: float | None = None,
+        create_parent: bool = False,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        params = _without_none(
+            path=path,
+            diffuse_color=_listed(diffuse_color),
+            roughness=roughness,
+            metallic=metallic,
+            opacity=opacity,
+            emissive_color=_listed(emissive_color),
+            ior=ior,
+            create_parent=True if create_parent is True else None,
+            dry_run=dry_run is not False,
+        )
+        return self._rpc_optional("create_material", params, timeout=LIVE_TIMEOUT)
+
+    def bind_material(
+        self,
+        prim_path: str,
+        material_path: str,
+        *,
+        strength: str | None = None,
+        purpose: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        params = _without_none(
+            prim_path=prim_path,
+            material_path=material_path,
+            strength=strength,
+            purpose=purpose,
+            dry_run=dry_run is not False,
+        )
+        return self._rpc_optional("bind_material", params, timeout=LIVE_TIMEOUT)
+
+    def undo_last(self, dry_run: bool = True) -> dict[str, Any]:
+        """Undo (dry_run=True, the default: only preview) the newest MCP edit the live bridge recorded."""
+        return self._rpc_optional("undo_last", {"dry_run": dry_run is not False}, timeout=LIVE_TIMEOUT)
+
+    def undo_history(self, limit: int = 20) -> dict[str, Any]:
+        """The newest MCP edits the live bridge recorded (read-only)."""
+        return self._rpc_optional("undo_history", {"limit": int(limit)}, timeout=LIVE_TIMEOUT)
+
     def _rpc_optional(
         self, method: str, params: dict[str, Any] | None = None, timeout: float = DEFAULT_TIMEOUT
     ) -> dict[str, Any]:
@@ -214,8 +296,10 @@ class HttpSceneBridge:
             port = None
         if port == COMPOSER_PORT:
             hint = (
-                "Composer's scene extension on port 9910 serves only the basic scene methods; use the Isaac Sim "
-                "bridge on 9911 for live insight and authoring, or the saved-file tools (scene_stage_info, ...)."
+                "Composer's stock scene extension serves only the basic scene methods: run "
+                "composer-study/reload_composer_bridge.py in Composer's Script Editor (or relaunch Composer with "
+                "start-composer-study.ps1) to serve the extended bridge on 9910, or use the Isaac Sim bridge on 9911 "
+                "or the saved-file tools (scene_stage_info, ...)."
             )
         else:
             hint = (

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 # Version of the extended live RPC (kit_rpc.make_extended_server_class); bump when its methods change.
-RPC_VERSION = "tier2-1"
+RPC_VERSION = "tier3-1"
 # Methods every LiveSceneControlServer (live_scene_control.py) answers, Composer's 9910 bridge included.
 BASIC_RPC_METHODS: tuple[str, ...] = (
     "ping",
@@ -31,8 +31,19 @@ BASIC_RPC_METHODS: tuple[str, ...] = (
     "find",
     "save",
 )
+# Safe attribute/material edits (edits.py) and MCP undo (undo.py, kit_commands.py), added in RPC tier3-1.
+EDIT_RPC_METHODS: tuple[str, ...] = ("set_attribute", "create_material", "bind_material")
+UNDO_RPC_METHODS: tuple[str, ...] = ("undo_last", "undo_history")
 # Methods only an extended bridge answers; an older bridge replies "Unsupported live scene method: <name>".
-LIVE_RPC_METHODS: tuple[str, ...] = ("capabilities", "insight", "create_light", "create_camera", "aim")
+LIVE_RPC_METHODS: tuple[str, ...] = (
+    "capabilities",
+    "insight",
+    "create_light",
+    "create_camera",
+    "aim",
+    *EDIT_RPC_METHODS,
+    *UNDO_RPC_METHODS,
+)
 # Read-only insight queries a live bridge runs on the open stage (usd_insight / usd_validate functions).
 INSIGHT_QUERIES: tuple[str, ...] = ("stage_info", "composition", "explain_value", "properties", "bounds", "validate")
 UNSUPPORTED_METHOD_PREFIX = "Unsupported live scene method"
@@ -180,3 +191,41 @@ class LiveSceneBridge(SceneBridge, Protocol):
         up_axis: str | None = None,
         dry_run: bool = True,
     ) -> dict[str, Any]: ...
+
+    def set_attribute(
+        self,
+        path: str,
+        name: str,
+        value: Any,
+        *,
+        time: float | None = None,
+        create_type: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]: ...
+
+    def create_material(
+        self,
+        path: str,
+        *,
+        diffuse_color: tuple[float, float, float] | str | None = None,
+        roughness: float | None = None,
+        metallic: float | None = None,
+        opacity: float | None = None,
+        emissive_color: tuple[float, float, float] | str | None = None,
+        ior: float | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]: ...
+
+    def bind_material(
+        self,
+        prim_path: str,
+        material_path: str,
+        *,
+        strength: str | None = None,
+        purpose: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]: ...
+
+    def undo_last(self, dry_run: bool = True) -> dict[str, Any]: ...
+
+    def undo_history(self, limit: int = 20) -> dict[str, Any]: ...

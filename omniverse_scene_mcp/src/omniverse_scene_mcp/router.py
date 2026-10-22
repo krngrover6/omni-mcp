@@ -9,6 +9,7 @@ import re
 from typing import Any, Protocol
 from urllib.parse import unquote
 
+from . import help as tool_guide
 from .service import OperationResult, SceneMCPService
 
 _LEARNING_PHRASES = (
@@ -55,6 +56,17 @@ _PRONOUN = re.compile(r"\b(?:selected|this|that|it)\b")
 # A whole target phrase that means "the selection" ("this", "it", "the selected light"). Edits use this, not
 # _PRONOUN.search, so "the cube that is red" or "the sphere next to it" never retargets the selected prim.
 _SELECTION_REF = re.compile(r"(?:the\s+)?(?:selected|this|that|it)(?:\s+[\w-]+)?", re.IGNORECASE)
+# A whole target phrase that is exactly one prim path ("/World/Box", "the prim /World/Box"). An edit applies to a
+# path only when the phrase is this bare path, never to a path that merely appears inside it ("everything except
+# /World/Hero"), the same rule delete already follows.
+_BARE_PATH = re.compile(r"(?:the\s+)?(?:prim\s+)?(/(?:[\w\-.]+/)*[\w\-.]+)", re.IGNORECASE)
+# The material side of a binding: exactly one material path ("/World/Looks/Red", "the material /World/Looks/Red").
+_BARE_MATERIAL_PATH = re.compile(r"(?:the\s+)?(?:material\s+)?(/(?:[\w\-.]+/)*[\w\-.]+)", re.IGNORECASE)
+# 'set the position/rotation/scale/name of X to ...' are not attributes to write directly: the working command.
+_TRANSFORM_ATTRIBUTE_WORDS = {
+    "position": "move", "location": "move", "translate": "move", "translation": "move",
+    "rotation": "rotate", "rotate": "rotate", "scale": "scale", "name": "rename",
+}
 
 # Questions about the open stage keep their scene-aware routing instead of going to a docs backend.
 _LIVE_SCENE = re.compile(r"(?:^|\s)/\w|\bselect(?:ed|ion)\b|\bmy\b|\b(?:this|current) (?:scene|stage)\b|\bhow many\b")
@@ -133,6 +145,130 @@ _MOCK_EXAM = re.compile(
 )
 MOCK_EXAM_DEFAULTS = {"count": 65, "minutes": 120}
 _USD_SUFFIXES = (".usd", ".usda", ".usdc", ".usdz")
+
+# --- help ("help", "what can you do", "how do I use this", "list tools", "help lights") -------------------------
+_HELP_REQUEST = re.compile(
+    r"^(?:(?:show|give|get)\s+(?:me\s+)?(?:some\s+)?)?help(?:\s+me)?"
+    r"(?:\s+(?:with|on|about|for)\s+(?P<topic>.+)|\s+(?P<bare>[\w.:&/ -]+))?$"
+    r"|^/help$|^\?$"
+    r"|^what\s+(?:else\s+)?can\s+(?:you|i)\s+do(?:\s+(?:here|with\s+(?:this|you|it|the\s+router)))?$"
+    r"|^what\s+(?:do|can)\s+you\s+(?:support|understand)$"
+    r"|^how\s+(?:do|can|should)\s+i\s+(?:use|start\s+using)\s+"
+    r"(?:this|you|it|the\s+router|this\s+router|this\s+tool|these\s+tools|the\s+tools)$"
+    r"|^(?:list|show(?:\s+me)?|what\s+are)\s+(?:all\s+)?(?:(?:the|your|available)\s+)*tools(?:\s+(?:you\s+have|available))?$"
+    r"|^(?:what|which)\s+tools\s+(?:do\s+you\s+have|are\s+there|are\s+available|can\s+i\s+use)$"
+    r"|^tools?\s+guide$"
+)
+
+# --- undo -----------------------------------------------------------------------------------------------------------
+_UNDO_REQUEST = re.compile(
+    r"^undo(?:\s+(?:that|it|this|(?:the\s+|my\s+)?last(?:\s+(?:change|edit|step|action|one|thing(?:\s+you\s+did)?))?|"
+    r"what\s+you\s+(?:just\s+)?did))?$"
+)
+# Only these apply an undo (and only when the request is not a dry run); plain "undo" previews.
+_UNDO_CONFIRM = re.compile(
+    r"^(?:confirm(?:ed)?\s+undo|undo\s+(?:it\s+|that\s+)?(?:now|for\s+real)|yes,?\s+undo(?:\s+(?:it|that))?|"
+    r"really\s+undo(?:\s+(?:it|that))?|apply\s+(?:the\s+)?undo)$"
+)
+_UNDO_HISTORY = re.compile(
+    r"^(?:what\s+(?:did|have)\s+you\s+(?:just\s+)?(?:change|changed)|what\s+changed|what\s+(?:can|could)\s+i\s+undo|"
+    r"(?:show|list|give)(?:\s+me)?\s+(?:the\s+|my\s+|your\s+)?(?:recent\s+|last\s+)?"
+    r"(?:changes|edits|undo\s+history|change\s+history|history\s+of\s+changes)|(?:undo|change)\s+history|recent\s+changes)$"
+)
+
+# --- shapes, lights, cameras, materials and colors ----------------------------------------------------------------
+# New shapes match whole words ("airplane" is not a plane); "cube" keeps its old substring match.
+_SHAPE_WORDS = (
+    ("capsule", "Capsule"),
+    ("cylinder", "Cylinder"),
+    ("cone", "Cone"),
+    ("sphere", "Sphere"),
+    ("ball", "Sphere"),
+    ("plane", "Plane"),
+    ("box", "Cube"),
+)
+_LIGHT_KINDS = {
+    "rect": "rect", "rectangle": "rect", "rectangular": "rect", "area": "rect",
+    "disk": "disk", "disc": "disk",
+    "dome": "dome", "sky": "dome", "hdri": "dome",
+    "distant": "distant", "sun": "distant", "directional": "distant",
+    "sphere": "sphere", "point": "sphere",
+    "cylinder": "cylinder", "tube": "cylinder",
+}
+_LIGHT_TYPE_NAMES = {
+    "rect": "RectLight", "disk": "DiskLight", "dome": "DomeLight", "distant": "DistantLight",
+    "sphere": "SphereLight", "cylinder": "CylinderLight",
+}
+_COLOR_WORDS: dict[str, tuple[float, float, float]] = {
+    "red": (1.0, 0.0, 0.0), "green": (0.0, 1.0, 0.0), "blue": (0.0, 0.0, 1.0), "yellow": (1.0, 1.0, 0.0),
+    "white": (1.0, 1.0, 1.0), "black": (0.0, 0.0, 0.0), "gray": (0.5, 0.5, 0.5), "grey": (0.5, 0.5, 0.5),
+    "orange": (1.0, 0.5, 0.0), "purple": (0.5, 0.0, 0.5), "pink": (1.0, 0.4, 0.7), "cyan": (0.0, 1.0, 1.0),
+    "magenta": (1.0, 0.0, 1.0), "brown": (0.45, 0.25, 0.1), "gold": (1.0, 0.77, 0.34), "silver": (0.75, 0.75, 0.75),
+}
+_COLOR_WORD = "(?:" + "|".join(sorted(_COLOR_WORDS, key=len, reverse=True)) + ")"
+_VECTOR_TEXT = rf"\(?\s*{_NUMBER}\s*[,\s]\s*{_NUMBER}\s*[,\s]\s*{_NUMBER}\s*\)?"
+_CREATE_VERB = r"^(?:add|create|spawn|place|put|make)\s+(?:a|an|another|new)\s+(?:new\s+)?"
+_LIGHT_REQUEST = re.compile(
+    _CREATE_VERB + rf"(?:(?P<color>{_COLOR_WORD})\s+)?(?:(?P<kind>{'|'.join(_LIGHT_KINDS)})\s+)?light\b(?P<rest>.*)$",
+    re.IGNORECASE,
+)
+_CAMERA_REQUEST = re.compile(_CREATE_VERB + r"camera\b(?P<rest>.*)$", re.IGNORECASE)
+# Up to three words before "material": a color word is understood, anything else ("shiny") is refused, never
+# turned into an Xform named ShinyMaterial.
+_MATERIAL_REQUEST = re.compile(
+    r"^(?:make|create|add|define)\s+(?:(?:a|an|new|another)\s+)*(?P<words>(?:[\w-]+\s+){0,3}?)material\b(?P<rest>.*)$",
+    re.IGNORECASE,
+)
+# "paint /World/Box red", "make it blue", "colour the cube 1 0 0"; never "make a ..." (that creates something).
+_PAINT_REQUEST = re.compile(
+    r"^(?P<verb>paint|colou?r|make|turn)\s+(?!(?:a|an|another|new)\b)(?P<target>.+?)\s+(?:(?:in|with|using)\s+)?"
+    rf"(?P<color>{_COLOR_WORD}|{_VECTOR_TEXT})$",
+    re.IGNORECASE,
+)
+_DEFAULT_LOOKS = "/World/Looks"
+
+# Friendly attribute names -> USD names; None means "depends on the prim type" (see _usd_attribute_name).
+_ATTRIBUTE_ALIASES: dict[str, str | None] = {
+    "intensity": "inputs:intensity",
+    "brightness": "inputs:intensity",
+    "exposure": "inputs:exposure",
+    "color": None,
+    "colour": None,
+    "display color": "primvars:displayColor",
+    "displaycolor": "primvars:displayColor",
+    "focal length": "focalLength",
+    "focallength": "focalLength",
+    "horizontal aperture": "horizontalAperture",
+    "size": "size",
+    "radius": None,
+    "visibility": "visibility",
+    "purpose": "purpose",
+}
+_LIGHT_ONLY_ATTRIBUTES = {"intensity", "brightness", "exposure"}
+_CAMERA_ONLY_ATTRIBUTES = {"focal length", "focallength", "horizontal aperture"}
+_NUMERIC_ATTRIBUTES = {
+    "inputs:intensity", "inputs:exposure", "inputs:radius", "focalLength", "horizontalAperture", "size", "radius",
+}
+_VISIBILITY_WORDS = {
+    "invisible": "invisible", "hidden": "invisible", "hide": "invisible", "off": "invisible", "false": "invisible",
+    "no": "invisible", "visible": "inherited", "inherited": "inherited", "show": "inherited", "shown": "inherited",
+    "on": "inherited", "true": "inherited", "yes": "inherited",
+}
+_PURPOSES = ("default", "render", "proxy", "guide")
+
+# Clause words in "add a rect light /World/Key at 0 5 0 aimed at the cube with intensity 5000".
+_AIM_WORDS = {"aimed", "aiming", "aim", "pointed", "pointing", "point", "looking", "facing", "directed", "shining"}
+_AIM_PREPOSITIONS = {"at", "to", "toward", "towards", "on"}
+_CLAUSE_WORDS = _AIM_WORDS | {
+    "with", "and", "at", "above", "over", "intensity", "exposure", "color", "colour", "size", "under", "in", "inside",
+    "into", "named", "called", "as", "focal", "roughness", "metallic", "metalness", "diffuse",
+}
+_CLAUSE_NUMBERS = {
+    "intensity": "intensity", "exposure": "exposure", "size": "size", "roughness": "roughness",
+    "metallic": "metallic", "metalness": "metallic",
+}
+_CLAUSE_FILLER = {"with", "and", "please", "here", "now", "then"}
+_EXTENDED_ACTIONS = {"set_attribute", "create_light", "create_camera", "create_material", "paint", "undo", "undo_history"}
 
 _QUIZZES: dict[str, dict[str, list[str]]] = {
     "schemas": {
@@ -243,6 +379,84 @@ def _saved_up_axis(stage_name: str) -> dict[str, str] | None:
     return {"axis": axis, "source": "authored" if authored else "fallback", "layer": path}
 
 
+def _parse_color(text: str) -> tuple[float, float, float] | None:
+    """(r, g, b) from a color word ('red') or three numbers ('1 0 0', '(1, 0, 0)'); None otherwise."""
+    cleaned = text.strip()
+    if cleaned.lower() in _COLOR_WORDS:
+        return _COLOR_WORDS[cleaned.lower()]
+    if re.fullmatch(_VECTOR_TEXT, cleaned):
+        red, green, blue = (float(value) for value in re.findall(_NUMBER, cleaned))
+        return (red, green, blue)
+    return None
+
+
+def _attribute_value(name: str, text: str) -> Any:
+    """The JSON value to author for attribute `name` from the words after 'to'; ValueError when it cannot be one."""
+    raw = text.strip().strip("'\"").strip()
+    if name in {"inputs:color", "primvars:displayColor"}:
+        color = _parse_color(raw)
+        if color is None:
+            raise ValueError(f"{name} needs a color word such as red or blue, or three numbers from 0 to 1 such as '1 0 0'.")
+        # displayColor is a color3f[] primvar (one color per prim when constant); a light's inputs:color is one color3f.
+        return [list(color)] if name == "primvars:displayColor" else list(color)
+    if name == "visibility":
+        if raw.lower() not in _VISIBILITY_WORDS:
+            raise ValueError("visibility is 'invisible' (hidden) or 'inherited' (visible).")
+        return _VISIBILITY_WORDS[raw.lower()]
+    if name == "purpose":
+        if raw.lower() not in _PURPOSES:
+            raise ValueError(f"purpose is one of {', '.join(_PURPOSES)}.")
+        return raw.lower()
+    if re.fullmatch(rf"\(?\s*{_NUMBER}(?:\s*[,\s]\s*{_NUMBER})*\s*\)?", raw):
+        values = [float(value) for value in re.findall(_NUMBER, raw)]
+        return values[0] if len(values) == 1 else values
+    if name in _NUMERIC_ATTRIBUTES:
+        raise ValueError(f"{name} needs a number, for example '5000'.")
+    if raw.lower() in {"true", "false"}:
+        return raw.lower() == "true"
+    return raw
+
+
+def _world_bound(result: Any) -> dict[str, Any] | None:
+    """The non-empty world_bound record of a live 'bounds' insight result, or None."""
+    if not isinstance(result, dict) or result.get("ok") is False:
+        return None
+    record = result.get("world_bound")
+    if record is None and isinstance(result.get("result"), dict):
+        record = result["result"].get("world_bound")
+    if not isinstance(record, dict) or record.get("empty"):
+        return None
+    try:
+        if any(len([float(value) for value in record[key]]) != 3 for key in ("center", "size", "max")):
+            return None
+    except (KeyError, TypeError, ValueError):
+        return None
+    return record
+
+
+def _refusal(message: str, example: str) -> dict[str, Any]:
+    """An 'unsupported' parse result: nothing changes and the hint shows a phrasing that works."""
+    return {
+        "action": "unsupported",
+        "path": None,
+        "message": f"{message} Nothing was changed.",
+        "hint": f"For example '{example}'.",
+    }
+
+
+def _service_lacks(method: str, action: str, goal: str, **extra: Any) -> dict[str, Any]:
+    """Result for a scene service that predates `method` (an older router build); nothing is changed."""
+    return {
+        "ok": False,
+        **extra,
+        "target": "scene",
+        "action": action,
+        "applied": False,
+        "needs_service_update": True,
+        "message": f"This router's scene service has no {method}() yet, so I cannot {goal}. Nothing was changed.",
+    }
+
+
 @dataclass(slots=True)
 class RoutingDecision:
     target: RouteTarget
@@ -333,6 +547,8 @@ class OmniverseRouter:
         if self._practice_session is not None and normalized in {"done", "next", "continue", "ok", "finished"}:
             return RoutingDecision(RouteTarget.LEARN, 0.99, "Active practice session advance request", normalized)
         core = self._strip_politeness(normalized)
+        if self._help_request(core) is not None:
+            return RoutingDecision(RouteTarget.LEARN, 0.97, "Help request (tool guide)", normalized)
         exam = self._exam_request(normalized)
         if exam is not None:
             if exam[0] == "mock":
@@ -340,6 +556,8 @@ class OmniverseRouter:
             return RoutingDecision(RouteTarget.LEARN, 0.96, "Daily exam lesson request", normalized)
         if _is_prim_count_question(core):
             return RoutingDecision(RouteTarget.SCENE, 0.95, "Prim count question about the open stage", normalized)
+        if self._is_extended_scene_request(core):
+            return RoutingDecision(RouteTarget.SCENE, 0.96, "Undo, light, camera, material or paint request", normalized)
         # Checked before learning topics, which also match words such as "move", "select" and "prim".
         if self._looks_like_targeted_scene_command(normalized) or any(pattern.match(core) for pattern in _SET_ATTRIBUTE):
             return RoutingDecision(RouteTarget.SCENE, 0.97, "Scene command verb with a target detected", normalized)
@@ -405,6 +623,9 @@ class OmniverseRouter:
             normalized = self._normalize(request)
             if self._practice_session is not None and normalized in {"done", "next", "continue", "ok", "finished"}:
                 return self.next_practice_step()
+            help_request = self._help_request(self._strip_politeness(normalized))
+            if help_request is not None:
+                return self.tool_help(help_request["topic"])
             exam = self._exam_request(normalized)
             if exam is not None:
                 return await self._dispatch_exam(*exam)
@@ -450,7 +671,7 @@ class OmniverseRouter:
                 "hint": (
                     "Try phrases like 'inspect /World', 'create /World/NewPrim', 'select /World/Cube', "
                     "'move /World/Cube by 0 0 1', 'rotate /World/Cube 0 90 0', 'rename /World/Cube to HeroCube', "
-                    "or 'find cube'."
+                    "or 'find cube'. Say 'help' for everything I understand."
                 ),
             }
             if candidates:
@@ -464,9 +685,12 @@ class OmniverseRouter:
         named = parsed.pop("resolved_from_name", None)
         action = parsed["action"]
         if action == "unsupported":
-            return {"ok": False, "target": "scene", "message": parsed["message"], "hint": parsed["hint"]}
-        if action == "set_attribute":
-            return self._attribute_not_supported(parsed)
+            unsupported = {"ok": False, "target": "scene", "message": parsed["message"], "hint": parsed["hint"]}
+            if parsed.get("candidates"):
+                unsupported["candidates"] = parsed["candidates"]
+            return unsupported
+        if action in _EXTENDED_ACTIONS:
+            return self._dispatch_extended(parsed, dry_run=dry_run, named=named)
         if action == "move":
             failure = self._make_transform_absolute(parsed)
             if failure is not None:
@@ -510,7 +734,10 @@ class OmniverseRouter:
             return {"ok": True, "target": "scene", "result": self._scene.list_children(parsed["path"])}
         if action == "create":
             result = self._scene.create_prim(parsed["path"], parsed["type_name"], dry_run=dry_run)
-            return self._wrap_operation_result("scene", result)
+            payload = self._wrap_operation_result("scene", result)
+            if parsed.get("translation") is not None:
+                self._place_created_prim(payload, parsed["path"], parsed["translation"], dry_run)
+            return payload
         if action == "delete":
             result = self._scene.delete_prim(parsed["path"], dry_run=dry_run)
             return self._wrap_operation_result("scene", result)
@@ -530,6 +757,14 @@ class OmniverseRouter:
             )
             return self._wrap_operation_result("scene", result)
         if action == "material":
+            binder = getattr(self._scene, "bind_material", None)
+            if callable(binder):
+                payload = self._wrap_result(binder(parsed["path"], parsed["material_path"], dry_run=dry_run))
+                inner = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+                if not payload.get("ok"):  # a refusal (missing prim or material) says why
+                    detail = inner.get("error") or inner.get("message") or "The scene bridge could not bind it."
+                    payload["message"] = f"{detail} Nothing was changed."
+                return payload
             result = self._scene.set_material(parsed["path"], parsed["material_path"], dry_run=dry_run)
             return self._wrap_operation_result("scene", result)
         if action == "rename":
@@ -652,6 +887,834 @@ class OmniverseRouter:
         except ValueError as exc:
             payload["error"] = str(exc)
         return payload
+
+    # --- help ---------------------------------------------------------------------------------------------------
+
+    def tool_help(self, topic: str | None = None) -> dict[str, Any]:
+        """The tool guide grouped by task (help.help); reads no scene, so it works with every bridge down."""
+        return {"target": "learn", "style": "help", **tool_guide.help(topic)}
+
+    @staticmethod
+    def _help_request(core: str) -> dict[str, str | None] | None:
+        """{"topic": ...} for 'help', 'what can you do', 'list tools' or 'help with lights'; None otherwise.
+
+        'help me add a light' is a request rather than a topic, so a bare topic must name a group or tool exactly.
+        """
+        match = _HELP_REQUEST.match(core.strip().rstrip("?.! "))
+        if not match:
+            return None
+        topic, bare = match.group("topic"), match.group("bare")
+        if topic is not None:
+            return {"topic": topic.strip()} if tool_guide.resolve_topic(topic, search=True) else None
+        if bare is not None:
+            return {"topic": bare.strip()} if tool_guide.resolve_topic(bare) else None
+        return {"topic": None}
+
+    @staticmethod
+    def _is_extended_scene_request(core: str) -> bool:
+        """Undo, undo history, 'add a rect light ...', 'add a camera ...', 'make a red material' or 'paint X red'."""
+        text = core.strip().rstrip("?.! ")
+        if _UNDO_REQUEST.match(text) or _UNDO_CONFIRM.match(text) or _UNDO_HISTORY.match(text):
+            return True
+        if any(phrase in text for phrase in _LEARNING_PHRASES) or "quiz" in text:
+            return False
+        if _LIGHT_REQUEST.match(text) or _CAMERA_REQUEST.match(text) or _MATERIAL_REQUEST.match(text):
+            return True
+        paint = _PAINT_REQUEST.match(text)
+        return bool(paint) and (paint.group("verb") not in {"make", "turn"} or paint.group("color") in _COLOR_WORDS)
+
+    # --- natural-language parsing: lights, cameras, materials, paint -------------------------------------------
+
+    def _parse_extended_create(self, text: str, selected_path: str | None) -> dict[str, Any] | None:
+        """Lights, cameras, materials and paint; None for anything else (including a plain 'add a light')."""
+        for parser in (self._parse_light, self._parse_camera, self._parse_material, self._parse_paint):
+            parsed = parser(text, selected_path)
+            if parsed is not None:
+                return parsed
+        return None
+
+    def _parse_light(self, text: str, selected_path: str | None) -> dict[str, Any] | None:
+        match = _LIGHT_REQUEST.match(text)
+        if not match:
+            return None
+        clauses = self._parse_clauses(
+            match.group("rest"), {"aim", "above", "translation", "intensity", "exposure", "size", "color"}
+        )
+        kind_word, color_word = match.group("kind"), match.group("color")
+        specific = clauses.keys() & {
+            "aim", "above", "translation", "intensity", "exposure", "size", "color", "path", "at_path", "at_target",
+            "name",
+        }
+        if kind_word is None and color_word is None and not specific and not clauses.get("unknown"):
+            # "add a light" and "add a light under /World/Lights" keep the plain DistantLight create; leftover words
+            # ("make a light brighter") are refused by _authoring_request instead of naming a new light.
+            return None
+        kind = _LIGHT_KINDS[kind_word.lower()] if kind_word else "distant"
+        if color_word and "color" not in clauses:
+            clauses["color"] = _COLOR_WORDS[color_word.lower()]
+        return self._authoring_request(
+            "create_light",
+            clauses,
+            selected_path,
+            default_name=_LIGHT_TYPE_NAMES[kind],
+            extra={"light_type": kind},
+            example=f"add a {kind} light above /World/Props/Cube with intensity 5000",
+        )
+
+    def _parse_camera(self, text: str, selected_path: str | None) -> dict[str, Any] | None:
+        match = _CAMERA_REQUEST.match(text)
+        if not match:
+            return None
+        clauses = self._parse_clauses(match.group("rest"), {"aim", "above", "translation", "focal_length"})
+        specific = {"aim", "above", "translation", "focal_length", "path", "at_path", "at_target", "name"}
+        if not clauses.keys() & specific and not clauses.get("unknown"):
+            return None  # "add a camera" and "add a camera under /World/Cams" keep the plain Camera create
+        return self._authoring_request(
+            "create_camera",
+            clauses,
+            selected_path,
+            default_name="Camera",
+            extra={},
+            example="add a camera at 0 2 10 looking at /World/Props/Cube",
+        )
+
+    def _parse_material(self, text: str, selected_path: str | None) -> dict[str, Any] | None:
+        match = _MATERIAL_REQUEST.match(text)
+        if not match:
+            return None
+        clauses = self._parse_clauses(match.group("rest"), {"roughness", "metallic", "color"})
+        example = "create material /World/Looks/Steel color 0.8 0.8 0.8 roughness 0.2 metallic 1"
+        words = match.group("words").split()
+        color_words = [word for word in words if word.lower() in _COLOR_WORDS]
+        leftovers = [word for word in words if word.lower() not in _COLOR_WORDS] + list(clauses.get("unknown") or [])
+        if len(color_words) > 1:
+            leftovers.append(" ".join(color_words))
+        if clauses.keys() & {"aim", "above", "translation", "at_target"}:
+            leftovers.append("a position or target (materials have neither)")
+        if leftovers:
+            return _refusal(f"I understood a material request but not '{' '.join(leftovers)}'.", example)
+        color_word = color_words[0] if color_words else None
+        color = clauses.get("color") or (_COLOR_WORDS[color_word.lower()] if color_word else None)
+        for key in ("roughness", "metallic"):
+            if clauses.get(key) is not None and not 0.0 <= clauses[key] <= 1.0:
+                return _refusal(f"{key} must be between 0 and 1, not {_format_number(clauses[key])}.", example)
+        explicit = clauses.get("path") or clauses.get("at_path")
+        if explicit:
+            if not re.fullmatch(r"(?:/[A-Za-z_]\w*)+", explicit):
+                return _refusal(f"'{explicit}' is not a valid prim path.", example)
+            if self._safe_inspect(explicit) is not None:
+                return _refusal(f"{explicit} already exists; bind it with 'bind {explicit} to <prim path>'.", example)
+            path = explicit
+        else:
+            name = clauses.get("name") or (f"{color_word.capitalize()}Material" if color_word else "Material")
+            if not re.fullmatch(r"[A-Za-z_]\w*", name):
+                return _refusal(f"'{name}' is not a valid prim name.", example)
+            path = self._free_child_path(clauses.get("parent") or _DEFAULT_LOOKS, name)
+        return {
+            "action": "create_material",
+            "path": path,
+            "explicit": bool(explicit),
+            "diffuse_color": color,
+            "roughness": clauses.get("roughness"),
+            "metallic": clauses.get("metallic"),
+        }
+
+    def _parse_paint(self, text: str, selected_path: str | None) -> dict[str, Any] | None:
+        match = _PAINT_REQUEST.match(text)
+        if not match:
+            return None
+        verb, color_text = match.group("verb").lower(), match.group("color")
+        if verb in {"make", "turn"} and color_text.lower() not in _COLOR_WORDS:
+            return None
+        color = _parse_color(color_text)
+        if color is None:
+            return None
+        resolved = self._resolve_target_text(match.group("target"), selected_path)
+        if resolved.get("error"):
+            refusal = _refusal(resolved["error"], f"paint /World/Props/Cube {color_text}")
+            if resolved.get("candidates"):
+                refusal["candidates"] = resolved["candidates"]
+            return refusal
+        parsed: dict[str, Any] = {"action": "paint", "path": resolved["value"], "color": color, "color_text": color_text}
+        if resolved.get("named"):
+            parsed["resolved_from_name"] = resolved["named"]
+        return parsed
+
+    def _authoring_request(
+        self,
+        action: str,
+        clauses: dict[str, Any],
+        selected_path: str | None,
+        default_name: str,
+        extra: dict[str, Any],
+        example: str,
+    ) -> dict[str, Any]:
+        """A create_light/create_camera action from parsed clauses; 'explicit' is True only for a user-given path."""
+        noun = "light" if action == "create_light" else "camera"
+        if clauses.get("unknown"):
+            return _refusal(f"I understood a {noun} request but not '{' '.join(clauses['unknown'])}'.", example)
+        if "at_target" in clauses:
+            return _refusal(
+                f"'at {clauses['at_target']}' is not a position: say 'at x y z', 'above <prim>' to place it over a "
+                "prim, or 'aimed at <prim>'.",
+                example,
+            )
+        parsed: dict[str, Any] = {"action": action, **extra}
+        named: list[str] = []
+        for key in ("above", "aim"):
+            if key not in clauses:
+                continue
+            if key == "above" and isinstance(clauses[key], tuple):
+                return _refusal("'above' needs a prim; for a point use 'at x y z'.", example)
+            resolved = self._resolve_target_text(clauses[key], selected_path)
+            if resolved.get("error"):
+                refusal = _refusal(resolved["error"], example)
+                if resolved.get("candidates"):
+                    refusal["candidates"] = resolved["candidates"]
+                return refusal
+            parsed["above" if key == "above" else "aim_at"] = resolved["value"]
+            if resolved.get("named"):
+                named.append(resolved["named"])
+        if "above" in parsed and "aim_at" not in parsed:
+            parsed["aim_at"] = parsed["above"]
+        if clauses.get("translation") is not None:
+            parsed["translation"] = clauses["translation"]
+        explicit = clauses.get("path") or clauses.get("at_path")
+        if explicit:
+            if not re.fullmatch(r"(?:/[A-Za-z_]\w*)+", explicit):
+                return _refusal(f"'{explicit}' is not a valid prim path.", example)
+            if self._safe_inspect(explicit) is not None:
+                return _refusal(
+                    f"{explicit} already exists, so it cannot be the new {noun}'s path. To light or frame it, say "
+                    f"'above {explicit}' or 'aimed at {explicit}'; or pick a new path.",
+                    example,
+                )
+            parsed["path"] = explicit
+        else:
+            name = clauses.get("name") or default_name
+            if not re.fullmatch(r"[A-Za-z_]\w*", name):
+                return _refusal(f"'{name}' is not a valid prim name.", example)
+            parsed["path"] = self._free_child_path(clauses.get("parent") or "/World", name)
+        parsed["explicit"] = bool(explicit)
+        for key in ("intensity", "exposure", "size", "color", "focal_length"):
+            if clauses.get(key) is not None:
+                parsed[key] = clauses[key]
+        if named:
+            parsed["resolved_from_name"] = " and ".join(named)
+        return parsed
+
+    @staticmethod
+    def _parse_clauses(rest: str, allowed: set[str]) -> dict[str, Any]:
+        """Split ' /World/Key at 0 5 0 aimed at the cube with intensity 5000' into clauses; leftovers -> 'unknown'.
+
+        Keys: path, at_path, name, parent, translation, aim, above, at_target, intensity, exposure, size, color,
+        roughness, metallic, focal_length. Targets are a path, an (x, y, z) tuple or the words naming a prim.
+        """
+        tokens = re.findall(r"[^\s,()]+", rest)
+        count = len(tokens)
+        out: dict[str, Any] = {}
+        unknown: list[str] = []
+
+        def is_number(index: int) -> bool:
+            return index < count and re.fullmatch(_NUMBER, tokens[index]) is not None
+
+        def vector(index: int) -> tuple[float, float, float] | None:
+            if all(is_number(index + offset) for offset in range(3)):
+                return (float(tokens[index]), float(tokens[index + 1]), float(tokens[index + 2]))
+            return None
+
+        def target(index: int) -> tuple[Any, int]:
+            if index >= count:
+                return None, index
+            if tokens[index].startswith("/"):
+                return tokens[index], index + 1
+            point = vector(index)
+            if point is not None:
+                return point, index + 3
+            end = index
+            while (
+                end < count
+                and tokens[end].lower() not in _CLAUSE_WORDS
+                and not tokens[end].startswith("/")
+                and not is_number(end)
+            ):
+                end += 1
+            return (" ".join(tokens[index:end]) or None), end
+
+        def skip(index: int, words: set[str]) -> int:
+            return index + 1 if index < count and tokens[index].lower() in words else index
+
+        index = 0
+        while index < count:
+            word = tokens[index].lower()
+            following = [token.lower() for token in tokens[index + 1 : index + 3]]
+            if word in _CLAUSE_FILLER:
+                index += 1
+                continue
+            if word in {"to", "in", "into", "inside"} and following[:1] in (["scene"], ["stage"]):
+                index += 2
+                continue
+            if (
+                word in {"to", "in", "into", "inside"}
+                and len(following) == 2
+                and following[0] in {"the", "this", "my"}
+                and following[1] in {"scene", "stage"}
+            ):
+                index += 3
+                continue
+            if word in {"under", "in", "inside", "into"} and following and following[0].startswith("/"):
+                out["parent"] = tokens[index + 1]
+                index += 2
+                continue
+            if word in _AIM_WORDS and "aim" in allowed:
+                start = skip(index + 1, _AIM_PREPOSITIONS)
+                value, end = target(start)
+                if value is None:
+                    unknown.append(tokens[index])
+                    index = max(start, index + 1)
+                    continue
+                out["aim"] = value
+                index = end
+                continue
+            if word in {"above", "over"} and "above" in allowed:
+                value, end = target(index + 1)
+                if value is None:
+                    unknown.append(tokens[index])
+                    index += 1
+                    continue
+                out["above"] = value
+                index = end
+                continue
+            if word == "at":
+                point = vector(index + 1)
+                if point is not None and "translation" in allowed:
+                    out["translation"] = point
+                    index += 4
+                    continue
+                if following and following[0].startswith("/"):
+                    out["at_path"] = tokens[index + 1]
+                    index += 2
+                    continue
+                value, end = target(index + 1)
+                out["at_target"] = " ".join(_format_number(v) for v in value) if isinstance(value, tuple) else (value or "")
+                index = max(end, index + 1)
+                continue
+            if word in {"named", "called", "as"} and index + 1 < count:
+                name = tokens[index + 1]
+                out["path" if name.startswith("/") else "name"] = name
+                index += 2
+                continue
+            if tokens[index].startswith("/") and "path" not in out:
+                out["path"] = tokens[index]
+                index += 1
+                continue
+            key = _CLAUSE_NUMBERS.get(word)
+            if key is not None and key in allowed:
+                start = skip(index + 1, {"of", "=", "to"})
+                if is_number(start):
+                    out[key] = float(tokens[start])
+                    index = start + 1
+                    continue
+            if word == "focal" and following[:1] == ["length"] and "focal_length" in allowed:
+                start = skip(index + 2, {"of", "=", "to"})
+                if is_number(start):
+                    out["focal_length"] = float(tokens[start])
+                    index = start + 1
+                    continue
+            lens = re.fullmatch(rf"({_NUMBER})mm", word)
+            if lens and "focal_length" in allowed:
+                out["focal_length"] = float(lens.group(1))
+                index = skip(index + 1, {"lens"})
+                continue
+            if word in {"color", "colour", "diffuse"} and "color" in allowed:
+                start = skip(skip(index + 1, {"color", "colour"}), {"of", "=", "to"})
+                point = vector(start)
+                if point is not None:
+                    out["color"] = point
+                    index = start + 3
+                    continue
+                if start < count and tokens[start].lower() in _COLOR_WORDS:
+                    out["color"] = _COLOR_WORDS[tokens[start].lower()]
+                    index = start + 1
+                    continue
+            unknown.append(tokens[index])
+            index += 1
+        out["unknown"] = unknown
+        return out
+
+    def _resolve_target_text(self, value: Any, selected_path: str | None) -> dict[str, Any]:
+        """A target phrase -> {"value": path or (x, y, z), "named": name if found by name} or {"error": ...}."""
+        if isinstance(value, tuple):
+            return {"value": value}
+        text = str(value).strip()
+        path = self._extract_usd_path(text) if "/" in text else None
+        if path is not None:
+            if self._safe_inspect(path) is None:
+                return {"error": f"There is no prim at {path}."}
+            return {"value": path}
+        if _SELECTION_REF.fullmatch(text):
+            if selected_path is None:
+                return {"error": f"'{text}' means the selected prim, but exactly one prim must be selected."}
+            return {"value": selected_path}
+        words = [word for word in re.findall(r"[\w\-]+", text.lower()) if word not in _NAME_ARTICLES]
+        if not words:
+            return {"error": f"I could not tell which prim '{text}' is."}
+        found, candidates = self._unique_prim_named(words)
+        if found is None:
+            return {"error": f"I could not find exactly one prim named '{' '.join(words)}'.", "candidates": candidates}
+        return {"value": found, "named": " ".join(words)}
+
+    # --- running the extended actions --------------------------------------------------------------------------
+
+    def _dispatch_extended(self, parsed: dict[str, Any], dry_run: bool, named: str | None) -> dict[str, Any]:
+        action = parsed["action"]
+        if action == "undo":
+            return self._run_undo(confirm=bool(parsed.get("confirm")), dry_run=dry_run)
+        if action == "undo_history":
+            return self._run_undo_history()
+        if action == "set_attribute":
+            return self._run_set_attribute(parsed, dry_run=dry_run, named=named)
+        if action in {"create_light", "create_camera"}:
+            return self._run_light_or_camera(parsed, dry_run=dry_run, named=named)
+        if action == "create_material":
+            return self._run_create_material(parsed)
+        return self._run_paint(parsed, named=named)
+
+    def _run_undo(self, confirm: bool, dry_run: bool) -> dict[str, Any]:
+        """'undo' previews the last change's undo; only 'confirm undo' without dry_run applies it."""
+        undo = getattr(self._scene, "undo_last", None)
+        if not callable(undo):
+            return _service_lacks("undo_last", "undo", "undo the last change")
+        preview = dry_run or not confirm
+        try:
+            payload = self._wrap_result(undo(dry_run=preview))
+        except (ValueError, TypeError, LookupError) as exc:
+            return {"ok": False, "target": "scene", "action": "undo", "applied": False,
+                    "message": f"{exc} Nothing was undone."}
+        payload["action"] = "undo"
+        payload["applied"] = bool(payload.get("ok")) and not preview and payload.get("dry_run") is not True
+        if preview and payload.get("ok"):
+            payload["command"] = "confirm undo"
+            payload.setdefault("message", "Preview only: nothing was undone.")
+            payload["next_step"] = (
+                "Send 'confirm undo' with dry_run=False to undo it, or call scene_undo_last(dry_run=False)."
+                if not dry_run or confirm
+                else "Send it again with dry_run=False to undo it."
+            )
+        return payload
+
+    def _run_undo_history(self) -> dict[str, Any]:
+        history = getattr(self._scene, "undo_history", None)
+        if not callable(history):
+            return _service_lacks("undo_history", "undo_history", "list the recent changes")
+        payload = self._wrap_result(history())
+        payload["action"] = "undo_history"
+        return payload
+
+    def _run_set_attribute(self, parsed: dict[str, Any], dry_run: bool, named: str | None) -> dict[str, Any]:
+        setter = getattr(self._scene, "set_attribute", None)
+        if not callable(setter):
+            return self._attribute_not_supported(parsed)
+        path, friendly, value_text = parsed.get("path"), parsed["attribute"], parsed["value"]
+        base: dict[str, Any] = {
+            "ok": False,
+            "target": "scene",
+            "action": "set_attribute",
+            "path": path,
+            "attribute": friendly,
+            "value": value_text,
+            "applied": False,
+        }
+        if path is None:
+            return {
+                **base,
+                "candidates": parsed.get("candidates", []),
+                "message": f"I could not tell which prim's '{friendly}' to set. Nothing was changed.",
+                "hint": f"Name the prim by path, for example 'set {friendly} of /World/RectLight to {value_text}'.",
+            }
+        try:
+            prim = self._scene.inspect_prim(path)
+        except ValueError as exc:
+            return {**base, "error": str(exc), "message": f"{exc}. Nothing was changed."}
+        resolved = self._resolve_attribute(friendly, str(prim.get("type_name") or ""), value_text, path)
+        if "error" in resolved:
+            return {**base, "prim": prim, "message": f"{resolved['error']} Nothing was changed."}
+        preview = dry_run or named is not None
+        try:
+            result = setter(path, resolved["name"], resolved["value"], time=None, dry_run=preview)
+        except (ValueError, TypeError) as exc:
+            return {**base, "attribute_name": resolved["name"], "prim": prim, "error": str(exc),
+                    "message": f"{exc} Nothing was changed."}
+        payload = self._wrap_result(result)
+        payload.update(action="set_attribute", path=path, attribute=friendly, attribute_name=resolved["name"])
+        payload["value"] = resolved["value"]
+        payload["applied"] = bool(payload.get("ok")) and not preview and payload.get("dry_run") is not True
+        if named is not None:
+            command = f"set {friendly} of {path} to {value_text}"
+            payload["command"] = command
+            payload["resolved_from_name"] = {"name": named, "path": path}
+            payload["message"] = (
+                f"'{named}' matched only {path}, but a name is not an exact target, so this is a preview and nothing "
+                f"was changed. Run '{command}' to apply it."
+            )
+        return payload
+
+    @staticmethod
+    def _resolve_attribute(friendly: str, type_name: str, value_text: str, path: str) -> dict[str, Any]:
+        """{"name": USD attribute name, "value": JSON value} for a friendly name on this prim type, or {"error": ...}."""
+        key = re.sub(r"\s+", " ", friendly.strip().lower())
+        is_light = bool(re.search(r"Light(?:_\d+)?$", type_name))
+        kind = type_name or "typeless prim"
+        if key in _LIGHT_ONLY_ATTRIBUTES and not is_light:
+            return {"error": f"'{friendly}' is a light setting ({_ATTRIBUTE_ALIASES[key]}), but {path} is a {kind}."}
+        if key in _CAMERA_ONLY_ATTRIBUTES and type_name != "Camera":
+            return {"error": f"'{friendly}' is a camera setting ({_ATTRIBUTE_ALIASES[key]}), but {path} is a {kind}."}
+        if key in _ATTRIBUTE_ALIASES:
+            name = _ATTRIBUTE_ALIASES[key]
+            if name is None and key in {"color", "colour"}:
+                name = "inputs:color" if is_light else "primvars:displayColor"
+            elif name is None:
+                name = "inputs:radius" if is_light else "radius"
+        elif key in _TRANSFORM_ATTRIBUTE_WORDS:
+            # Not attributes to write by that name (a custom 'position' would change nothing visible); the transform
+            # and rename commands do it. 'orientation' is left alone: it is a real Gprim attribute.
+            verb = _TRANSFORM_ATTRIBUTE_WORDS[key]
+            command = {
+                "move": f"move {path} to {value_text}",
+                "rotate": f"rotate {path} {value_text}",
+                "scale": f"scale {path} {value_text}",
+                "rename": f"rename {path} to {value_text}",
+            }[verb]
+            return {"error": f"'{friendly}' is not an attribute I set directly; to change it, say '{command}'."}
+        elif re.fullmatch(r"[A-Za-z_]\w*(?::[A-Za-z_]\w*)*", friendly.strip()):
+            name = friendly.strip()
+        else:
+            return {"error": f"I do not know an attribute called '{friendly}'; use its USD name, such as inputs:intensity."}
+        try:
+            value = _attribute_value(name, value_text)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        return {"name": name, "value": value}
+
+    def _run_light_or_camera(self, parsed: dict[str, Any], dry_run: bool, named: str | None) -> dict[str, Any]:
+        """Preview a light or camera; it is created only for an explicit new path, explicit targets and dry_run=False."""
+        action, path = parsed["action"], parsed["path"]
+        is_light = action == "create_light"
+        noun = f"{parsed['light_type']} light" if is_light else "camera"
+        method = getattr(self._scene, action, None)
+        if not callable(method):
+            return _service_lacks(action, action, f"create a {noun}", path=path)
+        notes: list[str] = []
+        translation = parsed.get("translation")
+        placed_above = False
+        if parsed.get("above") is not None and translation is None:
+            translation, reason = self._position_above(parsed["above"])
+            if translation is None:
+                notes.append(
+                    f"I could not work out where 'above {parsed['above']}' is ({reason}), so it would stay at its "
+                    f"parent's origin, only aimed at {parsed['above']}. Add 'at x y z' to place it."
+                )
+            else:
+                placed_above = True
+                notes.append(
+                    f"Placed one bounding-box size above {parsed['above']} (world space; it matches the {noun}'s "
+                    "parent space when that parent has no transform)."
+                )
+        keys = ("intensity", "exposure", "color", "size") if is_light else ("focal_length",)
+        options: dict[str, Any] = {key: parsed[key] for key in keys if parsed.get(key) is not None}
+        if translation is not None:
+            options["translation"] = tuple(translation)
+        if parsed.get("aim_at") is not None:
+            options["aim_at"] = parsed["aim_at"]
+        position_known = parsed.get("above") is None or translation is not None
+        apply = not dry_run and bool(parsed.get("explicit")) and named is None and position_known
+        try:
+            if is_light:
+                result = method(path, parsed["light_type"], dry_run=not apply, **options)
+            else:
+                result = method(path, dry_run=not apply, **options)
+        except (ValueError, TypeError) as exc:
+            return {"ok": False, "target": "scene", "action": action, "path": path, "dry_run": not apply,
+                    "applied": False, "message": f"{exc} Nothing was changed."}
+        payload = self._wrap_result(result)
+        inner = result.payload if isinstance(result, OperationResult) and isinstance(result.payload, dict) else {}
+        for key in ("unsupported", "needs_bridge_update", "fake_scene", "warnings", "error"):
+            if key in inner:
+                payload[key] = inner[key]
+        payload["action"], payload["path"] = action, path
+        if is_light:
+            payload["light_type"] = parsed["light_type"]
+        if notes:
+            payload["notes"] = notes
+        if named is not None:
+            payload["resolved_from_name"] = {"name": named, "path": parsed.get("aim_at")}
+        command = self._authoring_command(parsed, translation)
+        if not payload.get("ok"):
+            payload["applied"] = False
+            payload["command"] = command
+            detail = (
+                inner.get("error") or inner.get("message") or payload.get("message")
+                or "The scene bridge could not plan this."
+            )
+            payload["message"] = f"{detail} Nothing was changed."
+            if inner.get("needs_bridge_update") or inner.get("unsupported"):
+                type_name = _LIGHT_TYPE_NAMES[parsed["light_type"]] if is_light else "Camera"
+                payload["fallback_command"] = f"create {path} type {type_name}"
+                payload["hint"] = (
+                    f"This scene bridge cannot plan a {noun} with settings or aim. '{payload['fallback_command']}' "
+                    f"creates a bare {type_name} prim instead, with no {'intensity or aim' if is_light else 'lens or aim'}."
+                )
+            return payload
+        applied = payload.get("dry_run") is False
+        payload["applied"] = applied
+        if applied:
+            payload["message"] = f"Created the {noun} {path} in the open scene; it is not saved yet."
+            return payload
+        reasons = []
+        if dry_run:
+            reasons.append("you asked for a dry run")
+        if named is not None:
+            reasons.append(f"'{named}' is a name, not an exact prim path")
+        if not parsed.get("explicit"):
+            reasons.append(f"I chose the path {path} for you")
+        if not position_known:
+            reasons.append("its position is unknown")
+        payload["preview"] = True
+        payload["command"] = command
+        payload["message"] = (
+            f"Preview only: nothing was changed ({'; '.join(reasons) or 'preview'}). "
+            f"Send '{command}' with router_dispatch(dry_run=False) to create it."
+        )
+        if placed_above:
+            payload["placement"] = {"above": parsed["above"], "translation": list(translation or ())}
+        return payload
+
+    @staticmethod
+    def _authoring_command(parsed: dict[str, Any], translation: Any) -> str:
+        """The explicit sentence that creates this light or camera; it parses back with an explicit path."""
+        is_light = parsed["action"] == "create_light"
+        parts = [f"add a {parsed['light_type']} light {parsed['path']}" if is_light else f"add a camera {parsed['path']}"]
+        if translation is not None:
+            parts.append("at " + " ".join(_format_number(value) for value in translation))
+        aim = parsed.get("aim_at")
+        if aim is not None:
+            target = aim if isinstance(aim, str) else " ".join(_format_number(value) for value in aim)
+            parts.append(("aimed at " if is_light else "looking at ") + target)
+        if is_light:
+            parts += [
+                f"{key} {_format_number(parsed[key])}"
+                for key in ("intensity", "exposure", "size")
+                if parsed.get(key) is not None
+            ]
+            if parsed.get("color") is not None:
+                parts.append("color " + " ".join(_format_number(value) for value in parsed["color"]))
+        elif parsed.get("focal_length") is not None:
+            parts.append(f"focal length {_format_number(parsed['focal_length'])}")
+        return " ".join(parts)
+
+    def _position_above(self, path: str) -> tuple[tuple[float, float, float] | None, str]:
+        """A world point one bounding-box size above a prim's live bounds, or (None, why not). Read-only."""
+        insight = getattr(self._scene, "live_insight", None)
+        if not callable(insight):
+            return None, "this scene service cannot read live bounds"
+        try:
+            bounds = insight("bounds", {"prim_path": path})
+        except Exception as exc:  # noqa: BLE001 - placement is best effort; the light is still only previewed
+            return None, f"{type(exc).__name__}: {exc}"
+        record = _world_bound(bounds)
+        if record is None:
+            message = bounds.get("message") if isinstance(bounds, dict) else None
+            return None, str(message or f"no live world bounds for {path}")
+        axis = self._placement_up_axis(insight)
+        if axis is None:
+            return None, "the stage up axis (upAxis) is unknown"
+        index = 1 if axis == "Y" else 2
+        point = [float(value) for value in record["center"]]
+        lift = max(abs(float(value)) for value in record["size"]) or 1.0
+        point[index] = float(record["max"][index]) + lift
+        return (round(point[0], 6) + 0.0, round(point[1], 6) + 0.0, round(point[2], 6) + 0.0), ""
+
+    def _placement_up_axis(self, insight: Callable[..., Any]) -> str | None:
+        """upAxis from the saved root layer, else from the live stage_info query; None when neither says."""
+        saved = self._stage_up_axis()
+        if saved is not None:
+            return saved["axis"]
+        try:
+            info = insight("stage_info", {})
+        except Exception:  # noqa: BLE001 - an unknown axis just means no placement
+            return None
+        if not isinstance(info, dict) or info.get("ok") is False:
+            return None
+        axis = info.get("up_axis")
+        if axis is None and isinstance(info.get("result"), dict):
+            axis = info["result"].get("up_axis")
+        return axis if axis in {"Y", "Z"} else None
+
+    def _run_create_material(self, parsed: dict[str, Any]) -> dict[str, Any]:
+        """Materials described in a sentence are always previewed; the payload names the exact tool call to apply."""
+        path = parsed["path"]
+        creator = getattr(self._scene, "create_material", None)
+        if not callable(creator):
+            return _service_lacks("create_material", "create_material", "create materials", path=path)
+        options = {key: parsed[key] for key in ("diffuse_color", "roughness", "metallic") if parsed.get(key) is not None}
+        try:
+            result = creator(path, dry_run=True, **options)
+        except (ValueError, TypeError) as exc:
+            return {"ok": False, "target": "scene", "action": "create_material", "path": path, "dry_run": True,
+                    "applied": False, "message": f"{exc} Nothing was changed."}
+        payload = self._wrap_result(result)
+        listed = {key: list(value) if isinstance(value, tuple) else value for key, value in options.items()}
+        arguments = {"path": path, **listed}
+        payload.update(action="create_material", path=path, applied=False, preview=True)
+        payload["apply_with"] = {"tool": "scene_create_material", "arguments": {**arguments, "dry_run": False}}
+        chosen = "" if parsed.get("explicit") else f" I chose the path {path} for you."
+        payload["message"] = (
+            f"Preview only: nothing was created.{chosen} A material described in a sentence is always previewed; "
+            f"call scene_create_material with apply_with's arguments to create it, then 'bind {path} to <prim path>'."
+        )
+        inner = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+        if not payload.get("ok"):  # the preview was refused (path taken, bad value): say why first
+            detail = inner.get("error") or inner.get("message") or "The scene bridge could not plan this material."
+            payload["message"] = f"{detail} Nothing was created."
+        return payload
+
+    def _run_paint(self, parsed: dict[str, Any], named: str | None) -> dict[str, Any]:
+        """'paint X red': preview creating (or reusing) a color material and binding it; never applied directly."""
+        path, color = parsed["path"], tuple(parsed["color"])
+        prim = self._safe_inspect(path)
+        if prim is None:
+            return {"ok": False, "target": "scene", "action": "paint", "path": path, "applied": False,
+                    "message": f"There is no prim at {path}. Nothing was changed."}
+        if re.search(r"Light(?:_\d+)?$", str(prim.get("type_name") or "")):
+            # A light's color is its inputs:color attribute, not a material.
+            painted = self._run_set_attribute(
+                {"action": "set_attribute", "path": path, "attribute": "color", "value": parsed["color_text"]},
+                dry_run=True,
+                named=named,
+            )
+            painted.setdefault("notes", []).append(f"{path} is a light, so its color is inputs:color, not a material.")
+            return painted
+        material_path, reuse = self._paint_material(parsed["color_text"], color)
+        base = {"target": "scene", "action": "paint", "path": path, "material_path": material_path, "color": list(color)}
+        changes: list[dict[str, Any]] = []
+        ok = True
+        detail: list[str] = []
+        if reuse:
+            binder = getattr(self._scene, "bind_material", None) or self._scene.set_material
+            bound = self._wrap_result(binder(path, material_path, dry_run=True))
+            changes += bound.get("changes") or []
+            ok = bool(bound.get("ok"))
+        else:
+            creator = getattr(self._scene, "create_material", None)
+            if not callable(creator):
+                return _service_lacks(
+                    "create_material", "paint", f"make a {parsed['color_text']} material",
+                    path=path, material_path=material_path, color=list(color),
+                )
+            try:
+                created = self._wrap_result(creator(material_path, diffuse_color=color, dry_run=True))
+            except (ValueError, TypeError) as exc:
+                return {"ok": False, **base, "applied": False, "message": f"{exc} Nothing was changed."}
+            changes += created.get("changes") or []
+            ok = bool(created.get("ok"))
+            if not ok:
+                inner = created.get("payload") if isinstance(created.get("payload"), dict) else {}
+                detail.append(str(inner.get("error") or inner.get("message") or created.get("message") or ""))
+            changes.append({
+                "action": "bind_material",
+                "path": path,
+                "summary": f"Bind {material_path} to {path}",
+                "before": {"material": prim.get("material")},
+                "after": {"material": material_path},
+            })
+        steps = [] if reuse else [{
+            "tool": "scene_create_material",
+            "arguments": {"path": material_path, "diffuse_color": list(color), "dry_run": False},
+        }]
+        steps.append({
+            "tool": "scene_bind_material",
+            "arguments": {"prim_path": path, "material_path": material_path, "dry_run": False},
+        })
+        command = f"bind {material_path} to {path}"
+        payload = {
+            "ok": ok,
+            **base,
+            "dry_run": True,
+            "applied": False,
+            "preview": True,
+            "creates_material": not reuse,
+            "changes": changes,
+            "steps": steps,
+            "command": command,
+        }
+        made = f"reuse {material_path}" if reuse else f"create {material_path}"
+        payload["message"] = (
+            f"Preview only: nothing was changed. Painting would {made} and bind it to {path}. "
+            + ("Run the steps' tool calls in order to apply it." if not reuse else f"Run '{command}' to apply it.")
+        )
+        if detail and any(detail):
+            payload["message"] = f"{' '.join(part for part in detail if part)} {payload['message']}"
+        if named is not None:
+            payload["resolved_from_name"] = {"name": named, "path": path}
+        return payload
+
+    def _paint_material(self, color_text: str, color: tuple[float, ...]) -> tuple[str, bool]:
+        """(material path, reuse?): /World/Looks/<Color>Material, reused only when it is already a Material prim."""
+        word = color_text.strip().lower()
+        if word in _COLOR_WORDS:
+            base = f"{word.capitalize()}Material"
+        else:
+            base = "Color_" + "".join(f"{max(0, min(255, round(value * 255))):02X}" for value in color[:3])
+        candidate = f"{_DEFAULT_LOOKS}/{base}"
+        existing = self._safe_inspect(candidate)
+        if existing is not None and existing.get("type_name") == "Material":
+            return candidate, True
+        if existing is None:
+            return candidate, False
+        return self._free_child_path(_DEFAULT_LOOKS, base), False
+
+    def _place_created_prim(self, payload: dict[str, Any], path: str, translation: Any, dry_run: bool) -> None:
+        """Second step of 'add a sphere at 0 0 2': set the new prim's translate (only described in a dry run)."""
+        values = tuple(float(value) for value in translation)
+        if dry_run:
+            payload["changes"].append({
+                "action": "transform",
+                "path": path,
+                "summary": f"Set the translate of {path} to {' '.join(_format_number(value) for value in values)}",
+                "before": None,
+                "after": {"translation": list(values)},
+            })
+            if isinstance(payload.get("payload"), dict):
+                payload["payload"]["translation"] = list(values)
+            return
+        try:
+            moved = self._scene.move_prim(path, translation=values, dry_run=False)
+        except ValueError as exc:
+            payload.setdefault("warnings", []).append(f"Created {path} but could not move it: {exc}")
+            return
+        payload["changes"].extend(asdict(change) for change in moved.changes)
+        payload["payload"] = moved.payload
+        payload["ok"] = bool(payload["ok"] and moved.ok)
+        if moved.ok:
+            # The bridges record the create and the move as separate undo entries (and Kit Ctrl+Z steps).
+            payload["undo_steps"] = 2
+            payload.setdefault("notes", []).append(
+                f"Created and then moved {path}: that is two undo steps. The first 'undo' only removes the move "
+                "(the prim goes back to its parent's origin); the second removes the prim."
+            )
+
+    def _wrap_result(self, result: Any) -> dict[str, Any]:
+        """Scene payload for an OperationResult, a plain dict result, or any other value."""
+        if isinstance(result, OperationResult):
+            return self._wrap_operation_result("scene", result)
+        if isinstance(result, dict):
+            payload = dict(result)
+            if "target" in payload and payload["target"] != "scene":
+                payload["result_target"] = payload["target"]
+            payload["target"] = "scene"
+            payload["ok"] = bool(result.get("ok", True))
+            return payload
+        return {"ok": True, "target": "scene", "result": result}
 
     def _dispatch_learning(self, request: str) -> dict[str, Any]:
         style = self._detect_learning_style(request)
@@ -847,8 +1910,14 @@ class OmniverseRouter:
                 f"move {target} by 0 0 1",
                 "rename this to HeroCube",
                 "find cube",
+                "add a sphere at 0 0 2",
+                f"add a rect light above {target}",
+                f"paint {target} red",
+                "undo",
+                "what did you change",
             ],
             "learning": [
+                "help",
                 "practice transforms with me",
                 "quiz me on schemas",
                 "what should I do next?",
@@ -1140,7 +2209,8 @@ class OmniverseRouter:
 
     @staticmethod
     def _detect_learning_style(request: str) -> str:
-        lowered = request.lower()
+        # Dotted module names (omni.kit.commands) are API names, not the words "commands" or "study".
+        lowered = re.sub(r"\w+(?:\.\w+)+", " ", request.lower())
         if any(word in lowered for word in ("quiz", "test me", "check my understanding")):
             return "quiz"
         if any(word in lowered for word in ("practice", "drill", "hands on", "hands-on", "do it with me", "walk me through", "show me how")):
@@ -1720,6 +2790,12 @@ class OmniverseRouter:
             return {"action": "ping"}
         if lower in {"summary", "scene summary", "scene status"}:
             return {"action": "summary"}
+        if _UNDO_CONFIRM.match(lower):
+            return {"action": "undo", "confirm": True}
+        if _UNDO_REQUEST.match(lower):
+            return {"action": "undo", "confirm": False}
+        if _UNDO_HISTORY.match(lower):
+            return {"action": "undo_history"}
         if _is_prim_count_question(lower):
             return {"action": "summary", "question": "prim_count"}
         if any(phrase in lower for phrase in ("what's selected", "what is selected", "current selection", "show selection")):
@@ -1758,28 +2834,39 @@ class OmniverseRouter:
         create_match = re.match(r"^(?:scene\s+)?create\s+(/\S*)(?:\s+type\s+(\S+))?$", text, re.IGNORECASE)
         if create_match:
             return {"action": "create", "path": create_match.group(1), "type_name": create_match.group(2) or "Xform"}
+        extended = self._parse_extended_create(text, selected_path)
+        if extended is not None:
+            return extended
         transform = self._parse_transform(text, selected_path)
         if transform is not None:
             return transform
         # "the/this/my ..." names something that already exists ("make the light brighter", "add my light to the
-        # scene"), so it never creates a prim.
+        # scene"), so it never creates a prim. "at x y z" is a position, never a parent path.
+        create_text, translation = self._split_create_position(text)
         create_natural = re.match(
             r"^(?:make\s+(?:a|an|another|new)\s+|(?:create|add|spawn|place)\s+(?:a\s+|an\s+|another\s+|new\s+)?"
             r"(?!(?:the|this|that|these|those|it|its|my|our|your|selected)\b))(.+)$",
-            text,
+            create_text,
             re.IGNORECASE,
         )
         if create_natural:
             description = re.split(r"\s+(?:under|in|into|inside|at)\s+", create_natural.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
             type_name = self._guess_type_name(description)
             base_name = self._guess_base_name(description, type_name)
-            parent_text = self._extract_create_parent(text)
+            parent_text = self._extract_create_parent(create_text)
             parent_path = (
                 self._extract_usd_path(parent_text or "")
                 or (selected_path if parent_text and _PRONOUN.search(parent_text.lower()) else None)
                 or self._normalize_parent_path(parent_text or "/World")
             )
-            return {"action": "create", "path": self._scene.unique_child_path(parent_path, base_name), "type_name": type_name}
+            created: dict[str, Any] = {
+                "action": "create",
+                "path": self._scene.unique_child_path(parent_path, base_name),
+                "type_name": type_name,
+            }
+            if translation is not None:
+                created["translation"] = translation
+            return created
 
         delete_match = re.match(r"^(?:scene\s+)?(?:delete|remove|erase)\s+(?:the\s+)?(?:prim\s+)?(.+)$", text, re.IGNORECASE)
         if delete_match:
@@ -1880,7 +2967,9 @@ class OmniverseRouter:
                 material_text, prim_text = first, second
             else:
                 prim_text, material_text = first, second
-            material_path = self._extract_usd_path(material_text)
+            # Both sides must be exact: "bind anything but /World/Looks/Red to /World/Hero" binds nothing.
+            bare_material = _BARE_MATERIAL_PATH.fullmatch(material_text.strip())
+            material_path = bare_material.group(1) if bare_material else None
             prim_path = self._fragment_target(prim_text, selected_path)
             if prim_path is not None and material_path is not None:
                 return {
@@ -2009,7 +3098,11 @@ class OmniverseRouter:
         return None
 
     def _parse_set_attribute(self, text: str, selected_path: str | None) -> dict[str, Any] | None:
-        """'set intensity of X to 500' is an attribute edit (not supported yet); 'set material of X to /M' binds."""
+        """'set intensity of X to 500' is an attribute edit; 'set material of X to /M' binds exactly one material path.
+
+        The target must be a bare path or the selection (else it is resolved by name, which only previews), and a
+        material value that is not exactly one path is refused rather than written as a 'material' attribute.
+        """
         match = next((found for found in (pattern.match(text) for pattern in _SET_ATTRIBUTE) if found), None)
         if match is None:
             return None
@@ -2022,20 +3115,38 @@ class OmniverseRouter:
             if words:
                 path, candidates = self._unique_prim_named(words)
                 named = " ".join(words) if path else None
-        material_path = self._extract_usd_path(value)
-        if attribute.lower() in {"material", "material binding"} and material_path and path:
-            parsed: dict[str, Any] = {"action": "material", "path": path, "material_path": material_path}
-            if named:
-                parsed["resolved_from_name"] = named
-            return parsed
-        return {"action": "set_attribute", "path": path, "attribute": attribute, "value": value, "candidates": candidates}
+        if attribute.lower() in {"material", "material binding"}:
+            bare_material = _BARE_MATERIAL_PATH.fullmatch(value)
+            if bare_material is None:
+                refusal = _refusal(
+                    f"To bind a material, give exactly one material path, not '{value}' (to color a prim with a new "
+                    "material, say 'paint <prim path> red').",
+                    f"set the material of {path or '/World/Props/Cube'} to /World/Looks/Red",
+                )
+                refusal["path"] = path
+                if candidates:
+                    refusal["candidates"] = candidates
+                return refusal
+            if path:
+                parsed: dict[str, Any] = {"action": "material", "path": path, "material_path": bare_material.group(1)}
+                if named:
+                    parsed["resolved_from_name"] = named
+                return parsed
+        parsed = {"action": "set_attribute", "path": path, "attribute": attribute, "value": value, "candidates": candidates}
+        if named:
+            parsed["resolved_from_name"] = named
+        return parsed
 
     def _fragment_target(self, fragment: str, selected_path: str | None) -> str | None:
-        """The prim a phrase points at: a path inside it, or the selection when the whole phrase is this/that/it/
-        selected (optionally with 'the' and one noun). Any other phrase returns None, so name resolution only previews."""
-        return self._extract_usd_path(fragment) or (
-            selected_path if _SELECTION_REF.fullmatch(fragment.strip()) else None
-        )
+        """The prim a phrase points at: a bare path ('/World/Box', 'the prim /World/Box'), or the selection when the
+        whole phrase is this/that/it/selected (optionally with 'the' and one noun). Any other phrase returns None,
+        including one that only mentions a path ('everything except /World/Hero'), so name resolution refuses with
+        candidates or only previews."""
+        fragment = fragment.strip()
+        bare = _BARE_PATH.fullmatch(fragment)
+        if bare:
+            return bare.group(1)
+        return selected_path if _SELECTION_REF.fullmatch(fragment) else None
 
     @staticmethod
     def _strip_politeness(text: str, keep_case: bool = False) -> str:
@@ -2156,18 +3267,35 @@ class OmniverseRouter:
         return text.strip(" ,."), None
 
     @staticmethod
+    def _split_create_position(text: str) -> tuple[str, tuple[float, float, float] | None]:
+        """'add a sphere at 0 0 2 under /World' -> ('add a sphere under /World', (0, 0, 2))."""
+        found = re.search(rf"\s+at\s+\(?\s*{_VECTOR}\s*\)?(?=\s|$)", text, re.IGNORECASE)
+        if not found:
+            return text, None
+        position = (float(found.group(1)), float(found.group(2)), float(found.group(3)))
+        return re.sub(r"\s+", " ", f"{text[: found.start()]} {text[found.end():]}").strip(), position
+
+    @staticmethod
     def _guess_type_name(text: str) -> str:
+        # Only the head noun names the type: "a lamp above the box" is not a Cube, "a table next to the sphere" not a
+        # Sphere. The reference object after a spatial or other preposition is dropped first.
+        text = re.split(
+            r"\s+(?:above|over|below|beneath|under|on|onto|near|beside|behind|next\s+to|by|like|for|with)\s+",
+            text,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
         lower = text.lower()
         if "light" in lower:
-            if "distant" in lower:
-                return "DistantLight"
-            if "sphere" in lower:
-                return "SphereLight"
-            return "DistantLight"
+            kind = next((word for word in re.findall(r"[a-z]+", lower) if word in _LIGHT_KINDS), None)
+            return _LIGHT_TYPE_NAMES[_LIGHT_KINDS[kind]] if kind else "DistantLight"
         if "camera" in lower:
             return "Camera"
         if "cube" in lower:
             return "Cube"
+        shape = next((type_name for word, type_name in _SHAPE_WORDS if re.search(rf"\b{word}s?\b", lower)), None)
+        if shape is not None:
+            return shape
         if "mesh" in lower:
             return "Mesh"
         if "scope" in lower:

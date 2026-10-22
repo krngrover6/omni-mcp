@@ -38,8 +38,10 @@ _PLAN_KEYS = ("exam_date", "plan_start", "days_until_exam", "minutes_per_day")
 
 
 def workspace_root() -> Path:
-    """Workspace folder from this file: exam -> package -> src -> omniverse_scene_mcp -> workspace."""
-    return Path(__file__).resolve().parents[4]
+    """``$OMNIVERSE_ROOT`` when set (as server._workspace_root does, so a wheel install inside a venv still finds
+    the workspace), else the folder from this file: exam -> package -> src -> omniverse_scene_mcp -> workspace."""
+    configured = os.environ.get("OMNIVERSE_ROOT", "").strip()
+    return Path(configured) if configured else Path(__file__).resolve().parents[4]
 
 
 def default_progress_path() -> Path:

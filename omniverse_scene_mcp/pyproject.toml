@@ -4,13 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omniverse-scene-mcp"
-version = "0.1.0"
-description = "Scene-aware Omniverse MCP scaffold"
+version = "0.3.0"
+description = "Scene-aware Omniverse MCP router: live/fake scene control, offline USD knowledge, NCP-OUSD exam prep"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27,<1",
     "mcp>=1.13,<2",
 ]
+
+[project.optional-dependencies]
+# Standalone OpenUSD bindings for the router process and tests. Do NOT install into Kit/Isaac Sim/Composer:
+# they ship their own pxr (USD 25.11). The package only uses APIs present in both USD 25.11 and usd-core 26.x.
+usd = ["usd-core>=25.11,<27"]
+test = ["pytest>=8,<10"]
 
 [project.scripts]
 omniverse-scene-mcp = "omniverse_scene_mcp.__main__:main"
@@ -21,3 +28,16 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["omniverse_scene_mcp", "omniverse_scene_mcp.*"]
+exclude = ["*.__pycache__", "*.__pycache__.*"]
+
+# Non-.py files the package reads at runtime (exam/bank.py and exam/blueprint.py open these by __file__).
+# Everything else the router reads (workspace notes, LearnOpenUSD docs, kit-usd-agents data) lives outside the
+# package in the workspace and is located through OMNIVERSE_ROOT / OMNIVERSE_USD_KNOWLEDGE_DATA.
+[tool.setuptools.package-data]
+"omniverse_scene_mcp.exam" = ["data/*.json"]
+
+# sys.path, OMNIVERSE_SCENE_MCP_TEST=1, the network guard and local-only skips come from tests/conftest.py,
+# which tools/run_tests.py (the stdlib runner) loads too, so both runners behave the same.
+[tool.pytest.ini_options]
+testpaths = ["tests"]

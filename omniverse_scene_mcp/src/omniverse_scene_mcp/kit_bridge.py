@@ -10,6 +10,7 @@ from typing import Any
 
 from .bridge import (
     BASIC_RPC_METHODS,
+    EDIT_RPC_METHODS,
     INSIGHT_QUERIES,
     LIVE_RPC_METHODS,
     RPC_VERSION,
@@ -34,6 +35,18 @@ except ImportError as exc:  # pragma: no cover - only available inside Kit
     _OMNI_USD_IMPORT_ERROR = exc
 else:  # pragma: no cover - only available inside Kit
     _OMNI_USD_IMPORT_ERROR = None
+    try:
+        import omni.kit.commands  # noqa: F401 - makes omni.kit.commands/omni.kit.undo reachable for Ctrl+Z undo
+    except ImportError:
+        pass
+
+try:
+    from . import kit_commands
+except Exception as exc:  # pragma: no cover - keep the bridge working (without undo) if undo support fails to load
+    kit_commands = None  # type: ignore[assignment]
+    _UNDO_IMPORT_ERROR: Exception | None = exc
+else:
+    _UNDO_IMPORT_ERROR = None
 
 # Live insight runs on Kit's main thread and the RPC server stops waiting after 15 s, so keep it bounded.
 LIVE_NOTE = "Read from the LIVE stage in Kit, including unsaved edits; nothing was changed, selected or saved."
@@ -70,6 +83,8 @@ class LiveKitSceneBridge:
                 "Run this inside Kit or an Omniverse-enabled Python environment."
             ) from (_OMNI_USD_IMPORT_ERROR or _PXR_IMPORT_ERROR)
         self._usd_context = omni.usd.get_context(usd_context_name)
+        # MCP edits recorded for undo_last; inside Kit they are also on Kit's undo stack (Ctrl+Z).
+        self._undo_stack = kit_commands.UndoStack() if kit_commands is not None else None
 
     def ping(self) -> str:
         stage = self._stage()
@@ -118,16 +133,25 @@ class LiveKitSceneBridge:
         prim = self._require_prim(path)
         return [str(child.GetPath()) for child in prim.GetChildren()]
 
+    # Every mutating method below runs its edit through _undoable (Ctrl+Z in Kit, or undo_last); reads do not.
+
     def create_prim(self, path: str, type_name: str = "Xform") -> PrimRecord:
         stage = self._require_stage()
-        prim = stage.DefinePrim(path, type_name)
+        # Defining a prim that already exists only changes its specifier/type: snapshot just the prim, not its subtree.
+        existing = stage.GetPrimAtPath(path) if Sdf.Path.IsValidPathString(path) else None
+        full, shallow = ([], [path]) if existing and existing.IsValid() else ([path], [])
+        prim = self._undoable(
+            f"Create {type_name} {path}", stage, full, lambda: stage.DefinePrim(path, type_name), shallow=shallow
+        )
         self._select([path])
         return self._prim_to_record(prim)
 
     def delete_prim(self, path: str) -> None:
         stage = self._require_stage()
         prim = self._require_prim(path)
-        stage.RemovePrim(prim.GetPath())
+        prim_path = prim.GetPath()
+        # The snapshot holds the whole deleted subtree of the edit target layer.
+        self._undoable(f"Delete {prim_path}", stage, [str(prim_path)], lambda: stage.RemovePrim(prim_path))
         self._clear_selection_if_present(path)
 
     def duplicate_prim(self, source_path: str, target_path: str) -> PrimRecord:
@@ -139,7 +163,12 @@ class LiveKitSceneBridge:
         parent_path = target.GetParentPath()
         if parent_path != Sdf.Path.absoluteRootPath and not stage.GetPrimAtPath(parent_path).IsValid():
             raise ValueError(f"Target parent does not exist: {parent_path}")
-        clone = self._copy_prim_specs(stage, source, target)
+        clone = self._undoable(
+            f"Duplicate {source_path} to {target_path}",
+            stage,
+            [str(target)],
+            lambda: self._copy_prim_specs(stage, source, target),
+        )
         self._select([target_path])
         return self._prim_to_record(clone)
 
@@ -147,30 +176,48 @@ class LiveKitSceneBridge:
         stage = self._require_stage()
         prim = self._require_prim(path)
         new_parent_prim = self._require_prim(new_parent)
-        editor = Usd.NamespaceEditor(stage)
-        if not editor.ReparentPrim(prim, new_parent_prim):
-            raise ValueError(f"Failed to reparent {path} under {new_parent}")
-        if not editor.ApplyEdits():
-            raise ValueError(f"Unable to apply namespace edit for {path}")
-        moved = stage.GetPrimAtPath(new_parent_prim.GetPath().AppendChild(prim.GetName()))
-        if not moved or not moved.IsValid():
-            raise ValueError(f"Reparented prim is not accessible at the expected path under {new_parent}")
+        old_path = prim.GetPath()
+        new_path = new_parent_prim.GetPath().AppendChild(prim.GetName())
+
+        def apply():
+            editor = Usd.NamespaceEditor(stage)
+            if not editor.ReparentPrim(prim, new_parent_prim):
+                raise ValueError(f"Failed to reparent {path} under {new_parent}")
+            if not editor.ApplyEdits():
+                raise ValueError(f"Unable to apply namespace edit for {path}")
+            moved_prim = stage.GetPrimAtPath(new_path)
+            if not moved_prim or not moved_prim.IsValid():
+                raise ValueError(f"Reparented prim is not accessible at the expected path under {new_parent}")
+            return moved_prim
+
+        moved = self._undoable(
+            f"Reparent {old_path} under {new_parent}", stage, [str(old_path), str(new_path)], apply, namespace_edit=True
+        )
         self._select([str(moved.GetPath())])
         return self._prim_to_record(moved)
 
     def rename_prim(self, path: str, new_name: str) -> PrimRecord:
         stage = self._require_stage()
         prim = self._require_prim(path)
-        editor = Usd.NamespaceEditor(stage)
-        if not editor.RenamePrim(prim, new_name):
-            raise ValueError(f"Failed to rename {path} to {new_name}")
-        if not editor.ApplyEdits():
-            raise ValueError(f"Unable to apply rename for {path}")
         parent = prim.GetParent()
-        renamed_path = parent.GetPath().AppendChild(new_name) if parent and parent.IsValid() else f"/{new_name}"
-        renamed = stage.GetPrimAtPath(renamed_path)
-        if not renamed or not renamed.IsValid():
-            raise ValueError(f"Renamed prim is not accessible at the expected path: {renamed_path}")
+        paths = [str(prim.GetPath())]
+        new_path = _child_path_or_none(parent, new_name)
+        if new_path:
+            paths.append(new_path)
+
+        def apply():
+            editor = Usd.NamespaceEditor(stage)
+            if not editor.RenamePrim(prim, new_name):
+                raise ValueError(f"Failed to rename {path} to {new_name}")
+            if not editor.ApplyEdits():
+                raise ValueError(f"Unable to apply rename for {path}")
+            renamed_path = parent.GetPath().AppendChild(new_name) if parent and parent.IsValid() else f"/{new_name}"
+            renamed_prim = stage.GetPrimAtPath(renamed_path)
+            if not renamed_prim or not renamed_prim.IsValid():
+                raise ValueError(f"Renamed prim is not accessible at the expected path: {renamed_path}")
+            return renamed_prim
+
+        renamed = self._undoable(f"Rename {path} to {new_name}", stage, paths, apply, namespace_edit=True)
         self._select([str(renamed.GetPath())])
         return self._prim_to_record(renamed)
 
@@ -181,7 +228,18 @@ class LiveKitSceneBridge:
         rotation: tuple[float, float, float] | None = None,
         scale: tuple[float, float, float] | None = None,
     ) -> PrimRecord:
+        stage = self._require_stage()
         prim = self._require_prim(path)
+        self._undoable(
+            f"Move {path}",
+            stage,
+            [],
+            lambda: self._apply_move(path, prim, translation, rotation, scale),
+            shallow=[str(prim.GetPath())],
+        )
+        return self._prim_to_record(prim)
+
+    def _apply_move(self, path: str, prim, translation, rotation, scale) -> None:
         xformable = UsdGeom.Xformable(prim)
         if not xformable:
             raise ValueError(f"Prim is not transformable: {path}")
@@ -204,7 +262,6 @@ class LiveKitSceneBridge:
                 raise ValueError(f"Failed to update the transform of {path}")
         else:
             self._move_with_existing_ops(path, xformable, ops, translation, rotation, scale)
-        return self._prim_to_record(prim)
 
     def set_material(self, path: str, material_path: str) -> PrimRecord:
         stage = self._require_stage()
@@ -213,7 +270,13 @@ class LiveKitSceneBridge:
         if not material_prim or not material_prim.IsValid():
             raise ValueError(f"Material prim does not exist: {material_path}")
         material = UsdShade.Material(material_prim)
-        UsdShade.MaterialBindingAPI.Apply(prim).Bind(material)
+        self._undoable(
+            f"Bind {material_path} to {path}",
+            stage,
+            [],
+            lambda: UsdShade.MaterialBindingAPI.Apply(prim).Bind(material),
+            shallow=[str(prim.GetPath())],
+        )
         return self._prim_to_record(prim)
 
     def get_variant_selections(self, path: str) -> dict[str, str]:
@@ -234,8 +297,13 @@ class LiveKitSceneBridge:
             raise ValueError(
                 f"Invalid selection '{selection}' for {variant_set} on {path}; expected one of {names}"
             )
-        if not variants.SetVariantSelection(selection):
-            raise ValueError(f"Failed to select {variant_set}={selection} on {path}")
+
+        def apply() -> None:
+            if not variants.SetVariantSelection(selection):
+                raise ValueError(f"Failed to select {variant_set}={selection} on {path}")
+
+        label = f"Select {variant_set}={selection} on {path}"
+        self._undoable(label, self._require_stage(), [], apply, shallow=[str(prim.GetPath())])
         return self.get_variant_selections(path)
 
     def get_timeline_state(self) -> dict[str, object]:
@@ -290,6 +358,8 @@ class LiveKitSceneBridge:
         return matches
 
     def save_scene(self, path: str) -> str:
+        """Save the layers (or Save As the root layer). Saving is not undoable: undo_last only reverts in-memory
+        edits, so save again afterwards to write the reverted state to disk."""
         stage = self._require_stage()
         if not path:
             raise ValueError("Save path is required")
@@ -318,23 +388,28 @@ class LiveKitSceneBridge:
         stage = self._require_stage()
         prim = self._require_prim(path)
 
-        material_path = "/World/Looks/RedMaterial"
-        looks_path = stage.GetPrimAtPath("/World/Looks")
-        if not looks_path or not looks_path.IsValid():
-            stage.DefinePrim("/World/Looks", "Scope")
+        looks = "/World/Looks"
+        material_path = f"{looks}/RedMaterial"
 
-        material_prim = stage.GetPrimAtPath(material_path)
-        if not material_prim or not material_prim.IsValid():
-            material = UsdShade.Material.Define(stage, material_path)
-            shader = UsdShade.Shader.Define(stage, f"{material_path}/Shader")
-            shader.CreateIdAttr("UsdPreviewSurface")
-            shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(1.0, 0.0, 0.0))
-            shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.4)
-            material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
-        else:
-            material = UsdShade.Material(material_prim)
+        def apply() -> None:
+            looks_path = stage.GetPrimAtPath(looks)
+            if not looks_path or not looks_path.IsValid():
+                stage.DefinePrim(looks, "Scope")
 
-        UsdShade.MaterialBindingAPI.Apply(prim).Bind(material)
+            material_prim = stage.GetPrimAtPath(material_path)
+            if not material_prim or not material_prim.IsValid():
+                material = UsdShade.Material.Define(stage, material_path)
+                shader = UsdShade.Shader.Define(stage, f"{material_path}/Shader")
+                shader.CreateIdAttr("UsdPreviewSurface")
+                shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(1.0, 0.0, 0.0))
+                shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.4)
+                material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+            else:
+                material = UsdShade.Material(material_prim)
+
+            UsdShade.MaterialBindingAPI.Apply(prim).Bind(material)
+
+        self._undoable(f"Make {path} red", stage, [material_path], apply, shallow=[str(prim.GetPath()), looks])
         return self._prim_to_record(prim)
 
     # --- live insight and light/camera authoring (extended RPC, see kit_rpc.py) ---------------------------------
@@ -347,6 +422,12 @@ class LiveKitSceneBridge:
             authoring_info: dict[str, Any] = {"available": False, "error": _clip(f"{type(exc).__name__}: {exc}")}
         else:
             authoring_info = {"available": True}
+        try:
+            from .edits import set_attribute  # noqa: F401 - the same import the edit methods make
+        except Exception as exc:  # noqa: BLE001
+            edits_info: dict[str, Any] = {"available": False, "error": _clip(f"{type(exc).__name__}: {exc}")}
+        else:
+            edits_info = {"available": True, "methods": list(EDIT_RPC_METHODS), "dry_run_default": True}
         return {
             "ok": True,
             "bridge": type(self).__name__,
@@ -355,6 +436,8 @@ class LiveKitSceneBridge:
             "insight_queries": list(INSIGHT_QUERIES),
             "insight_args": {name: list(keys) for name, keys in _INSIGHT_ARGS.items()},
             "authoring": authoring_info,
+            "edits": edits_info,
+            "undo": self._undo_info(),
             "dry_run_default": True,
             "stage_open": self._stage() is not None,
         }
@@ -419,18 +502,26 @@ class LiveKitSceneBridge:
             from .authoring import create_light as author_light
         except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
             return _authoring_unavailable("create_light", exc)
-        result = author_light(
-            self._require_stage(),
+        stage = self._require_stage()
+        result = self._authored(
+            f"Create {light_type} light {path}",
+            stage,
             path,
-            light_type,
-            intensity=intensity,
-            exposure=exposure,
-            color=color,
-            size=size,
-            translation=translation,
-            aim_at=aim_at,
-            up_axis=up_axis,
-            dry_run=dry_run,
+            dry_run,
+            lambda: author_light(
+                stage,
+                path,
+                light_type,
+                intensity=intensity,
+                exposure=exposure,
+                color=color,
+                size=size,
+                translation=translation,
+                aim_at=aim_at,
+                up_axis=up_axis,
+                dry_run=dry_run,
+            ),
+            creates=True,
         )
         return self._authoring_result(result, path, dry_run, select=True)
 
@@ -452,17 +543,25 @@ class LiveKitSceneBridge:
             from .authoring import create_camera as author_camera
         except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
             return _authoring_unavailable("create_camera", exc)
-        result = author_camera(
-            self._require_stage(),
+        stage = self._require_stage()
+        result = self._authored(
+            f"Create camera {path}",
+            stage,
             path,
-            focal_length=focal_length,
-            horizontal_aperture=horizontal_aperture,
-            clipping_range=clipping_range,
-            translation=translation,
-            aim_at=aim_at,
-            copy_optics_from=copy_optics_from,
-            up_axis=up_axis,
-            dry_run=dry_run,
+            dry_run,
+            lambda: author_camera(
+                stage,
+                path,
+                focal_length=focal_length,
+                horizontal_aperture=horizontal_aperture,
+                clipping_range=clipping_range,
+                translation=translation,
+                aim_at=aim_at,
+                copy_optics_from=copy_optics_from,
+                up_axis=up_axis,
+                dry_run=dry_run,
+            ),
+            creates=True,
         )
         return self._authoring_result(result, path, dry_run, select=True)
 
@@ -479,8 +578,201 @@ class LiveKitSceneBridge:
             from .authoring import aim as author_aim
         except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
             return _authoring_unavailable("aim", exc)
-        result = author_aim(self._require_stage(), path, target, up_axis=up_axis, dry_run=dry_run)
+        stage = self._require_stage()
+        result = self._authored(
+            f"Aim {path}",
+            stage,
+            path,
+            dry_run,
+            lambda: author_aim(stage, path, target, up_axis=up_axis, dry_run=dry_run),
+            creates=False,
+        )
         return self._authoring_result(result, path, dry_run, select=False)
+
+    # --- safe attribute and material edits (edits.py); dry_run=True by default, undoable when they write ---------
+
+    def set_attribute(
+        self,
+        path: str,
+        name: str,
+        value: Any,
+        *,
+        time: float | None = None,
+        create_type: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Set (or with dry_run, preview setting) one attribute on the live stage via edits.set_attribute."""
+        try:
+            from .edits import set_attribute as edit_attribute
+        except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
+            return _edits_unavailable("set_attribute", exc)
+        stage = self._require_stage()
+        result = self._authored(
+            f"Set {name} on {path}",
+            stage,
+            path,
+            dry_run,
+            lambda: edit_attribute(stage, path, name, value, time=time, create_type=create_type, dry_run=dry_run),
+            creates=False,
+        )
+        return self._authoring_result(result, path, dry_run, select=False)
+
+    def create_material(
+        self,
+        path: str,
+        *,
+        diffuse_color: Any = None,
+        roughness: float | None = None,
+        metallic: float | None = None,
+        opacity: float | None = None,
+        emissive_color: Any = None,
+        ior: float | None = None,
+        create_parent: bool = False,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Create (or with dry_run, preview) a UsdPreviewSurface material on the live stage via edits.create_material."""
+        try:
+            from .edits import create_material as edit_material
+        except Exception as exc:  # noqa: BLE001
+            return _edits_unavailable("create_material", exc)
+        stage = self._require_stage()
+        result = self._authored(
+            f"Create material {path}",
+            stage,
+            path,
+            dry_run,
+            lambda: edit_material(
+                stage,
+                path,
+                diffuse_color=diffuse_color,
+                roughness=roughness,
+                metallic=metallic,
+                opacity=opacity,
+                emissive_color=emissive_color,
+                ior=ior,
+                create_parent=create_parent is True,
+                dry_run=dry_run,
+            ),
+            creates=True,
+        )
+        return self._authoring_result(result, path, dry_run, select=False)
+
+    def bind_material(
+        self,
+        prim_path: str,
+        material_path: str,
+        *,
+        strength: str | None = None,
+        purpose: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Bind (or with dry_run, preview binding) a material to a live prim via edits.bind_material."""
+        try:
+            from .edits import bind_material as edit_binding
+        except Exception as exc:  # noqa: BLE001
+            return _edits_unavailable("bind_material", exc)
+        stage = self._require_stage()
+        result = self._authored(
+            f"Bind {material_path} to {prim_path}",
+            stage,
+            prim_path,
+            dry_run,
+            lambda: edit_binding(stage, prim_path, material_path, strength=strength, purpose=purpose, dry_run=dry_run),
+            creates=False,
+        )
+        return self._authoring_result(result, prim_path, dry_run, select=False)
+
+    # --- undo (see undo.py and kit_commands.py) -----------------------------------------------------------------
+
+    def undo_last(self, dry_run: bool = True) -> dict[str, Any]:
+        """Undo (dry_run=True, the default: only preview) the newest MCP edit recorded on the open stage.
+
+        Refuses when the stage was closed/replaced or the edited prims changed since (undo Kit's later edits with
+        Ctrl+Z first; a change made outside Kit's undo history, such as a script, blocks Ctrl+Z on this edit too).
+        Saving is not undoable: this reverts the in-memory layers; save again to write the reverted state.
+        """
+        if kit_commands is None or self._undo_stack is None:
+            return _undo_unavailable("undo_last")
+        dry = not _writes(dry_run)
+        stage = self._stage()
+        if stage is None:
+            return {"ok": False, "dry_run": dry, "undone": None, "mode": "live", "message": "No live USD stage is open"}
+        result = kit_commands.undo_last(stage, dry_run=dry, stack=self._undo_stack, undo_module=_kit_module("undo"))
+        result["mode"] = "live"
+        if result.get("ok") and not dry:
+            self._drop_missing_from_selection(stage)
+        return _fit_json(result, LIVE_MAX_RESULT_BYTES)
+
+    def undo_history(self, limit: int = 20) -> dict[str, Any]:
+        """The newest recorded MCP edits (up to limit, 1-50), newest first. Read-only."""
+        if kit_commands is None or self._undo_stack is None:
+            return _undo_unavailable("undo_history")
+        stack = self._undo_stack
+        payload = {
+            "ok": True,
+            "mode": "live",
+            "count": len(stack),
+            "max_entries": stack.max_entries,
+            "dropped": stack.dropped,
+            "entries": stack.history(limit, stage=self._stage()),
+            "kit_ctrl_z": _kit_module("commands") is not None,
+            "note": kit_commands.SAVE_NOTE,
+        }
+        if stack.notes:
+            payload["notes"] = stack.notes
+        return _fit_json(payload, LIVE_MAX_RESULT_BYTES)
+
+    def _undo_info(self) -> dict[str, Any]:
+        if kit_commands is None or self._undo_stack is None:
+            error = _UNDO_IMPORT_ERROR
+            detail = f"{type(error).__name__}: {error}" if error is not None else "the bridge has no undo stack"
+            return {"available": False, "error": _clip(detail)}
+        return {
+            "available": kit_commands.undo.Sdf is not None,
+            "kit_ctrl_z": _kit_module("commands") is not None,
+            "methods": ["undo_last", "undo_history"],
+            "recorded": len(self._undo_stack),
+            "max_entries": self._undo_stack.max_entries,
+            "dry_run_default": True,
+            "note": kit_commands.SAVE_NOTE,
+        }
+
+    def _undoable(self, label: str, stage, paths, fn, *, shallow=(), namespace_edit: bool = False):
+        """Run one mutating edit so it can be undone; dry runs and read-only methods never come here."""
+        if kit_commands is None or self._undo_stack is None:
+            return fn()
+        return kit_commands.run_undoable(
+            label,
+            stage,
+            paths,
+            fn,
+            shallow=shallow,
+            namespace_edit=namespace_edit,
+            stack=self._undo_stack,
+            commands=_kit_module("commands"),
+        )
+
+    def _authored(self, label: str, stage, path: str, dry_run: Any, run, *, creates: bool) -> Any:
+        """Call an authoring function: directly for a dry run, as one undoable edit when it writes."""
+        if not _writes(dry_run) or kit_commands is None or self._undo_stack is None or not _is_prim_path(path):
+            return run()
+        top_before = self._undo_stack.peek()
+        paths, shallow = ([path], []) if creates else ([], [path])
+        result = self._undoable(label, stage, paths, run, shallow=shallow)
+        if isinstance(result, dict) and result.get("ok") and self._undo_stack.peek() is not top_before:
+            result = {**result, "undoable": True}
+        return result
+
+    def _drop_missing_from_selection(self, stage) -> None:
+        """After an undo, keep only selected prims that still exist (a UI nicety; never fails the undo)."""
+        try:
+            selection = self._usd_context.get_selection()
+            selected = list(selection.get_selected_prim_paths())
+            kept = [p for p in selected if stage.GetPrimAtPath(p).IsValid()]
+            if kept != selected:
+                selection.set_selected_prim_paths(kept, True)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _authoring_result(self, result: Any, path: str, dry_run: bool, select: bool) -> dict[str, Any]:
         payload = dict(result) if isinstance(result, dict) else {"result": result}
@@ -865,6 +1157,57 @@ def _authoring_unavailable(method: str, exc: Exception) -> dict[str, Any]:
         f"imported ({_clip(f'{type(exc).__name__}: {exc}', 200)}). Update the package and reload the bridge.",
         needs_bridge_update=True,
     )
+
+
+def _edits_unavailable(method: str, exc: Exception) -> dict[str, Any]:
+    return unsupported_result(
+        method,
+        "Live attribute/material edits are not available in this bridge: omniverse_scene_mcp.edits could not be "
+        f"imported ({_clip(f'{type(exc).__name__}: {exc}', 200)}). Update the package and reload the bridge.",
+        needs_bridge_update=True,
+    )
+
+
+def _undo_unavailable(method: str) -> dict[str, Any]:
+    error = _UNDO_IMPORT_ERROR
+    detail = f" ({_clip(f'{type(error).__name__}: {error}', 200)})" if error is not None else ""
+    return unsupported_result(
+        method,
+        f"Undo is not available in this bridge: omniverse_scene_mcp.kit_commands could not be loaded{detail}. "
+        "Update the package and reload the bridge; Ctrl+Z in Kit still undoes Kit's own edits.",
+        needs_bridge_update=True,
+    )
+
+
+def _kit_module(name: str) -> Any:
+    """omni.kit.<name> as reachable from this module's omni import; None outside Kit (or when omni is faked)."""
+    kit = getattr(omni, "kit", None) if omni is not None else None
+    return getattr(kit, name, None) if kit is not None else None
+
+
+def _writes(dry_run: Any) -> bool:
+    """Mirror authoring._dry: only an explicit false value (False or 'false'/'0'/'no'/'off') writes."""
+    if isinstance(dry_run, str):
+        return dry_run.strip().lower() in ("false", "0", "no", "off")
+    return dry_run is False
+
+
+def _is_prim_path(path: Any) -> bool:
+    try:
+        kit_commands.undo.prim_path(path)
+    except Exception:  # noqa: BLE001 - UndoError or no pxr: let the authoring call report the bad path itself
+        return False
+    return True
+
+
+def _child_path_or_none(parent, name: str) -> str | None:
+    """The path a rename would produce, or None when name is not a valid prim name (the rename then fails)."""
+    try:
+        base = parent.GetPath() if parent and parent.IsValid() else Sdf.Path.absoluteRootPath
+        child = base.AppendChild(name)
+    except Exception:  # noqa: BLE001 - Tf error for an invalid name
+        return None
+    return str(child) if child and not child.isEmpty else None
 
 
 def _rotation_from_xyz(rotation: tuple[float, float, float]):

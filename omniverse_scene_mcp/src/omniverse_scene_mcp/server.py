@@ -13,7 +13,7 @@ from typing import Any, Callable, Iterable, Sequence
 from mcp.server.fastmcp import FastMCP
 
 from . import usd_insight, usd_validate
-from .bridge import LIVE_RPC_METHODS
+from .bridge import EDIT_RPC_METHODS, LIVE_RPC_METHODS, RPC_VERSION, UNDO_RPC_METHODS
 from .exam import bank as exam_bank
 from .exam import blueprint as exam_blueprint
 from .exam import daily as exam_daily
@@ -22,9 +22,18 @@ from .exam import sandbox as exam_sandbox
 from .exam.mock import MockExamError
 from .file_stage import ReadOnlyViolation, SceneFileError, readonly_stage, resolve_scene_file
 from .health import router_health as check_router_health
+from .offline_docs_knowledge import ENV_ROOT as DOCS_ENV_ROOT
+from .offline_docs_knowledge import normalize_domain as normalize_docs_domain
 from .offline_knowledge import OFFLINE_NOTE, OfflineUSDKnowledge
 from .router import MOCK_EXAM_DEFAULTS, OmniverseRouter, RouteTarget, _local_usd_file
-from .runtime import build_mock_store, build_progress_store, build_router
+from .runtime import (
+    build_docs_knowledge,
+    build_mock_store,
+    build_progress_store,
+    build_router,
+    scene_targets,
+    switch_scene_target,
+)
 
 
 def _coerce_vector(values: Sequence[float] | None) -> tuple[float, float, float] | None:
@@ -94,9 +103,24 @@ INSIGHT_MODES = ("auto", "live", "saved_file")
 LIVE_ENABLE_STEPS = (
     "Isaac Sim: run C:/Users/krngr/Omniverse/isaacsim-study/reload_mcp_bridge.py in Isaac Sim's Script Editor; it "
     "runs self-tests on Isaac's USD and then restarts the scene bridge on port 9911 with the extended RPC "
-    "(isaacsim-study/bridge-reload-result.json should say status 'reloaded' and rpc_version 'tier2-1').",
-    "Router: restart it (start-isaac-mcp.ps1 targets the Isaac bridge) so it loads this code and points at "
-    "http://127.0.0.1:9911; Composer's 9910 extension only serves the basic scene methods.",
+    f"(isaacsim-study/bridge-reload-result.json should say status 'reloaded' and rpc_version '{RPC_VERSION}').",
+    "Composer: run C:/Users/krngr/Omniverse/composer-study/reload_composer_bridge.py in Composer's Script Editor (or "
+    "relaunch with start-composer-study.ps1); the extended bridge then serves 9910 and the stock one moves to 9909 "
+    "(composer-study/bridge-reload-result.json says what happened).",
+    "Router: restart it so it loads this code, or switch its scene target without a restart: "
+    "router_set_scene_target(target='isaac') for 9911 or router_set_scene_target(target='composer') for 9910.",
+)
+_EDIT_PREVIEW = (
+    "Preview only: nothing in the open scene changed. Show this plan to the user and apply it (same arguments plus "
+    "dry_run=False) only after they agree."
+)
+_UNDO_PREVIEW = (
+    "Preview only: nothing was undone. Show the user what would be undone and call scene_undo_last(dry_run=False) "
+    "only after they agree."
+)
+_DOCS_NOTE = (
+    "Offline search of the installed Isaac Sim / Kit extension docs (read-only, no network); the Kit, OmniUI and "
+    "Isaac Sim docs MCPs are not needed."
 )
 MOCK_PAGE_SIZE = 10
 MOCK_MAX_PAGE = 25
@@ -115,9 +139,10 @@ _AUTHORING_PREVIEW = (
     "Preview only: nothing in the open scene changed. Show this plan to the user and apply it (same arguments plus "
     "dry_run=False) only after they agree."
 )
-_AUTHORING_APPLIED = (
-    "Applied to the user's open scene in memory: it is not saved (scene_save keeps it) and it is not on Kit's undo "
-    "stack, so remove or re-aim it with another edit if it is wrong."
+_AUTHORING_APPLIED = "Applied to the user's open scene in memory: it is not saved (scene_save keeps it)."
+_APPLIED_UNDOABLE = " scene_undo_last undoes it (preview first); saving is not undoable."
+_APPLIED_NOT_RECORDED = (
+    " This bridge did not record it for undo, so change it back with another edit if it is wrong."
 )
 
 
@@ -183,6 +208,35 @@ def _live_support(capabilities: dict, query: str | None = None) -> dict[str, Any
     return {"available": True, "needs_bridge_update": False, "reason": None}
 
 
+def _feature_support(
+    capabilities: dict, insight: dict, key: str, feature_methods: Sequence[str], label: str
+) -> dict[str, Any]:
+    """Whether the bridge serves one tier3-1 feature (edits or undo), from its capabilities; never calls it."""
+    methods = set(capabilities.get("methods") or [])
+    info = capabilities.get(key) if isinstance(capabilities.get(key), dict) else {}
+    if not capabilities.get("ok"):
+        support: dict[str, Any] = {"available": False, "reason": insight["reason"]}
+    elif capabilities.get("fake_scene"):
+        available = bool(info.get("available"))
+        support = {
+            "available": available,
+            "in_memory": True,
+            "reason": "in-memory fake scene only: nothing reaches Composer or Isaac Sim" if available
+            else "the in-memory fake scene does not offer this",
+        }
+    elif not set(feature_methods) <= methods:
+        support = {"available": False, "reason": f"the live bridge predates {label}; reload it"}
+    elif info and not info.get("available"):
+        support = {"available": False, "reason": info.get("error") or f"the bridge could not load {label}"}
+    else:
+        support = {"available": True, "reason": None}
+    if key == "undo" and info.get("kit_ctrl_z") is not None:
+        support["kit_ctrl_z"] = bool(info.get("kit_ctrl_z"))
+    support["methods"] = list(feature_methods)
+    support["dry_run_default"] = True
+    return support
+
+
 def _insight_mode(
     router: OmniverseRouter,
     mode: str | None,
@@ -242,7 +296,10 @@ def _authoring_payload(router: OmniverseRouter, result: Any) -> dict:
     """Scene-tool envelope for a light/camera/aim result, with a message saying whether anything changed."""
     payload = router._wrap_operation_result("scene", result)
     inner = result.payload if isinstance(result.payload, dict) else {}
-    for key in ("unsupported", "needs_bridge_update", "fake_scene", "warnings", "next_step", "error"):
+    for key in (
+        "unsupported", "needs_bridge_update", "fake_scene", "warnings", "notes", "next_step", "error", "undoable",
+        "fallback",
+    ):
         if key in inner:
             payload[key] = inner[key]
     if not result.ok:
@@ -256,8 +313,39 @@ def _authoring_payload(router: OmniverseRouter, result: Any) -> dict:
         payload["message"] = _AUTHORING_PREVIEW
     else:
         payload["applied"] = True
-        payload["message"] = _AUTHORING_APPLIED
+        recorded = inner.get("undoable") is True or bool(inner.get("fake_scene"))
+        payload["message"] = _AUTHORING_APPLIED + (_APPLIED_UNDOABLE if recorded else _APPLIED_NOT_RECORDED)
     return payload
+
+
+def _color_arg(value: Any, label: str) -> tuple[float, ...] | str | None:
+    """[r, g, b] numbers, or a color string such as '#ff8800' that the bridge converts."""
+    if value is None or (isinstance(value, str) and value.strip()):
+        return value.strip() if isinstance(value, str) else None
+    return _numbers(value, 3, label)
+
+
+def _scene_targets_view(router: OmniverseRouter) -> dict[str, Any]:
+    """The named scene targets, which one the router uses now, and how to switch (no probes, no sockets)."""
+    current = router._scene.bridge_info()
+    targets = []
+    for name, endpoint in scene_targets().items():
+        if endpoint is None:
+            active = current.get("bridge") == "FakeSceneBridge"
+            app = "in-memory fake scene (offline; nothing reaches Composer or Isaac Sim)"
+        else:
+            active = current.get("endpoint") == endpoint
+            app = "Isaac Sim scene bridge" if name == "isaac" else "USD Composer scene bridge (upgraded bridge)"
+        targets.append({"name": name, "endpoint": endpoint, "app": app, "active": bool(active)})
+    return {
+        "ok": True,
+        "targets": targets,
+        "active": next((item["name"] for item in targets if item["active"]), None),
+        "current": current,
+        "how_to_switch": "router_set_scene_target(target='isaac' | 'composer' | 'fake'); add force=True to switch to "
+        "an app that is not answering yet.",
+        "note": "Read-only: nothing was probed or switched. router_health probes the ports.",
+    }
 
 
 def _mock_error(exc: Exception, **extra: Any) -> dict:
@@ -358,10 +446,18 @@ def _review_item(question_id: str, questions: dict[str, dict]) -> dict:
 
 def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
     offline_usd = OfflineUSDKnowledge()
+    # The installed Isaac Sim / Kit extension docs, one lazily indexed domain each, shared with the router's
+    # Kit / OmniUI / Isaac Sim fallback backends (resolving the folders reads nothing yet).
+    docs_knowledge = build_docs_knowledge()
     # One exam progress store and one mock-exam store per server, shared by the exam tools and the router.
     progress_store = build_progress_store()
     mock_store = build_mock_store()
-    router = build_router(offline_knowledge=offline_usd, progress_store=progress_store, mock_store=mock_store)
+    router = build_router(
+        offline_knowledge=offline_usd,
+        progress_store=progress_store,
+        mock_store=mock_store,
+        docs_knowledge=docs_knowledge,
+    )
 
     def _open_mock_ids() -> set[str]:
         """Question ids of the open mock (empty when none, or when the mock file cannot be read)."""
@@ -394,6 +490,45 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
             "reason": decision.reason,
             "normalized_request": decision.normalized_request,
         }
+
+    @app.tool(name="router_help")
+    def router_help(topic: str | None = None) -> dict:
+        """Plain-English guide to every tool, grouped by task (scene, edits, insight, lights/cameras/materials, undo,
+        docs, exam prep, learning, health), with examples and router_dispatch phrases. topic narrows it to a group
+        ('lights', 'undo', 'exam'), one tool ('scene_set_attribute') or a keyword search. Reads nothing."""
+        return router.tool_help(topic)
+
+    @app.tool(name="router_scene_targets")
+    def router_scene_targets() -> dict:
+        """Read-only: the scene apps the router can talk to (isaac on 9911, composer on 9910, the in-memory fake
+        scene), which one is active now, and how to switch. Nothing is probed or changed."""
+        return _scene_targets_view(router)
+
+    @app.tool(name="router_set_scene_target")
+    def router_set_scene_target(target: str, force: bool = False) -> dict:
+        """Point the scene tools at another app without restarting the router: 'isaac' (Isaac Sim bridge, 9911),
+        'composer' (USD Composer bridge, 9910) or 'fake' (in-memory scene). The app's /health is probed first
+        (300 ms, 127.0.0.1 only) and a target that does not answer is refused unless force=True. No scene, layer or
+        file changes; the result reports the new bridge's capabilities."""
+        result = switch_scene_target(router._scene, target, force=force)
+        result["targets"] = _scene_targets_view(router)["targets"]
+        if result.get("ok"):
+            current = result.get("current") or {}
+            where = current.get("endpoint") or "the in-memory fake scene"
+            result["message"] = (
+                f"Scene tools now talk to {where}." if result.get("changed") else f"Already using {where}; nothing changed."
+            )
+            capabilities = result.get("capabilities")
+            if isinstance(capabilities, dict) and (
+                capabilities.get("needs_bridge_update")
+                or (capabilities.get("ok") and not capabilities.get("fake_scene")
+                    and set(LIVE_RPC_METHODS) - set(capabilities.get("methods") or []))
+            ):
+                result["how_to_enable"] = list(LIVE_ENABLE_STEPS)
+                result["message"] += " That bridge predates some live features; see how_to_enable."
+        else:
+            result["message"] = result.get("error") or "The scene target was not switched."
+        return result
 
     @app.tool(name="router_status")
     def router_status() -> dict:
@@ -661,6 +796,72 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         payload = {"ok": bool(results), "query": query, "count": len(results), "results": results, "note": OFFLINE_NOTE}
         if not results:
             payload["message"] = "No offline USD matches; try other words or usd_knowledge."
+        return payload
+
+    # --- offline Kit / Isaac Sim / omni.ui extension docs (the installed Isaac Sim, read-only) ---------------------
+
+    @app.tool(name="docs_search")
+    async def docs_search(query: str, domain: str = "isaac_sim", top_k: int = 5) -> dict:
+        """Search the installed Isaac Sim / Kit extension docs offline (no network, no docs MCP): domain 'isaac_sim'
+        (isaacsim.* extensions), 'kit' (Kit SDK and omni.kit.*) or 'omni_ui' (omni.ui widgets, including the .pyi
+        class docs). Each hit has a title, extension, version, kind, snippet and a 'path:line' source; deprecated
+        extensions are flagged. top_k <= 25."""
+        try:
+            name = normalize_docs_domain(domain)
+        except ValueError as exc:
+            return _error(str(exc), query=query, domain=domain, results=[])
+        knowledge = docs_knowledge[name]
+        base = {"query": query, "domain": name, "note": _DOCS_NOTE}
+        if not knowledge.available:
+            roots = ", ".join(str(path) for path in knowledge.requested_roots)
+            return _error(
+                f"No Kit/Isaac Sim extension docs found (looked in {roots}); set {DOCS_ENV_ROOT} to the Isaac Sim "
+                "install folder.",
+                results=[],
+                **base,
+            )
+        try:
+            count = max(1, min(int(top_k), 25))
+            results = await asyncio.to_thread(knowledge.search, query, count)
+        except (TypeError, ValueError) as exc:
+            return _error(str(exc), results=[], **base)
+        except Exception as exc:  # unreadable install files: report, never raise into the client
+            return _error(f"Offline docs search failed: {type(exc).__name__}: {exc}", results=[], **base)
+        payload = {
+            "ok": bool(results),
+            **base,
+            "isaac_sim_version": knowledge.isaac_sim_version,
+            "count": len(results),
+            "results": results,
+        }
+        if not results:
+            payload["message"] = (
+                "No offline matches; try other words, another domain, or extension_info for an extension id."
+            )
+        return payload
+
+    @app.tool(name="extension_info")
+    async def extension_info(name: str) -> dict:
+        """Facts about one installed Kit / Isaac Sim / omni.ui extension, read offline from its extension.toml and
+        docs: version, title, description, python modules, dependencies, docs files, deprecation warning and the
+        latest changelog entry. A module path (isaacsim.core.api.robots) maps to its extension; an unknown or
+        renamed id (omni.isaac.core) returns close suggestions."""
+        knowledge = docs_knowledge["isaac_sim"]
+        if not isinstance(name, str) or not name.strip():
+            return _error("name is required, e.g. 'isaacsim.sensors.rtx' or 'omni.ui'.", name=name)
+        if not knowledge.available:
+            return _error(
+                f"No Kit/Isaac Sim extension docs found; set {DOCS_ENV_ROOT} to the Isaac Sim install folder.",
+                name=name,
+                found=False,
+            )
+        try:
+            info = await asyncio.to_thread(knowledge.extension_info, name.strip())
+        except Exception as exc:  # unreadable install files
+            return _error(f"Extension lookup failed: {type(exc).__name__}: {exc}", name=name, found=False)
+        payload = {"ok": bool(info.get("found")), **info, "note": _DOCS_NOTE}
+        if not info.get("found"):
+            payload["message"] = info.get("message") or f"{name} is not an installed extension."
         return payload
 
     @app.tool(name="learning_glossary")
@@ -1063,7 +1264,8 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
     @app.tool(name="scene_capabilities")
     def scene_capabilities() -> dict:
         """What the connected scene bridge can do beyond basic scene commands: live insight queries, light/camera
-        authoring, its RPC version, and whether an Isaac bridge reload is needed for the live features."""
+        authoring, attribute/material edits, undo, its RPC version, and whether a bridge reload (Isaac Sim or
+        Composer) is needed for the live features."""
         capabilities = router._scene.live_capabilities()
         backend = router._scene.backend_info
         insight = _live_support(capabilities)
@@ -1079,22 +1281,35 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         else:
             authoring = {"available": True, "reason": None}
         authoring["dry_run_default"] = True
+        edits = _feature_support(capabilities, insight, "edits", EDIT_RPC_METHODS, "attribute/material edits")
+        undo = _feature_support(capabilities, insight, "undo", UNDO_RPC_METHODS, "undo")
         missing = sorted(set(LIVE_RPC_METHODS) - methods) if capabilities.get("ok") else list(LIVE_RPC_METHODS)
         needs_update = bool(capabilities.get("needs_bridge_update")) or (
             bool(capabilities.get("ok")) and not capabilities.get("fake_scene") and bool(missing)
         )
-        if insight["available"] and authoring["available"]:
-            message = "Live insight and light/camera authoring are available on the open stage."
+        if insight["available"] and authoring["available"] and edits["available"] and undo["available"]:
+            message = "Live insight, light/camera authoring, attribute/material edits and undo are available on the open stage."
         elif needs_update:
-            message = "The live bridge needs a reload before live insight and authoring work; see how_to_enable."
+            message = (
+                "The live bridge needs a reload before every live feature works (missing: "
+                f"{', '.join(missing) or 'see capabilities'}); see how_to_enable."
+            )
+        elif capabilities.get("fake_scene"):
+            message = (
+                "In-memory fake scene: attribute/material edits and undo work in memory only; live insight and "
+                "light/camera authoring need a live bridge."
+            )
         else:
             message = f"Live features are unavailable: {insight['reason'] or authoring['reason']}."
         payload: dict[str, Any] = {
             "ok": True,
-            "backend": {key: backend.get(key) for key in ("mode", "bridge", "endpoint", "reason", "warnings")},
+            "backend": {key: backend.get(key) for key in ("mode", "bridge", "endpoint", "reason", "warnings", "target")},
             "rpc_version": capabilities.get("version"),
+            "expected_rpc_version": RPC_VERSION,
             "live_insight": {**insight, "queries": list(capabilities.get("insight_queries") or [])},
             "live_authoring": authoring,
+            "scene_edits": edits,
+            "undo": undo,
             "missing_live_methods": missing,
             "needs_bridge_update": needs_update,
             "message": message,
@@ -1120,7 +1335,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
     ) -> dict:
         """DRY RUN BY DEFAULT: plan a UsdLux light (rect, sphere, disk, distant, cylinder or dome) at path in the
         LIVE open scene and show the preview to the user first. dry_run=False changes the user's open scene (not
-        saved, not on Kit's undo stack). size: one number, or [width, height] for rect / [length, radius] for
+        saved; scene_undo_last can undo it). size: one number, or [width, height] for rect / [length, radius] for
         cylinder; aim_at: a prim path or an [x, y, z] point the light's -Z axis should face."""
         try:
             result = router._scene.create_light(
@@ -1150,7 +1365,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         dry_run: bool = True,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan a camera at path in the LIVE open scene and show the preview to the user first.
-        dry_run=False changes the user's open scene (not saved, not on Kit's undo stack). clipping_range is
+        dry_run=False changes the user's open scene (not saved; scene_undo_last can undo it). clipping_range is
         [near, far]; aim_at is a prim path or an [x, y, z] point; copy_optics_from copies another camera's lens."""
         try:
             result = router._scene.create_camera(
@@ -1171,7 +1386,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
     def scene_aim(path: str, target: str | list[float], dry_run: bool = True) -> dict:
         """DRY RUN BY DEFAULT: plan rotating a light, camera or other prim in the LIVE open scene so its -Z axis faces
         target (a prim path or an [x, y, z] point), and show the preview to the user first. dry_run=False changes
-        the user's open scene (not saved, not on Kit's undo stack)."""
+        the user's open scene (not saved; scene_undo_last can undo it)."""
         try:
             aimed_at = _target_arg(target, "target")
             if aimed_at is None:
@@ -1180,6 +1395,121 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         except (ValueError, TypeError) as exc:
             return _error(str(exc), target="scene", dry_run=bool(dry_run), applied=False, path=path)
         return _authoring_payload(router, result)
+
+    # --- safe attribute / material edits and undo (dry run by default) -------------------------------------------
+
+    @app.tool(name="scene_set_attribute")
+    def scene_set_attribute(
+        path: str,
+        name: str,
+        value: Any,
+        time: float | None = None,
+        create_type: str | None = None,
+        dry_run: bool = True,
+    ) -> dict:
+        """DRY RUN BY DEFAULT: plan setting one attribute (e.g. inputs:intensity on a light, focalLength on a camera,
+        primvars:displayColor as [[r, g, b]]) on a prim in the open scene and show the preview to the user first: it
+        lists the value before and where it comes from, the value coerced to the attribute's USD type, and whether a
+        stronger opinion would hide it. dry_run=False changes the user's open scene (not saved; scene_undo_last can
+        undo it). time=None sets the default value, a number writes a time sample; create_type (e.g. 'float',
+        'color3f') creates a missing custom attribute."""
+        try:
+            result = router._scene.set_attribute(
+                path, name, value, time=time, create_type=create_type, dry_run=dry_run
+            )
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=path)
+        payload = _authoring_payload(router, result)
+        if payload.get("preview"):
+            payload["message"] = _EDIT_PREVIEW
+        return payload
+
+    @app.tool(name="scene_create_material")
+    def scene_create_material(
+        path: str,
+        diffuse_color: list[float] | str | None = None,
+        roughness: float | None = None,
+        metallic: float | None = None,
+        opacity: float | None = None,
+        emissive_color: list[float] | str | None = None,
+        ior: float | None = None,
+        create_parent: bool = True,
+        dry_run: bool = True,
+    ) -> dict:
+        """DRY RUN BY DEFAULT: plan a UsdPreviewSurface material at path (a Material with a PreviewSurface shader
+        wired to outputs:surface) in the open scene and show the preview to the user first. dry_run=False changes the
+        user's open scene (not saved; scene_undo_last can undo it). Colors are [r, g, b] in 0-1 (or '#RRGGBB');
+        roughness, metallic and opacity are 0-1; only the given inputs are authored. create_parent also plans a
+        missing direct parent such as /World/Looks as a Scope. Bind it with scene_bind_material."""
+        try:
+            result = router._scene.create_material(
+                path,
+                diffuse_color=_color_arg(diffuse_color, "diffuse_color"),
+                roughness=roughness,
+                metallic=metallic,
+                opacity=opacity,
+                emissive_color=_color_arg(emissive_color, "emissive_color"),
+                ior=ior,
+                dry_run=dry_run,
+                create_parent=create_parent is not False,
+            )
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=path)
+        payload = _authoring_payload(router, result)
+        if payload.get("preview"):
+            payload["message"] = _EDIT_PREVIEW
+        return payload
+
+    @app.tool(name="scene_bind_material")
+    def scene_bind_material(
+        prim_path: str,
+        material_path: str,
+        strength: str | None = None,
+        purpose: str | None = None,
+        dry_run: bool = True,
+    ) -> dict:
+        """DRY RUN BY DEFAULT: plan binding a material to a prim (MaterialBindingAPI, material:binding) in the open
+        scene and show the preview to the user first: it reports the material the prim resolves to now and predicts
+        the one after, warning when another binding still wins. dry_run=False changes the user's open scene (not
+        saved; scene_undo_last can undo it). strength: weakerThanDescendants (default) or strongerThanDescendants;
+        purpose: allPurpose (default), preview or full."""
+        try:
+            result = router._scene.bind_material(
+                prim_path, material_path, strength=strength, purpose=purpose, dry_run=dry_run
+            )
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
+        payload = _authoring_payload(router, result)
+        if payload.get("preview"):
+            payload["message"] = _EDIT_PREVIEW
+        return payload
+
+    @app.tool(name="scene_undo_last")
+    def scene_undo_last(dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: preview which scene change made through the router (the most recent one) would be
+        undone, and show that preview to the user first. dry_run=False changes the user's open scene: it restores
+        the edited prims (in Kit the same edit is also on the Ctrl+Z history). It refuses when the stage was replaced
+        or the prims changed since. Saving is not undoable: undo reverts the open layers in memory; save again to
+        keep it."""
+        result = router._scene.undo_last(dry_run=dry_run)
+        payload: dict[str, Any] = {"target": "scene", **result}
+        payload["applied"] = bool(result.get("ok")) and result.get("dry_run") is False
+        if result.get("needs_bridge_update"):
+            payload["how_to_enable"] = list(LIVE_ENABLE_STEPS)
+        elif result.get("ok") and result.get("dry_run") is not False:
+            payload["preview"] = True
+            payload["message"] = _UNDO_PREVIEW
+        return payload
+
+    @app.tool(name="scene_undo_history")
+    def scene_undo_history(limit: int = 20) -> dict:
+        """Read-only: the recent scene changes made through the router that scene_undo_last can undo, newest first
+        (label, prim paths, layer, age), and whether Kit's Ctrl+Z history also has them. limit is 1-50."""
+        result = router._scene.undo_history(limit)
+        payload: dict[str, Any] = {"target": "scene", **result}
+        if result.get("needs_bridge_update"):
+            payload["how_to_enable"] = list(LIVE_ENABLE_STEPS)
+        return payload
 
     # Tool descriptions come from raw docstrings; drop the continuation-line indentation clients would see.
     for tool in app._tool_manager.list_tools():

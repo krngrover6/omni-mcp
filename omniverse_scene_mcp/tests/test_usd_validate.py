@@ -5,7 +5,12 @@ import re
 import tempfile
 from pathlib import Path
 
-from pxr import Ar, Sdf, Tf, Usd, UsdGeom, UsdShade
+try:
+    from pxr import Ar, Sdf, Tf, Usd, UsdGeom, UsdShade
+except ImportError:  # pragma: no cover - depends on the local environment
+    import unittest
+
+    raise unittest.SkipTest("USD Python bindings (pxr) are not installed")
 
 from omniverse_scene_mcp import usd_validate
 
@@ -638,3 +643,140 @@ def test_material_binding_api_hint_does_not_claim_bindings_are_ignored():
     cube = _mesh(stage, "/World/C")
     cube.GetPrim().CreateRelationship("material:binding").SetTargets([material.GetPath()])
     assert UsdShade.MaterialBindingAPI(cube.GetPrim()).ComputeBoundMaterial()[0].GetPath() == material.GetPath()
+
+
+# --- cooperative time budgets ------------------------------------------------------------------------------------
+
+import time as _time  # noqa: E402
+
+from pxr import Gf, Vt  # noqa: E402
+
+from omniverse_scene_mcp import usd_insight  # noqa: E402
+
+BIG_TOTAL = 1 + 200 + 200 * 100
+
+
+def _big_stage(groups=200, per=100):
+    """In-memory /World > G<i> > C<j> cubes with correct authored extents (20,201 prims by default)."""
+    layer = Sdf.Layer.CreateAnonymous(".usda")
+    layer.ImportFromString(HEADER)
+    with Sdf.ChangeBlock():
+        world = Sdf.PrimSpec(layer, "World", Sdf.SpecifierDef, "Xform")
+        for group_index in range(groups):
+            group = Sdf.PrimSpec(world, f"G{group_index}", Sdf.SpecifierDef, "Xform")
+            for cube_index in range(per):
+                cube = Sdf.PrimSpec(group, f"C{cube_index}", Sdf.SpecifierDef, "Cube")
+                extent = Sdf.AttributeSpec(cube, "extent", Sdf.ValueTypeNames.Float3Array)
+                extent.default = Vt.Vec3fArray([Gf.Vec3f(-1, -1, -1), Gf.Vec3f(1, 1, 1)])
+    return Usd.Stage.Open(layer)
+
+
+class _Countdown(usd_insight.TimeBudget):
+    """Deterministic budget: the first `checks` clock checks pass, every later one reports the time as used up."""
+
+    def __init__(self, checks):
+        super().__init__(60_000)
+        self.checks = checks
+
+    def expired(self):
+        self.checks -= 1
+        if self.checks < 0:
+            self.exhausted = True
+        return self.exhausted
+
+
+def _without_time_keys(result):
+    return {key: value for key, value in result.items() if key not in ("truncated_by_time", "time_budget")}
+
+
+def test_validate_time_budget_on_a_20k_prim_stage():
+    stage = _big_stage()
+    before = stage.GetRootLayer().ExportToString()
+    for tiny in (
+        usd_validate.validate(stage, "exam", budget_ms=1),
+        usd_validate.validate(stage, "exam", deadline=_time.monotonic() - 1.0),
+    ):
+        assert tiny["truncated_by_time"] is True
+        budget = tiny["time_budget"]
+        assert budget["truncated_by_time"] is True and budget["processed"] == budget["prims_checked"] < BIG_TOTAL
+        assert budget["stopped_early"] or budget["not_run"]
+        assert "time budget" in tiny["notes"][0] and "ok=True only means" in tiny["notes"][0]
+        json.dumps(tiny, allow_nan=False)
+
+    spent = usd_validate.validate(stage, "exam", budget_ms=0)
+    assert spent["validators_run"] == ["exam:stage_metadata"] and spent["time_budget"]["processed"] == 0
+    assert spent["time_budget"]["not_run"] == ["exam:asset_paths", "exam:composition_errors", "exam:prim_checks"]
+
+    generous = usd_validate.validate(stage, "exam", budget_ms=600_000)
+    assert generous["truncated_by_time"] is False and generous["time_budget"]["processed"] == BIG_TOTAL
+    assert generous["time_budget"]["stopped_early"] == [] and generous["time_budget"]["not_run"] == []
+    assert generous["time_budget"]["specs_scanned"] == BIG_TOTAL
+    assert not any("time budget" in note for note in generous["notes"])
+    assert not _issues(generous, "stale_extent") and not _issues(generous, "missing_extent")
+    json.dumps(generous, allow_nan=False)
+    assert stage.GetRootLayer().ExportToString() == before
+
+
+def test_validate_time_budget_partial_and_complete_runs_agree_with_the_plain_run():
+    stage = _big_stage(30, 20)
+    _mesh(stage, "/World/G0/Broken", indices=(0, 1, 2))  # one error, in the first group walked
+    plain = usd_validate.validate(stage, "exam", 1000)
+    generous = usd_validate.validate(stage, "exam", 1000, budget_ms=600_000)
+    assert generous["truncated_by_time"] is False and _without_time_keys(generous) == plain
+
+    counter = _Countdown(10**9)
+    usd_validate.validate(stage, "exam", 1000, deadline=counter)
+    checks = 10**9 - counter.checks  # clock checks a complete run makes
+    partial = usd_validate.validate(stage, "exam", 1000, deadline=_Countdown(checks - 5))
+    budget = partial["time_budget"]
+    assert partial["truncated_by_time"] is True and budget["stopped_early"] == ["exam:prim_checks"]
+    assert 0 < budget["prims_checked"] < 1 + 30 + 30 * 20 + 1  # /World, groups, cubes and the broken mesh
+    assert partial["ok"] is False and _paths(partial, "mesh_topology_mismatch") == {"/World/G0/Broken"}
+    assert {issue["code"] for issue in partial["issues"]} <= {issue["code"] for issue in plain["issues"]}
+
+
+def test_validate_budget_skips_openusd_validators_it_cannot_finish():
+    stage = _memory_stage()
+    _mesh(stage, "/World/M")
+    if usd_validate._validation_api() is None:  # pragma: no cover - USD build without UsdValidation
+        return
+    spent = usd_validate.validate(stage, "usd", budget_ms=0)
+    assert spent["truncated_by_time"] is True and spent["time_budget"]["not_run"] == ["usd:validators"]
+    assert spent["validators_run"] == [] and spent["issues"] == []
+    assert any("did not run" in note and "uninterruptible" in note for note in spent["notes"])
+    roomy = usd_validate.validate(stage, "usd", budget_ms=600_000)
+    assert roomy["truncated_by_time"] is False and roomy["validators_run"]
+    assert roomy["issues"] == usd_validate.validate(stage, "usd")["issues"]
+    both = usd_validate.validate(stage, "all", deadline=_Countdown(1))
+    assert "usd:validators" in both["time_budget"]["not_run"] and both["time_budget"]["stopped_early"]
+    big = usd_validate.validate(_big_stage(), "usd", budget_ms=2)  # the estimate alone says it cannot fit
+    assert big["truncated_by_time"] is True and "usd:validators" in big["time_budget"]["not_run"]
+
+
+def test_validate_file_and_ambient_time_budgets():
+    with _tempdir() as folder:
+        path = Path(folder) / "scene.usda"
+        path.write_text(HEADER + 'def Xform "World"\n{\n    def Mesh "M"\n    {\n    }\n}\n', encoding="utf-8")
+        before = path.read_bytes()
+        spent = usd_validate.validate_file(str(path), budget_ms=0)
+        assert spent["truncated_by_time"] is True and spent["file"] == str(path)
+        roomy = usd_validate.validate_file(str(path), budget_ms=600_000)
+        assert roomy["truncated_by_time"] is False and _paths(roomy, "missing_extent") == {"/World/M"}
+        assert path.read_bytes() == before
+        json.dumps(spent, allow_nan=False)
+
+    stage = _memory_stage()
+    _mesh(stage, "/World/M", extent=False)
+    snapshot = stage.GetRootLayer().ExportToString()
+    with usd_insight.TimeBudget(0):
+        ambient = usd_validate.validate(stage)
+    assert ambient["truncated_by_time"] is True and usd_insight.active_budget() is None
+    plain = usd_validate.validate(stage)
+    assert "truncated_by_time" not in plain and "time_budget" not in plain
+    for bad in ({"budget_ms": -1}, {"budget_ms": "fast"}, {"deadline": "soon"}, {"deadline": True}):
+        try:
+            usd_validate.validate(stage, **bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"expected ValueError for {bad}")
+    assert stage.GetRootLayer().ExportToString() == snapshot

@@ -8,9 +8,10 @@ from pathlib import Path
 try:
     from pxr import Gf, Sdf, Usd, UsdGeom, UsdShade
 except ImportError:  # pragma: no cover - depends on the local environment
-    import pytest
+    import unittest
 
-    pytest.skip("USD Python bindings (pxr) are not installed", allow_module_level=True)
+    # unittest.SkipTest at import is a module skip for pytest and tools/run_tests.py alike, with or without pytest.
+    raise unittest.SkipTest("USD Python bindings (pxr) are not installed")
 
 from omniverse_scene_mcp import kit_bridge
 
@@ -339,7 +340,7 @@ def test_capabilities_lists_live_methods_and_insight_queries():
     stage = Usd.Stage.CreateInMemory()
     with _bridge(stage) as bridge:
         info = bridge.capabilities()
-    assert info["ok"] is True and info["version"] == "tier2-1"
+    assert info["ok"] is True and info["version"] == "tier3-1"
     assert {"capabilities", "insight", "create_light", "create_camera", "aim", "ping", "save"} <= set(info["methods"])
     assert info["insight_queries"] == ["stage_info", "composition", "explain_value", "properties", "bounds", "validate"]
     assert isinstance(info["authoring"]["available"], bool)
@@ -447,4 +448,304 @@ def test_live_authoring_without_the_module_returns_needs_bridge_update():
     for result, method in zip(results, ("create_light", "create_camera", "aim")):
         assert result["ok"] is False and result["needs_bridge_update"] is True and result["method"] == method
         assert "authoring" in result["message"]
+    assert stage.GetRootLayer().ExportToString() == before
+
+
+# --- undo for MCP edits (undo.py, kit_commands.py); Kit's command modules are faked, never the real ones -----
+
+
+def _undo_scene():
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.Xform.Define(stage, "/World")
+    stage.SetDefaultPrim(stage.GetPrimAtPath("/World"))
+    UsdGeom.Cube.Define(stage, "/World/Box").CreateSizeAttr(1.0)
+    UsdGeom.Xform.Define(stage, "/World/Shelf")
+    UsdGeom.Sphere.Define(stage, "/World/Ball")
+    stage.GetPrimAtPath("/World/Ball").CreateRelationship("follow").AddTarget("/World/Box")
+    UsdShade.Material.Define(stage, "/World/Looks/Wood")
+    sizes = stage.DefinePrim("/World/Variants", "Xform").GetVariantSets().AddVariantSet("size")
+    sizes.AddVariant("small")
+    sizes.AddVariant("large")
+    sizes.SetVariantSelection("small")
+    return stage
+
+
+def _fake_kit_modules():
+    """Stand-ins for omni.kit.commands and omni.kit.undo: execute() runs do() and stacks it like Kit does."""
+    log = types.SimpleNamespace(executed=[], undo_stack=[], redo_stack=[])
+    registry = {}
+    commands = types.ModuleType("fake_omni_kit_commands")
+
+    class Command:
+        def do(self):
+            raise NotImplementedError
+
+    def register(cls):
+        registry[cls.__name__[: -len("Command")]] = cls
+
+    def unregister(cls):
+        for name in [name for name, value in registry.items() if value is cls]:
+            del registry[name]
+
+    def execute(name, **kwargs):
+        log.executed.append((name, kwargs))
+        command = registry[name](**kwargs)
+        command.do()
+        log.undo_stack.append(types.SimpleNamespace(command=command, level=0))
+        log.redo_stack.clear()
+        return (True, None)
+
+    commands.Command, commands.register, commands.unregister, commands.execute = Command, register, unregister, execute
+    kit_undo = types.ModuleType("fake_omni_kit_undo")
+
+    def undo_once():
+        entry = log.undo_stack.pop()
+        entry.command.undo()
+        log.redo_stack.append(entry)
+
+    def redo_once():
+        entry = log.redo_stack.pop()
+        entry.command.do()
+        log.undo_stack.append(entry)
+
+    kit_undo.get_undo_stack, kit_undo.undo, kit_undo.redo = (lambda: log.undo_stack), undo_once, redo_once
+    return commands, kit_undo, log
+
+
+@contextlib.contextmanager
+def _kit_bridge(stage, commands, kit_undo):
+    previous = kit_bridge.omni
+    context = _FakeContext(stage)
+    kit_bridge.omni = types.SimpleNamespace(
+        usd=types.SimpleNamespace(get_context=lambda _name="": context),
+        kit=types.SimpleNamespace(commands=commands, undo=kit_undo),
+    )
+    try:
+        yield kit_bridge.LiveKitSceneBridge()
+    finally:
+        kit_bridge.omni = previous
+
+
+def test_every_mutating_bridge_edit_undoes_to_the_exact_layer():
+    stage = _undo_scene()
+    layer = stage.GetRootLayer()
+    texts = [layer.ExportToString()]
+    with _bridge(stage) as bridge:
+        edits = [
+            lambda: bridge.create_prim("/World/New/Deep", "Cube"),
+            lambda: bridge.move_prim("/World/Box", translation=(1.0, 2.0, 3.0), rotation=(0.0, 0.0, 30.0)),
+            lambda: bridge.rename_prim("/World/Box", "Crate"),
+            lambda: bridge.reparent_prim("/World/Crate", "/World/Shelf"),
+            lambda: bridge.duplicate_prim("/World/Shelf", "/World/Shelf2"),
+            lambda: bridge.set_material("/World/Ball", "/World/Looks/Wood"),
+            lambda: bridge.set_variant_selection("/World/Variants", "size", "large"),
+            lambda: bridge.make_red("/World/Ball"),
+            lambda: bridge.delete_prim("/World/Shelf"),
+            lambda: bridge.create_light("/World/Key", "sphere", intensity=500.0, translation=(0.0, 0.0, 5.0), dry_run=False),
+            lambda: bridge.create_camera("/World/Cam", translation=(0.0, -10.0, 2.0), aim_at="/World/Ball", dry_run=False),
+            lambda: bridge.aim("/World/Key", "/World/Cam", dry_run=False),
+        ]
+        results = []
+        for edit in edits:
+            results.append(edit())
+            texts.append(layer.ExportToString())
+        assert len(set(texts)) == len(texts), "every edit should change the layer"
+        assert all(result.get("undoable") is True for result in results[-3:]), results[-3:]
+        history = bridge.undo_history(limit=50)
+        assert history["ok"] and history["count"] == len(edits) and history["kit_ctrl_z"] is False
+        assert history["entries"][0]["label"] == "Aim /World/Key"
+        assert history["entries"][-1]["label"] == "Create Cube /World/New/Deep"
+        assert "not undoable" in history["note"]
+        json.dumps(history)
+
+        preview = bridge.undo_last()
+        assert preview["ok"] and preview["dry_run"] is True and layer.ExportToString() == texts[-1]
+        for expected in reversed(texts[:-1]):
+            result = bridge.undo_last(dry_run=False)
+            assert result["ok"] and result["verified"] is True, result
+            assert layer.ExportToString() == expected
+        assert bridge.undo_last(dry_run=False)["ok"] is False
+        assert bridge.get_selection() == []  # undone prims leave the selection
+
+
+def test_bridge_edits_land_on_kit_undo_stack_and_ctrl_z_restores():
+    stage = _undo_scene()
+    layer = stage.GetRootLayer()
+    commands, kit_undo, log = _fake_kit_modules()
+    before = layer.ExportToString()
+    with _kit_bridge(stage, commands, kit_undo) as bridge:
+        info = bridge.capabilities()["undo"]
+        assert info["available"] and info["kit_ctrl_z"] is True and info["methods"] == ["undo_last", "undo_history"]
+        bridge.move_prim("/World/Box", translation=(0.0, 0.0, 4.0))
+        moved = layer.ExportToString()
+        assert [name for name, _ in log.executed] == ["MCPEdit"] and log.executed[0][1]["label"] == "Move /World/Box"
+        kit_undo.undo()  # Ctrl+Z in Kit
+        assert layer.ExportToString() == before
+        assert bridge.undo_last(dry_run=False)["ok"] is False  # Ctrl+Z already undid it
+        kit_undo.redo()  # Ctrl+Y in Kit
+        assert layer.ExportToString() == moved and bridge.undo_history()["count"] == 1
+        result = bridge.undo_last(dry_run=False)
+        assert result["ok"] and result["via"] == "kit_undo" and layer.ExportToString() == before
+        try:
+            bridge.delete_prim("/World/Nope")
+        except ValueError:
+            pass
+        assert len(log.executed) == 1  # refused edits never reach Kit's undo history
+
+
+def test_bridge_records_no_reads_dry_runs_or_saves_and_refuses_stale_undos():
+    with tempfile.TemporaryDirectory() as tmp:
+        scene = Path(tmp) / "scene.usda"
+        stage = Usd.Stage.CreateNew(str(scene))
+        UsdGeom.Xform.Define(stage, "/World")
+        UsdGeom.Cube.Define(stage, "/World/Box")
+        stage.GetRootLayer().Save()
+        layer = stage.GetRootLayer()
+        with _bridge(stage) as bridge:
+            bridge.get_prim("/World/Box")
+            bridge.snapshot()
+            bridge.find_prims("box")
+            bridge.insight("stage_info")
+            bridge.create_light("/World/Key", "sphere")  # dry run by default
+            bridge.aim("/World/Box", (0.0, 0.0, -5.0))
+            assert bridge.undo_history()["count"] == 0
+            assert bridge.undo_last()["ok"] is False
+
+            bridge.create_prim("/World/Added", "Xform")
+            bridge.save_scene(str(scene))
+            assert bridge.undo_history()["count"] == 1  # the save added nothing to undo
+            undone = bridge.undo_last(dry_run=False)
+            assert undone["ok"] and "save again" in undone["note"]
+            assert not stage.GetPrimAtPath("/World/Added").IsValid() and layer.dirty
+            assert "Added" in scene.read_text()  # the saved file keeps the edit until the next save
+
+            bridge.move_prim("/World/Box", translation=(0.0, 0.0, 2.0))
+            UsdGeom.XformCommonAPI(stage.GetPrimAtPath("/World/Box")).SetTranslate(Gf.Vec3d(0.0, 0.0, 9.0))
+            text = layer.ExportToString()
+            refused = bridge.undo_last(dry_run=False)
+            assert refused["ok"] is False and refused["refused"] == "changed" and layer.ExportToString() == text
+
+            bridge._usd_context._stage = Usd.Stage.CreateInMemory()  # the user opened another stage
+            stale = bridge.undo_last(dry_run=False)
+            assert stale["refused"] == "stale" and stale["discarded"] is True
+            assert layer.ExportToString() == text
+            json.dumps([undone, refused, stale])
+
+
+def test_redefining_an_existing_prim_snapshots_only_that_prim():
+    stage = _undo_scene()
+    layer = stage.GetRootLayer()
+    before = layer.ExportToString()
+    with _bridge(stage) as bridge:
+        bridge.create_prim("/World/Shelf", "Scope")  # already exists: only its type changes
+        assert stage.GetPrimAtPath("/World/Shelf").GetTypeName() == "Scope"
+        snapshot = bridge.undo_history()["entries"][0]["snapshots"][0]
+        assert snapshot["shallow"] == ["/World/Shelf"] and snapshot["absent"] == []
+        assert bridge.undo_last(dry_run="false")["ok"] is True  # authoring-style string flag writes too
+        assert layer.ExportToString() == before
+
+
+# --- tier3-1: safe attribute/material edits (edits.py) through the live bridge, dry run by default and undoable ----
+
+_EDITS_MODULE = "omniverse_scene_mcp.edits"
+
+
+def _layered_edit_scene(folder):
+    """A root layer (the edit target) over a sublayer that defines /World and /World/Box."""
+    base = Sdf.Layer.CreateNew(str(Path(folder) / "base.usda"))
+    base_stage = Usd.Stage.Open(base)
+    UsdGeom.Xform.Define(base_stage, "/World")
+    UsdGeom.Cube.Define(base_stage, "/World/Box").CreateSizeAttr(1.0)
+    base.Save()
+    root = Sdf.Layer.CreateNew(str(Path(folder) / "shot.usda"))
+    root.subLayerPaths.append("./base.usda")
+    root.Save()
+    return Usd.Stage.Open(root), root, base
+
+
+def test_bridge_edits_preview_by_default_and_undo_to_the_exact_layers():
+    with tempfile.TemporaryDirectory() as tmp:
+        stage, root, base = _layered_edit_scene(tmp)
+        texts = lambda: (root.ExportToString(), base.ExportToString())  # noqa: E731
+        original = texts()
+        with _bridge(stage) as bridge:
+            info = bridge.capabilities()
+            assert info["edits"] == {"available": True, "methods": ["set_attribute", "create_material", "bind_material"],
+                                     "dry_run_default": True}
+            assert {"set_attribute", "create_material", "bind_material", "undo_last", "undo_history"} <= set(info["methods"])
+            previews = [
+                bridge.set_attribute("/World/Box", "size", 3),
+                bridge.create_material("/World/Looks/Steel", diffuse_color=(0.8, 0.8, 0.8), metallic=1.0, create_parent=True),
+                bridge.bind_material("/World/Box", "/World/Looks/Steel"),  # refused: the material does not exist yet
+                bridge.set_attribute("/World/Box", "size", 3, dry_run=None),
+            ]
+            assert texts() == original and bridge.undo_history()["count"] == 0
+            assert previews[0]["ok"] and previews[0]["dry_run"] is True and previews[0]["would_change"] is True
+            assert previews[0]["mode"] == "live" and previews[0]["before"]["value"] == 1.0
+            assert previews[1]["would_create"]["creates_parent"] == {"path": "/World/Looks", "type": "Scope"}
+            assert previews[2]["ok"] is False and "does not exist" in previews[2]["error"]
+            assert previews[3]["dry_run"] is True
+
+            sized = bridge.set_attribute("/World/Box", "size", 3, dry_run=False)
+            made = bridge.create_material("/World/Looks/Steel", diffuse_color=(0.8, 0.8, 0.8), metallic=1.0,
+                                          create_parent=True, dry_run=False)
+            bound = bridge.bind_material("/World/Box", "/World/Looks/Steel", strength="stronger", dry_run=False)
+            refused = bridge.set_attribute("/World/Nope", "size", 2, dry_run=False)
+            assert sized["written"] and sized["undoable"] is True and made["undoable"] is True and bound["undoable"] is True
+            assert refused["ok"] is False and refused["written"] is False and "undoable" not in refused
+            assert base.ExportToString() == original[1], "edits go to the edit target (root layer) only"
+            box = stage.GetPrimAtPath("/World/Box")
+            assert box.GetAttribute("size").Get() == 3.0
+            assert str(UsdShade.MaterialBindingAPI(box).ComputeBoundMaterial()[0].GetPath()) == "/World/Looks/Steel"
+            history = bridge.undo_history()
+            assert history["count"] == 3 and [entry["label"] for entry in history["entries"]] == [
+                "Bind /World/Looks/Steel to /World/Box", "Create material /World/Looks/Steel", "Set size on /World/Box"]
+            json.dumps([previews, sized, made, bound, refused, history])
+            for _ in range(3):
+                assert bridge.undo_last(dry_run=False)["verified"] is True
+            assert texts() == original
+            assert bridge.undo_last(dry_run=False)["ok"] is False
+
+
+def test_bridge_edits_land_on_kit_undo_stack_and_ctrl_z_restores_them():
+    stage = _undo_scene()
+    layer = stage.GetRootLayer()
+    commands, kit_undo, log = _fake_kit_modules()
+    before = layer.ExportToString()
+    with _kit_bridge(stage, commands, kit_undo) as bridge:
+        bridge.set_attribute("/World/Box", "size", 4.0, dry_run=False)
+        after_set = layer.ExportToString()
+        bridge.bind_material("/World/Ball", "/World/Looks/Wood", dry_run=False)
+        assert [kwargs["label"] for _, kwargs in log.executed] == [
+            "Set size on /World/Box", "Bind /World/Looks/Wood to /World/Ball"]
+        kit_undo.undo()  # Ctrl+Z in Kit undoes the binding
+        assert layer.ExportToString() == after_set
+        result = bridge.undo_last(dry_run=False)  # the attribute edit is Kit's top entry now
+        assert result["ok"] and result["via"] == "kit_undo" and layer.ExportToString() == before
+        bridge.set_attribute("/World/Box", "size", 9.0)  # a dry run never reaches Kit's undo history
+        assert len(log.executed) == 2
+
+
+def test_bridge_edits_without_the_edits_module_need_a_bridge_update():
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.Cube.Define(stage, "/World/Box")
+    before = stage.GetRootLayer().ExportToString()
+    previous = sys.modules.get(_EDITS_MODULE, _EDITS_MODULE)
+    sys.modules[_EDITS_MODULE] = None  # the import fails, as with a package copy that predates edits.py
+    try:
+        with _bridge(stage) as bridge:
+            results = [
+                bridge.set_attribute("/World/Box", "size", 2.0, dry_run=False),
+                bridge.create_material("/World/Looks/M", dry_run=False),
+                bridge.bind_material("/World/Box", "/World/Looks/M", dry_run=False),
+            ]
+            edits_info = bridge.capabilities()["edits"]
+    finally:
+        if previous is _EDITS_MODULE:
+            sys.modules.pop(_EDITS_MODULE, None)
+        else:
+            sys.modules[_EDITS_MODULE] = previous
+    for result, method in zip(results, ("set_attribute", "create_material", "bind_material")):
+        assert result["ok"] is False and result["needs_bridge_update"] is True and result["method"] == method
+    assert edits_info["available"] is False and edits_info["error"]
     assert stage.GetRootLayer().ExportToString() == before

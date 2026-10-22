@@ -10,9 +10,10 @@ import types
 try:
     from pxr import Usd
 except ImportError:  # pragma: no cover - depends on the local environment
-    import pytest
+    import unittest
 
-    pytest.skip("USD Python bindings (pxr) are not installed", allow_module_level=True)
+    # unittest.SkipTest at import is a module skip for pytest and tools/run_tests.py alike, with or without pytest.
+    raise unittest.SkipTest("USD Python bindings (pxr) are not installed")
 
 from omniverse_scene_mcp.exam import puzzles, sandbox
 
