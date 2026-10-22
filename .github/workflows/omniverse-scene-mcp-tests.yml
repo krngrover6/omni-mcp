@@ -39,20 +39,10 @@ concurrency:
 
 jobs:
   tests:
-    name: tests (${{ matrix.os }}, Python 3.12)
-    runs-on: ${{ matrix.os }}
+    name: tests (windows-latest, Python 3.12)
+    # The MCP runs only on the Windows laptop next to Isaac Sim and Composer, so CI tests Windows only.
+    runs-on: windows-latest
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            experimental: false
-          - os: ubuntu-latest
-            # Linux has not been run yet (the laptop is Windows-only), so a failure here is reported but does not
-            # fail the workflow. Set this to false once the ubuntu job has passed.
-            experimental: true
-    continue-on-error: ${{ matrix.experimental }}
     env:
       OMNIVERSE_SCENE_MCP_TEST: "1"
       PYTHONIOENCODING: "utf-8"
