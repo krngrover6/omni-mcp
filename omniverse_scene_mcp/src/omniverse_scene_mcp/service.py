@@ -872,6 +872,18 @@ class SceneMCPService:
             return {"ok": False, "action": "simulation_step", "message": "frames must be a whole number from 1 to 600"}
         return self._call_live("simulation_step", lambda step: step(frames))
 
+    # --- RPC tier5-1: read-only homework check and scene tour on the live stage (never raise) --------------------
+
+    def assignment_check(self, assignment_id: str = "isaac_session02_warehouse") -> dict[str, Any]:
+        """Check the LIVE stage against a homework rubric (read-only)."""
+        wanted = assignment_id.strip() if isinstance(assignment_id, str) and assignment_id.strip() else "isaac_session02_warehouse"
+        return self._call_live("assignment_check", lambda check: check(wanted))
+
+    def scene_tour(self, focus_path: str | None = None, depth: int = 3, max_prims: int = 400) -> dict[str, Any]:
+        """A beginner tour of the LIVE stage, or one subtree (read-only)."""
+        focus = focus_path.strip() if isinstance(focus_path, str) and focus_path.strip() else None
+        return self._call_live("scene_tour", lambda tour: tour(focus, depth=depth, max_prims=max_prims))
+
     def _call_live(self, method: str, call: Callable[[Callable[..., Any]], Any]) -> dict[str, Any]:
         """Call one fixed-name tier4-1 bridge method; a missing method or an error becomes a structured result."""
         runner = getattr(self._bridge, method, None)  # method is one of this class's fixed names, never user input

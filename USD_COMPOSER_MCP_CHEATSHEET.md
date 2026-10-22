@@ -444,3 +444,53 @@ guarded bridge runs on 9910 (`bridge-reload-result.json` -> `stock_server`); if 
 2. Composer: relaunch with `start-composer-study.ps1`, or run `composer-study/reload_composer_bridge.py`.
 3. Restart the router (or use `router_set_scene_target`), then `scene_capabilities()`: `assets`, `physics`,
    `viewport_capture` and `simulation` are available and `needs_bridge_update` is `false`.
+
+## 12) Learning Python & homework helpers
+
+This section updates section 11: the bridge RPC version is now `tier5-1` (110 tools). Six read-only helpers for a
+Python beginner: see the Python behind an action, practise it safely, decode errors, check the class homework, get a
+plain-language tour of the scene and search what the teacher said.
+
+Say it to the router (nothing here changes your scene):
+
+```text
+show me the python for moving a cube
+how do I write python to add a light          (add "standalone" for a usd-core script outside Isaac/Composer)
+give me a python exercise / list python exercises
+explain this error: AttributeError: 'NoneType' object has no attribute 'GetAttribute'   (or paste a traceback)
+check my homework / what's next on my homework
+check my homework in isaacsim-mentorship/session02/main.usda
+explain my scene / describe the scene under /World/Shelves
+what did the teacher say about ground plane / what did we learn in session 2
+```
+
+Or call the tools:
+
+```text
+python_show(action="move", args={"prim_path": "/World/Cube", "translate": [0, 0, 1]})   # code + line-by-line notes
+python_topics()
+scene_move(path="/World/Cube", translation=[0, 0, 1], dry_run=True, show_python=True)    # result["python"]
+router_dispatch(request="move /World/Cube by 0 0 1", dry_run=True, show_python=True)
+python_practice_list() / python_practice_get() / python_practice_run(exercise_id, code)   # run saves exam progress
+explain_error(text="...", code=None, search_docs=True)
+assignment_list() / assignment_check(scene_file=None)       # live stage, or a saved .usda read-only
+scene_explain(focus_path=None, depth=3, max_prims=400, scene_file=None)
+class_sessions() / class_ask(question, session=2) / class_search(query)
+```
+
+- `show_python=True` works on the editing tools and `router_dispatch`; the edit itself is the same as without it.
+  Paste Script Editor snippets into Window > Script Editor; edits stay in memory until you save.
+- Practice code runs in a separate Python process on a throwaway copy of the exercise scene, never your files.
+- The homework check and the scene tour read the live stage through the new `assignment_check` / `scene_tour`
+  bridge methods. On an older bridge they read the live scene's saved file instead, or say `needs_bridge_update`
+  and suggest `scene_file=...`.
+- Class notes are read from `Downloads/Issac Sim Classes` (or `OMNIVERSE_CLASS_NOTES_ROOT`) and
+  `isaacsim-mentorship` revision notes. Subtitles are auto-generated, so check odd words against the notes.
+
+### Turning it on (tier5-1)
+
+1. Isaac Sim: run `isaacsim-study/reload_mcp_bridge.py`; it now also self-tests `test_scene_tour.py` and
+   `test_assignments.py`. The result file should show rpc_version `tier5-1`.
+2. Composer: relaunch with `start-composer-study.ps1`, or run `composer-study/reload_composer_bridge.py`.
+3. Restart the router (or use `router_set_scene_target`), then `scene_capabilities()`: `homework` is available and
+   `needs_bridge_update` is `false`. The Python, practice, error and class-notes tools work without any bridge.

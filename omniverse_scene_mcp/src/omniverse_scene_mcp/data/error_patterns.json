@@ -1,0 +1,1584 @@
+{
+ "version": 1,
+ "about": "Plain-English explanations for Script Editor / Kit / USD / PhysX errors, used by omniverse_scene_mcp.error_explainer. Patterns are tried in order; the first whose 'match' (any) and 'require' (all) regexes hit the root error, and whose 'context_match' (if any) hits the traceback/code context, wins. Regexes are compiled case-insensitive and multi-line. {{group}} in the texts is replaced with the named regex group (or a neutral default).",
+ "patterns": [
+  {
+   "kind": "windows_path_escape",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "unicodeescape",
+    "truncated \\\\U+X+ escape",
+    "\\(unicode error\\)"
+   ],
+   "summary": "Python read the backslashes in a Windows path (like C:\\Users) as special escape codes.",
+   "what_happened": "In a normal Python string a backslash starts an escape code: \\n is a new line and \\U starts a Unicode character. So \"C:\\Users\\...\" makes Python try to read \"\\Users\" as a Unicode code and it fails before your script even starts.",
+   "likely_causes": [
+    "A Windows file path written with single backslashes inside a normal string.",
+    "Copy-pasting a path from File Explorer straight into code."
+   ],
+   "how_to_fix": [
+    "Put an r in front of the string (a raw string): r\"C:\\Users\\me\\scene.usda\".",
+    "Or use forward slashes, which USD and Python both accept on Windows: \"C:/Users/me/scene.usda\".",
+    "Or double every backslash: \"C:\\\\Users\\\\me\\\\scene.usda\"."
+   ],
+   "example_fix": "# Bad:  path = \"C:\\Users\\me\\scene.usda\"\npath = r\"C:\\Users\\me\\scene.usda\"   # raw string: backslashes stay as typed\npath = \"C:/Users/me/scene.usda\"      # forward slashes also work on Windows",
+   "docs_query": "file path string Windows"
+  },
+  {
+   "kind": "await_outside_async_function",
+   "category": "kit",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "'await' outside (?:async )?function",
+    "'async (?:with|for)' outside async function",
+    "asynchronous comprehension outside of an asynchronous function"
+   ],
+   "summary": "You used await at the top level of the Script Editor, but await only works inside an async def function.",
+   "what_happened": "Many Kit and Isaac Sim functions end in _async (for example open_stage_async or next_update_async). They return a coroutine, and only code inside an 'async def' function may 'await' it. The Script Editor runs your code as a normal script, so a bare 'await' line is a syntax error and nothing runs.",
+   "likely_causes": [
+    "A line like 'await omni.usd.get_context().open_stage_async(path)' written at the top level.",
+    "Copying an example from inside an async function without the function around it."
+   ],
+   "how_to_fix": [
+    "Wrap the awaiting code in an 'async def main():' function.",
+    "Schedule it on Kit's running event loop with asyncio.ensure_future(main()) - do not call asyncio.run().",
+    "Keep everything that must happen after the await inside main()."
+   ],
+   "example_fix": "import asyncio\nimport omni.usd\nimport omni.kit.app\n\nasync def main():\n    await omni.usd.get_context().open_stage_async(\"C:/scenes/demo.usda\")\n    await omni.kit.app.get_app().next_update_async()  # wait one frame\n    print(\"stage opened\")\n\nasyncio.ensure_future(main())  # Kit already runs an event loop; just schedule the task",
+   "docs_query": "async await ensure_future next_update_async Script Editor"
+  },
+  {
+   "kind": "indentation_error",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "\\bIndentationError\\b",
+    "\\bTabError\\b",
+    "unexpected indent",
+    "expected an indented block",
+    "unindent does not match any outer indentation level",
+    "inconsistent use of tabs and spaces"
+   ],
+   "summary": "The spaces at the start of a line do not line up the way Python expects.",
+   "what_happened": "Python uses the indentation (spaces at the start of a line) to know which lines belong to an if, for, def or with block. A line that is indented too much, too little, or with a mix of tabs and spaces breaks that structure, so Python stops before running anything.",
+   "likely_causes": [
+    "A line indented when it should not be (often after pasting code).",
+    "A missing indented line after a line ending in ':' (if/for/def/with/class).",
+    "Mixing tabs and spaces, or pasting code that used a different indent width."
+   ],
+   "how_to_fix": [
+    "Go to the line number in the error and look at its leading spaces and the line above it.",
+    "Use 4 spaces per level everywhere; turn tabs into spaces.",
+    "After every line that ends with ':', indent the next line by 4 more spaces (use 'pass' if the block is empty)."
+   ],
+   "example_fix": "for prim in stage.Traverse():\n    print(prim.GetPath())   # 4 spaces: inside the loop\nprint(\"done\")              # back at column 0: after the loop",
+   "docs_query": ""
+  },
+  {
+   "kind": "syntax_error",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "\\bSyntaxError\\b",
+    "invalid syntax",
+    "was never closed",
+    "unterminated string literal",
+    "unmatched '[\\)\\]\\}]'",
+    "expected ':'"
+   ],
+   "summary": "Python could not understand the code, so it did not run any of it.",
+   "what_happened": "Before running, Python reads the whole script. A syntax error means something is written in a way Python's grammar does not allow - like a missing bracket, quote, colon or comma. The line number points at where Python noticed the problem, which is sometimes just after the real mistake.",
+   "likely_causes": [
+    "A missing ':' at the end of an if/for/def/with line.",
+    "An opening ( [ { or quote that is never closed (check the line above too).",
+    "Using = (assign) where == (compare) was meant, or a stray character from copy-paste.",
+    "Pasting console output (like '>>>' or line numbers) into the Script Editor."
+   ],
+   "how_to_fix": [
+    "Look at the reported line and the line just before it; the ^ marker shows where Python got confused.",
+    "Count brackets and quotes on that line so every opener has a closer.",
+    "Check that block lines (if/for/def/with) end with ':'."
+   ],
+   "example_fix": "# Bad:  if prim.IsValid()\n# Good:\nif prim.IsValid():\n    print(prim.GetName())",
+   "docs_query": ""
+  },
+  {
+   "kind": "asyncio_run_in_kit",
+   "category": "kit",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "asyncio\\.run\\(\\) cannot be called from a running event loop",
+    "This event loop is already running",
+    "Cannot run the event loop while another loop is running"
+   ],
+   "summary": "You tried to start a new asyncio event loop inside Kit, which already has one running.",
+   "what_happened": "Kit (USD Composer and Isaac Sim) runs its own asyncio event loop all the time to keep the app responsive. asyncio.run() and loop.run_until_complete() try to start and block on a loop, which is not allowed while Kit's loop is running.",
+   "likely_causes": [
+    "Using asyncio.run(main()) in the Script Editor or an extension.",
+    "Calling loop.run_until_complete(...) from inside Kit."
+   ],
+   "how_to_fix": [
+    "Replace asyncio.run(main()) with asyncio.ensure_future(main()).",
+    "Inside an async function, simply 'await' other coroutines.",
+    "If you need the result later, keep the returned task and check task.done() / task.result()."
+   ],
+   "example_fix": "import asyncio\n\nasync def main():\n    ...\n\ntask = asyncio.ensure_future(main())  # not asyncio.run(main())",
+   "docs_query": "asyncio ensure_future event loop Kit"
+  },
+  {
+   "kind": "coroutine_never_awaited",
+   "category": "kit",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "coroutine '(?P<name>[\\w.<>]{1,120})' was never awaited",
+    "was never awaited"
+   ],
+   "summary": "You called an async function ({{name}}) but never awaited it, so it did not actually run.",
+   "what_happened": "Calling an async function only creates a coroutine object - a plan of work. Nothing happens until you 'await' it inside another async function or schedule it with asyncio.ensure_future(). Python warns when such a coroutine is thrown away unused.",
+   "likely_causes": [
+    "Calling something like open_stage_async(...) or next_update_async() without 'await'.",
+    "Forgetting asyncio.ensure_future(main()) after defining 'async def main()'."
+   ],
+   "how_to_fix": [
+    "Inside an async def function, put 'await' in front of the call.",
+    "At the top level of the Script Editor, use asyncio.ensure_future(the_call(...)).",
+    "If a non-async version exists (for example open_stage instead of open_stage_async) you can use that instead."
+   ],
+   "example_fix": "import asyncio, omni.usd\n\nasync def main():\n    await omni.usd.get_context().open_stage_async(path)  # 'await' added\n\nasyncio.ensure_future(main())",
+   "docs_query": "coroutine await ensure_future async",
+   "locate": [
+    "name"
+   ]
+  },
+  {
+   "kind": "await_on_non_async",
+   "category": "kit",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "object (?P<type>[\\w.]{1,80}) can't be used in 'await' expression"
+   ],
+   "summary": "You used await on something that is not async (a {{type}}), which cannot be awaited.",
+   "what_happened": "'await' only works on coroutines, tasks and futures - usually the result of calling a function whose name ends in _async. Awaiting a normal function's return value (like None or a bool) is an error.",
+   "likely_causes": [
+    "Awaiting the non-async version of a function (open_stage instead of open_stage_async).",
+    "Awaiting a function that returned None because it already finished."
+   ],
+   "how_to_fix": [
+    "Remove 'await' for normal functions, or call the _async version of the function.",
+    "Check the API docs: only call 'await' on functions documented as async/coroutines."
+   ],
+   "example_fix": "# Bad:  await omni.usd.get_context().open_stage(path)\nawait omni.usd.get_context().open_stage_async(path)  # the _async variant can be awaited",
+   "docs_query": "await coroutine async function"
+  },
+  {
+   "kind": "kit_command_not_registered",
+   "category": "kit",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "(?:Can't|Cannot|Can not) execute command:? \\\\?\\\"?(?P<name>[\\w.]{1,120})\\\\?\\\"?",
+    "[Cc]ommand:? \\\\?\\\"?(?P<name>[\\w.]{1,120})\\\\?\\\"? (?:wasn't|was not|is not|isn't|not) registered",
+    "Unknown command:? \\\\?\\\"?(?P<name>[\\w.]{1,120})"
+   ],
+   "summary": "Kit does not know a command called {{name}}.",
+   "what_happened": "omni.kit.commands.execute(\"Name\", ...) looks the name up in a registry of commands. Commands come from extensions, so a misspelt name, or a command whose extension is not enabled, is not found.",
+   "likely_causes": [
+    "A typo or wrong capitalisation in the command name (names are case sensitive, e.g. 'CreatePrim').",
+    "The extension that provides the command is not enabled in this app.",
+    "Using a command name from a different Kit/Isaac Sim version."
+   ],
+   "how_to_fix": [
+    "Check the exact spelling against the docs or the Commands window (Window > Commands).",
+    "Enable the extension that provides it in Window > Extensions.",
+    "List what exists: print(omni.kit.commands.get_commands().keys())."
+   ],
+   "example_fix": "import omni.kit.commands\nprint(sorted(omni.kit.commands.get_commands().keys()))  # check the real names\nomni.kit.commands.execute(\"CreatePrim\", prim_path=\"/World/Cube\", prim_type=\"Cube\")",
+   "docs_query": "omni.kit.commands execute command registered"
+  },
+  {
+   "kind": "kit_command_bad_argument",
+   "category": "kit",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "(?P<func>[\\w.]{1,120})\\(\\) got an unexpected keyword argument '(?P<arg>\\w{1,80})'",
+    "(?P<func>[\\w.]{1,120})\\(\\) missing (?P<count>\\d+) required (?:positional |keyword-only )?arguments?: (?P<arg>[^\\n]{1,160})"
+   ],
+   "context_match": [
+    "omni[./\\\\]kit[./\\\\]commands",
+    "commands\\.execute\\("
+   ],
+   "summary": "The Kit command was given an argument name it does not accept ({{arg}}).",
+   "what_happened": "omni.kit.commands.execute(\"Name\", key=value, ...) passes your keyword arguments to the command's __init__. If a keyword is misspelt or a required one is missing, Python raises a TypeError from inside the command.",
+   "likely_causes": [
+    "A typo in an argument name (for example prim_pth instead of prim_path).",
+    "A required argument was left out.",
+    "The argument was renamed in this Kit/Isaac Sim version."
+   ],
+   "how_to_fix": [
+    "Compare your keyword names with the command's documented parameters.",
+    "Print the command's signature: import inspect; print(inspect.signature(omni.kit.commands.get_command_class('CreatePrim').__init__)).",
+    "Add any missing required argument."
+   ],
+   "example_fix": "import inspect, omni.kit.commands\ncls = omni.kit.commands.get_command_class(\"CreatePrim\")\nprint(inspect.signature(cls.__init__))  # shows the real argument names",
+   "docs_query": "omni.kit.commands execute arguments",
+   "locate": [
+    "arg"
+   ]
+  },
+  {
+   "kind": "kit_command_failed",
+   "category": "kit",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "Failed to execute (?:a |the )?command:? \\\\?\\\"?(?P<name>[\\w.]{1,120})",
+    "(?:Exception|Error) (?:while|when) executing command"
+   ],
+   "summary": "A Kit command started but failed while running.",
+   "what_happened": "The command was found, but something inside it went wrong - usually because of the values you passed (a prim path that does not exist, a wrong type) or the current state of the stage.",
+   "likely_causes": [
+    "A prim path argument that does not exist or is not absolute.",
+    "A value of the wrong type for one of the arguments.",
+    "No stage is open, or the target prim is locked/inside an instance."
+   ],
+   "how_to_fix": [
+    "Scroll up in the console for the first error/traceback printed just before this line - it explains the real cause.",
+    "Check every path argument exists: stage.GetPrimAtPath(path).IsValid().",
+    "Try the same command from the UI to see if it works on that prim."
+   ],
+   "example_fix": null,
+   "docs_query": "omni.kit.commands execute failed"
+  },
+  {
+   "kind": "module_not_found_omni_outside_kit",
+   "category": "kit",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "No module named '(?P<module>omni|carb|isaacsim|omni_kit)'"
+   ],
+   "summary": "Python cannot find the '{{module}}' module, which only exists inside Kit apps such as Isaac Sim or USD Composer.",
+   "what_happened": "omni, carb and isaacsim are not normal pip packages: they are provided by the Kit application at runtime. When a script that imports them is run with a plain Python (a terminal, VS Code, Jupyter), those modules do not exist.",
+   "likely_causes": [
+    "Running the script with the system Python instead of inside Isaac Sim / USD Composer.",
+    "For Isaac Sim standalone scripts: not using Isaac Sim's own python.bat, or importing omni before SimulationApp starts."
+   ],
+   "how_to_fix": [
+    "Run it from the Script Editor inside Isaac Sim or USD Composer (Window > Script Editor).",
+    "For Isaac Sim standalone scripts, run with the python.bat in the Isaac Sim folder.",
+    "In standalone Isaac scripts, create SimulationApp first and import omni/isaacsim modules after it.",
+    "For plain USD work outside Kit, use only 'from pxr import Usd, UsdGeom, ...' with usd-core installed."
+   ],
+   "example_fix": "# Isaac Sim standalone script - run with <isaac-sim>/python.bat my_script.py\nfrom isaacsim import SimulationApp\nsimulation_app = SimulationApp({\"headless\": False})  # must come first\nimport omni.usd  # only import omni.* after SimulationApp exists",
+   "docs_query": "standalone python SimulationApp python.bat"
+  },
+  {
+   "kind": "module_not_found_pxr",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "No module named '(?P<module>pxr(?:\\.\\w+)?)'",
+    "DLL load failed while importing _(?:tf|usd|sdf|gf|vt|ar|plug)\\b"
+   ],
+   "summary": "Python cannot load the USD library (pxr) in this interpreter.",
+   "what_happened": "The 'pxr' module is OpenUSD's Python API. Kit apps ship their own copy, so it always works in the Script Editor. A plain Python only has it if the 'usd-core' pip package is installed in that same interpreter.",
+   "likely_causes": [
+    "Running USD code in a plain Python where usd-core is not installed.",
+    "usd-core was installed into a different Python/virtual environment than the one running the script.",
+    "A mismatched or broken install (DLL load failed)."
+   ],
+   "how_to_fix": [
+    "Inside Isaac Sim / USD Composer: run the code in the Script Editor - pxr is already there.",
+    "Outside Kit: install it into the interpreter you use: python -m pip install usd-core (ask before installing).",
+    "Never pip-install usd-core into Kit's own Python - Kit ships its own pxr.",
+    "Check which Python runs the script: import sys; print(sys.executable)."
+   ],
+   "example_fix": "import sys\nprint(sys.executable)  # which Python is running?\nfrom pxr import Usd     # works inside Kit, or after 'pip install usd-core' outside it",
+   "docs_query": "pxr usd-core python install"
+  },
+  {
+   "kind": "isaac_old_module_name",
+   "category": "isaac",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "No module named '(?P<module>omni\\.isaac(?:\\.[\\w.]{1,120})?)'",
+    "(?P<module>omni\\.isaac\\.[\\w.]{1,120}) (?:is |has been )?deprecated"
+   ],
+   "summary": "The module '{{module}}' uses the old Isaac Sim name; Isaac Sim 5+/6.x renamed omni.isaac.* to isaacsim.*.",
+   "what_happened": "Older tutorials import things like omni.isaac.core. Those extensions were renamed (for example omni.isaac.core became isaacsim.core.api) and the old names were removed, so the import fails in Isaac Sim 6.1.",
+   "likely_causes": [
+    "Following a tutorial written for Isaac Sim 4.x or older.",
+    "Old example code copied from a forum or older docs."
+   ],
+   "how_to_fix": [
+    "Replace the omni.isaac.* import with the isaacsim.* equivalent (e.g. omni.isaac.core -> isaacsim.core.api).",
+    "Search the Isaac Sim 6.1 docs (or Window > Extensions) for the new extension name.",
+    "Prefer examples from the docs that match your installed Isaac Sim version."
+   ],
+   "example_fix": "# Old (Isaac Sim 4.x):  from omni.isaac.core import World\nfrom isaacsim.core.api import World  # Isaac Sim 5+/6.x name",
+   "docs_query": "isaacsim.core.api World extension renamed omni.isaac"
+  },
+  {
+   "kind": "extension_not_enabled",
+   "category": "kit",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "No module named '(?P<module>(?:omni|isaacsim|carb)\\.[\\w.]{1,120})'",
+    "Can't find extension(?: with name)?:? '?(?P<ext>[\\w.\\-]{1,120})",
+    "(?:Failed|Unable) to (?:enable|load|startup|start up) extension:? '?(?P<ext>[\\w.\\-]{1,120})",
+    "[Ee]xtension '?(?P<ext>[\\w.\\-]{2,120})'? (?:is )?(?:not (?:enabled|found|loaded)|disabled)",
+    "Failed to solve (?:all )?extension dependencies"
+   ],
+   "summary": "The Python module '{{module}}' comes from a Kit extension that is not enabled (or not installed) in this app.",
+   "what_happened": "In Kit apps each omni.* / isaacsim.* module belongs to an extension. The module can only be imported after its extension is enabled. USD Composer and Isaac Sim enable different sets of extensions by default.",
+   "likely_causes": [
+    "The extension is installed but disabled in this app.",
+    "The extension does not exist in this app/version (or the name is misspelt).",
+    "Running Isaac-only code in USD Composer, or Composer-only code in Isaac Sim."
+   ],
+   "how_to_fix": [
+    "Open Window > Extensions, search for the extension and enable it (tick 'Autoload' to keep it on).",
+    "Or enable it from code with the extension manager (see the example).",
+    "Check the spelling and that the extension exists for your app version."
+   ],
+   "example_fix": "import omni.kit.app\nmanager = omni.kit.app.get_app().get_extension_manager()\nmanager.set_extension_enabled_immediate(\"omni.physx\", True)  # use the extension that provides your module\nimport omni.physx",
+   "docs_query": "extension manager enable extension"
+  },
+  {
+   "kind": "import_name_error",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "cannot import name '(?P<name>\\w{1,120})' from '(?P<module>[\\w.]{1,160})'",
+    "cannot import name '(?P<name>\\w{1,120})'"
+   ],
+   "summary": "The module '{{module}}' exists, but it has nothing called '{{name}}'.",
+   "what_happened": "'from X import Y' found X but not Y inside it. The name might be misspelt, live in a different module, or have been renamed in this version.",
+   "likely_causes": [
+    "A typo or wrong capitalisation (Python names are case sensitive).",
+    "The name lives in another module (e.g. UsdGeom vs Usd in pxr).",
+    "It was renamed or removed in your version; or a file of yours has the same name as the module and hides it."
+   ],
+   "how_to_fix": [
+    "Print what the module offers: import X; print(dir(X)).",
+    "Check the docs for the module that really defines the name.",
+    "Make sure none of your own files are named like the module (e.g. usd.py, omni.py)."
+   ],
+   "example_fix": "import pxr.UsdGeom as UsdGeom\nprint([n for n in dir(UsdGeom) if 'Cube' in n])  # find the real name",
+   "docs_query": "import module",
+   "locate": [
+    "name"
+   ]
+  },
+  {
+   "kind": "module_not_found",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "No module named '(?P<module>[\\w.]{1,160})'",
+    "\\bModuleNotFoundError\\b"
+   ],
+   "summary": "Python cannot find a module named '{{module}}'.",
+   "what_happened": "An import line asked for a module that is not installed in the Python that is running the script, or the name is misspelt.",
+   "likely_causes": [
+    "A typo in the module name.",
+    "The package is not installed in this interpreter (Kit apps use their own Python).",
+    "The module is your own file but its folder is not on sys.path."
+   ],
+   "how_to_fix": [
+    "Check the spelling of the import.",
+    "Check which Python is running: import sys; print(sys.executable).",
+    "Inside Kit, prefer modules that ship with the app; installing extra packages needs care (ask first)."
+   ],
+   "example_fix": "import sys\nprint(sys.executable)\nprint(sys.path)  # where Python looks for modules",
+   "docs_query": "python module import"
+  },
+  {
+   "kind": "omni_usd_context_none",
+   "category": "kit",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "'NoneType' object has no attribute '(?P<attr>get_stage|get_stage_id|get_stage_url|open_stage|open_stage_async|new_stage|new_stage_async|save_stage|save_as_stage|save_as_stage_async|close_stage|close_stage_async|get_selection|get_stage_state|get_stage_event_stream|attach_stage_with_callback)'",
+    "omni\\.usd\\.get_context\\(\\) (?:returned|is) None"
+   ],
+   "summary": "omni.usd.get_context() returned None, so there is no USD context to call {{attr}}() on.",
+   "what_happened": "omni.usd.get_context() gives you the app's USD context (the object that owns the open stage). It only exists inside a running Kit app with the omni.usd extension loaded. If it returns None, every call on it fails.",
+   "likely_causes": [
+    "Running the script outside Kit (plain Python, or before the app finished starting).",
+    "In an Isaac Sim standalone script, calling it before SimulationApp was created.",
+    "Passing a context name that does not exist to get_context(name)."
+   ],
+   "how_to_fix": [
+    "Run the code in the Script Editor of a running Isaac Sim / USD Composer.",
+    "In standalone Isaac scripts, create SimulationApp first.",
+    "Check the result: context = omni.usd.get_context(); if context is None: print('no USD context')."
+   ],
+   "example_fix": "import omni.usd\ncontext = omni.usd.get_context()\nif context is None:\n    raise RuntimeError(\"No USD context - run this inside Isaac Sim / USD Composer\")\nstage = context.get_stage()",
+   "docs_query": "omni.usd get_context get_stage",
+   "locate": [
+    "attr"
+   ]
+  },
+  {
+   "kind": "stage_is_none",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "'NoneType' object has no attribute '(?P<attr>GetPrimAtPath|DefinePrim|OverridePrim|RemovePrim|Traverse|TraverseAll|GetRootLayer|GetSessionLayer|GetDefaultPrim|SetDefaultPrim|HasDefaultPrim|GetEditTarget|SetEditTarget|GetPseudoRoot|Export|ExportToString|Save|GetStartTimeCode|GetEndTimeCode|SetStartTimeCode|SetEndTimeCode|GetTimeCodesPerSecond|GetObjectAtPath|GetPropertyAtPath|GetAttributeAtPath|CreateClassPrim|GetLayerStack|GetUsedLayers|Reload|GetEditTargetForLocalLayer|GetPrototypes)'"
+   ],
+   "summary": "Your stage variable is None, so {{attr}}() cannot be called - no stage is open (or opening it failed).",
+   "what_happened": "In Kit, omni.usd.get_context().get_stage() returns None when no stage is open. Outside Kit, Usd.Stage.Open(path) fails or returns nothing useful if the file is missing. Either way, the next stage method you call fails with this message.",
+   "likely_causes": [
+    "No stage is open in the app yet (File > New or File > Open first).",
+    "The stage was closed or replaced, and an old variable was used.",
+    "Usd.Stage.Open / Sdf.Layer.FindOrOpen got a wrong path and produced None."
+   ],
+   "how_to_fix": [
+    "Open or create a stage first (File > New in the app, or Usd.Stage.CreateNew / Usd.Stage.Open in code).",
+    "Check right after getting it: if stage is None: print('No stage open').",
+    "Get the stage again each time you run the script instead of reusing an old variable."
+   ],
+   "example_fix": "import omni.usd\nstage = omni.usd.get_context().get_stage()\nif stage is None:\n    raise RuntimeError(\"No stage is open - use File > New or File > Open first\")\nprim = stage.GetPrimAtPath(\"/World\")",
+   "docs_query": "get_stage Usd.Stage Open stage",
+   "locate": [
+    "attr"
+   ]
+  },
+  {
+   "kind": "isaac_world_not_initialized",
+   "category": "isaac",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "Physics Simulation View is not created yet",
+    "(?:physics_sim_view|_physics_view|_physics_sim_view) is None",
+    "(?:articulation|rigid ?prim|view|controller)[^\\n]{0,60}(?:is not initialized|not initialized|hasn't been initialized|needs to be initialized)",
+    "'NoneType' object has no attribute '(?P<attr>get_(?:root_transforms|dof_positions|dof_velocities|world_poses|joint_positions|joint_velocities|velocities|transforms|masses)|set_dof_positions|set_joint_positions|apply_action)'"
+   ],
+   "summary": "The Isaac Sim robot/object wrapper is used before the physics simulation was initialized.",
+   "what_happened": "Isaac Sim's World, Articulation and RigidPrim objects connect to PhysX only after the world is reset (or the simulation is played) and the object is initialized. Before that, the internal physics view is empty, so reading poses or joint positions fails.",
+   "likely_causes": [
+    "Calling get_joint_positions / get_world_poses before world.reset() (or before pressing Play).",
+    "Creating the object after reset without calling its initialize().",
+    "The simulation was stopped, which drops the physics views."
+   ],
+   "how_to_fix": [
+    "Call world.reset() (or await world.reset_async() in the Script Editor) after adding objects.",
+    "If you add an object after reset, call obj.initialize() before using it.",
+    "Do the reads while the simulation is playing, e.g. in a physics step callback."
+   ],
+   "example_fix": "from isaacsim.core.api import World\nworld = World()\n# ... add your robot / objects here ...\nworld.reset()        # creates the physics views (Script Editor: await world.reset_async())\nprint(robot.get_joint_positions())",
+   "docs_query": "World reset initialize Articulation physics view",
+   "locate": [
+    "attr"
+   ]
+  },
+  {
+   "kind": "usd_invalid_prim",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "Accessed invalid (?:null |expired )?prim",
+    "Accessed schema on invalid prim",
+    "(?:Usd\\.Prim|prim) <(?P<path>[^>\\n]{0,200})> is (?:not valid|invalid|expired)",
+    "on an? (?:invalid|expired|null) prim"
+   ],
+   "summary": "Your code used a prim that does not exist (an invalid prim), usually because GetPrimAtPath got a wrong path.",
+   "what_happened": "stage.GetPrimAtPath(path) never fails loudly: if nothing is at that path it returns an *invalid* prim. The error only appears on the next line, when you call something like GetAttribute or GetChildren on it.",
+   "likely_causes": [
+    "A typo or wrong capitalisation in the prim path ('/World/cube' vs '/World/Cube').",
+    "The prim lives somewhere else in the hierarchy (check the Stage window path).",
+    "The prim was deleted, or a different stage is open than you expect."
+   ],
+   "how_to_fix": [
+    "Check the prim before using it: if not prim.IsValid(): print('No prim at', path).",
+    "Copy the exact path from the Stage window (right-click > Copy Prim Path).",
+    "List what exists: for p in stage.Traverse(): print(p.GetPath())."
+   ],
+   "example_fix": "prim = stage.GetPrimAtPath(\"/World/Cube\")\nif not prim.IsValid():          # GetPrimAtPath returns an invalid prim, not an error\n    raise RuntimeError(\"No prim at /World/Cube - check the path in the Stage window\")\nsize = prim.GetAttribute(\"size\").Get()",
+   "docs_query": "GetPrimAtPath IsValid invalid prim"
+  },
+  {
+   "kind": "usd_invalid_attribute",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "Accessed invalid (?:null )?(?:attribute|property|relationship)",
+    "(?:invalid|expired) (?:attribute|property) <?(?P<path>[^>\\n\\s]{1,200})>?",
+    "[Aa]ttribute '?(?P<attr>[\\w:]{1,120})'? (?:does not exist|not found|is not valid)"
+   ],
+   "summary": "Your code used an attribute that does not exist on the prim.",
+   "what_happened": "prim.GetAttribute(name) returns an invalid attribute when the prim has no attribute with that exact name. Get() then returns None and Set() fails.",
+   "likely_causes": [
+    "A typo or wrong case in the attribute name ('Size' vs 'size').",
+    "The attribute belongs to a different prim type (e.g. 'radius' exists on Sphere, not Cube).",
+    "It is a namespaced name you shortened (e.g. 'xformOp:translate', 'physics:mass')."
+   ],
+   "how_to_fix": [
+    "List the real names: print(prim.GetPropertyNames()).",
+    "Check it: attr = prim.GetAttribute(name); if not attr.IsValid(): ...",
+    "To make a new custom attribute use prim.CreateAttribute(name, Sdf.ValueTypeNames.Float)."
+   ],
+   "example_fix": "attr = prim.GetAttribute(\"size\")\nif not attr.IsValid():\n    print(prim.GetPropertyNames())  # see the real attribute names\nelse:\n    attr.Set(2.0)",
+   "docs_query": "GetAttribute CreateAttribute property names"
+  },
+  {
+   "kind": "sdf_path_ill_formed",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "Ill-formed SdfPath <?(?P<path>[^>:\\n]{0,200})",
+    "SdfPath[^\\n]{0,40}ill-formed",
+    "could not parse (?:the )?path",
+    "invalid SdfPath"
+   ],
+   "summary": "The text '{{path}}' is not a valid USD path (Sdf.Path).",
+   "what_happened": "USD paths look like '/World/Robot/Arm': they start with '/', use '/' between names, and each name may contain only letters, digits and underscores and must not start with a digit. Spaces, dashes, dots and other characters make the path ill-formed.",
+   "likely_causes": [
+    "Spaces or dashes in a prim name (\"/World/My Cube\", \"/World/robot-1\").",
+    "A name that starts with a digit (\"/World/1Cube\").",
+    "Backslashes, or a file path passed where a prim path was expected."
+   ],
+   "how_to_fix": [
+    "Use only letters, digits and _ in prim names, not starting with a digit.",
+    "Clean names automatically with Tf.MakeValidIdentifier(name).",
+    "Check a path first: Sdf.Path.IsValidPathString(text)."
+   ],
+   "example_fix": "from pxr import Sdf, Tf\nname = Tf.MakeValidIdentifier(\"My Cube-1\")   # -> 'My_Cube_1'\npath = Sdf.Path(\"/World\").AppendChild(name)\nprint(path, Sdf.Path.IsValidPathString(str(path)))",
+   "docs_query": "Sdf.Path valid identifier prim name"
+  },
+  {
+   "kind": "invalid_prim_path",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "[Pp]ath must be an absolute path(?::\\s*<(?P<path>[^>\\n]{0,200})>)?",
+    "is not a valid prim path",
+    "[Pp]ath must be a prim path",
+    "Invalid prim path:? <?(?P<path>[^>\\n]{0,200})",
+    "not a valid (?:prim )?(?:path|identifier)",
+    "Failed to (?:define|create) prim"
+   ],
+   "summary": "The prim path you passed is not a usable prim path (it must be absolute, like '/World/Cube').",
+   "what_happened": "Functions such as stage.DefinePrim and UsdGeom.Cube.Define need a full prim path that starts at the root '/'. A relative name like 'Cube', a property path like '/World/Cube.size', or an empty string is rejected.",
+   "likely_causes": [
+    "The path does not start with '/' (e.g. 'World/Cube' or just 'Cube').",
+    "A property path (with a '.') or an empty path was used where a prim path is needed.",
+    "The prim name has characters USD does not allow."
+   ],
+   "how_to_fix": [
+    "Start every prim path with '/': '/World/Cube'.",
+    "Build paths safely: Sdf.Path('/World').AppendChild('Cube').",
+    "Print the path right before the call to see what was really passed."
+   ],
+   "example_fix": "from pxr import UsdGeom\ncube = UsdGeom.Cube.Define(stage, \"/World/Cube\")   # absolute path starting with '/'",
+   "docs_query": "DefinePrim absolute prim path Sdf.Path"
+  },
+  {
+   "kind": "gf_vector_precision_mismatch",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "Python argument types in\\s*\\n?\\s*(?P<call>[^\\n]{1,200})",
+    "did not match C\\+\\+ signature:?\\s*\\n?\\s*(?P<signature>[^\\n]{1,200})",
+    "did not match C\\+\\+ signature"
+   ],
+   "require": [
+    "did not match C\\+\\+ signature",
+    "\\b(?:Gf)?(?:Vec[234][dfhi]|Quat[dfh]|Matrix[234][df]|Range[123][df])\\b"
+   ],
+   "summary": "You passed a Gf vector/matrix of the wrong precision (for example Vec3f where Vec3d is needed) in the call {{call}}.",
+   "what_happened": "USD's Gf types come in precisions: Vec3f is float (32-bit), Vec3d is double (64-bit), Vec3h is half. Many C++ functions accept only one of them and Python does not convert automatically, so the call 'did not match the C++ signature'. The signature lines show the type the function wants (GfVec3d = Gf.Vec3d).",
+   "likely_causes": [
+    "XformCommonAPI.SetTranslate wants Gf.Vec3d, but SetRotate/SetScale want Gf.Vec3f.",
+    "Gf.Matrix4d.SetTranslate wants Gf.Vec3d; you passed a Gf.Vec3f.",
+    "Mixing values read from a float3 attribute with an API that needs double3."
+   ],
+   "how_to_fix": [
+    "Read the 'C++ signature' lines: GfVec3d means pass Gf.Vec3d, GfVec3f means Gf.Vec3f.",
+    "Convert explicitly: Gf.Vec3d(my_vec3f) or Gf.Vec3f(my_vec3d).",
+    "For xformOps, match the op precision: AddTranslateOp() is double by default (Vec3d)."
+   ],
+   "example_fix": "from pxr import Gf, UsdGeom\napi = UsdGeom.XformCommonAPI(prim)\napi.SetTranslate(Gf.Vec3d(1.0, 2.0, 3.0))  # translate: double (Vec3d)\napi.SetRotate(Gf.Vec3f(0.0, 45.0, 0.0))    # rotate: float (Vec3f)\napi.SetScale(Gf.Vec3f(1.0, 1.0, 1.0))      # scale: float (Vec3f)",
+   "docs_query": "Gf.Vec3d Gf.Vec3f XformCommonAPI SetTranslate precision"
+  },
+  {
+   "kind": "cpp_signature_mismatch",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "Python argument types in\\s*\\n?\\s*(?P<call>[^\\n]{1,200})",
+    "did not match C\\+\\+ signature:?\\s*\\n?\\s*(?P<signature>[^\\n]{1,200})",
+    "did not match C\\+\\+ signature",
+    "Boost\\.Python\\.ArgumentError"
+   ],
+   "summary": "You called {{call}} with arguments of the wrong type (or the wrong number of arguments).",
+   "what_happened": "USD's Python API is a thin wrapper over C++. Each function accepts exact types; if the types you pass do not match any C++ version, you get 'Python argument types ... did not match C++ signature'. The first part lists what you passed; the signature lines list what is accepted.",
+   "likely_causes": [
+    "Passing a plain string where a Sdf.Path or Tf token object is not accepted (or the reverse).",
+    "Passing a Python list/tuple where a Gf type or Vt array is required.",
+    "Forgetting an argument, or calling a method on the class instead of on an object."
+   ],
+   "how_to_fix": [
+    "Compare the 'Python argument types in' line with the 'C++ signature' lines, argument by argument.",
+    "Convert to the expected type: Sdf.Path(text), Gf.Vec3d(x, y, z), Vt.Vec3fArray([...]).",
+    "Look the function up in the USD API docs to see its parameters."
+   ],
+   "example_fix": "from pxr import Sdf, Gf\nprim = stage.GetPrimAtPath(Sdf.Path(\"/World/Cube\"))\nvalue = Gf.Vec3d(1, 2, 3)   # build the exact Gf type the signature lists",
+   "docs_query": "Python argument types did not match C++ signature"
+  },
+  {
+   "kind": "value_type_mismatch",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "[Tt]ype mismatch for <(?P<path>[^>\\n]{0,200})>:? expected '(?P<expected>[^'\\n]{1,60})', got '(?P<got>[^'\\n]{1,60})'",
+    "No registered converter was able to produce a C\\+\\+ rvalue of type (?P<expected>[\\w:<> ]{1,80}) from this Python object of type (?P<got>\\w{1,60})",
+    "expected '(?P<expected>[\\w\\[\\]]{1,60})', got '(?P<got>[\\w\\[\\]]{1,60})'",
+    "\\btype mismatch\\b",
+    "(?:Cannot|Can't|Unable to) (?:set|convert|cast) (?:value|attribute)[^\\n]{0,80}type"
+   ],
+   "summary": "The value you tried to store has the wrong type for this attribute (expected {{expected}}, got {{got}}).",
+   "what_happened": "Every USD attribute has a fixed value type, like float, double3, color3f or token. Set() must receive a value of that type (or one USD can convert). A string for a float, a Vec3d for a float3, or a plain number for a vector is rejected.",
+   "likely_causes": [
+    "Passing a string ('2.0') instead of a number (2.0).",
+    "Passing a Gf.Vec3d to a float3/color3f attribute or a single number to a vector attribute.",
+    "Creating the attribute with one type and later setting another."
+   ],
+   "how_to_fix": [
+    "Check the attribute's type: print(attr.GetTypeName()).",
+    "Build the matching value: float3/color3f -> Gf.Vec3f, double3 -> Gf.Vec3d, float -> 1.0.",
+    "If the attribute was created with the wrong type, remove it and recreate it with the right Sdf.ValueTypeNames."
+   ],
+   "example_fix": "from pxr import Gf\nattr = prim.GetAttribute(\"primvars:displayColor\")\nprint(attr.GetTypeName())          # e.g. color3f[]\nattr.Set([Gf.Vec3f(1.0, 0.0, 0.0)])  # value matches color3f[]",
+   "docs_query": "attribute value type Set Sdf.ValueTypeNames"
+  },
+  {
+   "kind": "xform_common_api_incompatible",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "XformCommonAPI[^\\n]{0,160}(?:incompatible|not compatible)",
+    "(?:incompatible|not compatible)[^\\n]{0,160}XformCommonAPI",
+    "incompatible with (?:the )?(?:xform )?common API"
+   ],
+   "summary": "This prim's transform ops are not in the simple translate/rotate/scale form that UsdGeom.XformCommonAPI needs.",
+   "what_happened": "XformCommonAPI only works when a prim's xformOpOrder is a standard stack (translate, pivot, rotate, scale). If the prim already has other ops - like a transform matrix op, two rotates, or ops in a different order - XformCommonAPI refuses to edit it.",
+   "likely_causes": [
+    "The prim has an 'xformOp:transform' matrix op (common after import or from some tools).",
+    "Ops were added in a non-standard order, or there are extra ops.",
+    "Kit's own transform ops (translate/orient/scale) use an 'orient' quaternion op, which XformCommonAPI does not handle."
+   ],
+   "how_to_fix": [
+    "Inspect the stack: print(UsdGeom.Xformable(prim).GetOrderedXformOps()).",
+    "Edit the existing ops directly (op.Set(...)) instead of using XformCommonAPI.",
+    "Or clear and rebuild the stack: xformable.ClearXformOpOrder(), then add translate/rotate/scale ops."
+   ],
+   "example_fix": "from pxr import UsdGeom, Gf\nxformable = UsdGeom.Xformable(prim)\nfor op in xformable.GetOrderedXformOps():\n    print(op.GetOpName(), op.GetPrecision())  # see what is really there\n# edit the existing op instead of XformCommonAPI:\nxformable.GetOrderedXformOps()[0].Set(Gf.Vec3d(0, 1, 0))",
+   "docs_query": "XformCommonAPI xformOpOrder Xformable"
+  },
+  {
+   "kind": "xform_op_order",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "already exists in xformOpOrder",
+    "xformOp:?\\S{0,60} already exists",
+    "Could not add xform ?op",
+    "(?:duplicate|existing) xform ?op",
+    "xformOpOrder[^\\n]{0,120}(?:invalid|not found|does not|missing|mismatch)",
+    "(?:invalid|bad|unsupported) xformOpOrder",
+    "xform ?op[^\\n]{0,40}(?:precision|type) (?:mismatch|does not match|differs)"
+   ],
+   "summary": "The prim already has that transform op, or its xformOpOrder is out of step with its ops.",
+   "what_happened": "A USD transform is a list of ops (translate, rotate, scale, ...) named in xformOpOrder. Adding an op that is already there (e.g. calling AddTranslateOp() twice, or on a prim Kit already gave a translate op) is an error. Ops listed in xformOpOrder must also exist with the expected type and precision.",
+   "likely_causes": [
+    "Running a script twice, so AddTranslateOp() runs again on a prim that already has one.",
+    "Kit already created xformOp:translate/orient/scale when the prim was made in the UI.",
+    "Adding an op with a different precision than the existing one."
+   ],
+   "how_to_fix": [
+    "Reuse the existing op: look it up in GetOrderedXformOps() and call op.Set(...).",
+    "Or clear first: xformable.ClearXformOpOrder() and add the ops again in order.",
+    "Keep the same precision as the existing op (double vs float)."
+   ],
+   "example_fix": "from pxr import UsdGeom, Gf\nxformable = UsdGeom.Xformable(prim)\nops = {op.GetOpName(): op for op in xformable.GetOrderedXformOps()}\ntranslate = ops.get(\"xformOp:translate\") or xformable.AddTranslateOp()  # add only if missing\ntranslate.Set(Gf.Vec3d(0, 1, 0))",
+   "docs_query": "AddTranslateOp xformOpOrder GetOrderedXformOps"
+  },
+  {
+   "kind": "instance_proxy_edit",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "instance proxy(?: <(?P<path>[^>\\n]{0,200})>)?",
+    "at path <(?P<path>[^>\\n]{0,200})>;? authoring to an instance proxy",
+    "instanceable prim[^\\n]{0,80}(?:cannot|can't|not allowed)",
+    "(?:inside|within|under) an? (?:instance|instanceable prim)"
+   ],
+   "summary": "You tried to change a prim that lives inside an instance, and instance contents are read-only.",
+   "what_happened": "When a prim is marked instanceable, everything under it is shared from a single prototype so many copies can be drawn cheaply. The prims you see under it are 'instance proxies': you can read them but not edit them, because one edit would have to change every copy.",
+   "likely_causes": [
+    "Setting an attribute, material or transform on a prim under an instanceable prim (e.g. a leg inside an instanced chair).",
+    "Assets referenced with instanceable=true (common for SimReady/Isaac assets)."
+   ],
+   "how_to_fix": [
+    "Edit the instance root itself (the instanceable prim) - its own transform is editable.",
+    "Or make that one copy editable: prim.SetInstanceable(False) on the instance root (it stops sharing).",
+    "Or edit the source asset/prototype so every instance changes.",
+    "Find the root: walk up with prim.GetParent() until prim.IsInstance() is True."
+   ],
+   "example_fix": "root = prim\nwhile root and not root.IsInstance():\n    root = root.GetParent()   # find the instanceable ancestor\nroot.SetInstanceable(False)   # this copy becomes editable (no longer shared)\n# now edit the child prim",
+   "docs_query": "instanceable instance proxy prototype SetInstanceable"
+  },
+  {
+   "kind": "asset_unresolved",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "Could not open asset @(?P<path>[^@\\n]{0,300})@",
+    "(?:unresolved|could not resolve|failed to resolve|cannot resolve) (?:asset|asset path)[^\\n]{0,20}@?(?P<path>[^@\\n]{0,300})@?",
+    "[Uu]nresolved asset path",
+    "(?:Failed to|Could not) (?:load|find|open) (?:texture|image|mdl|material)"
+   ],
+   "summary": "USD could not find the file '{{path}}' that a reference, payload, sublayer or texture points to.",
+   "what_happened": "References, payloads, sublayers and textures store an asset path. When the stage composes, USD's resolver turns that path into a real file; if the file is missing or the path is wrong, that part of the scene is simply empty (no crash) and this error is printed.",
+   "likely_causes": [
+    "The file was moved/renamed, or the project was copied to another computer (old absolute paths like D:/...).",
+    "A relative path that is relative to the wrong layer (relative paths resolve from the layer that wrote them).",
+    "A typo or wrong extension (.usd vs .usda / .usdz)."
+   ],
+   "how_to_fix": [
+    "Check the file exists at that path (open the folder in Explorer).",
+    "Prefer paths relative to the layer: './assets/chair.usda'.",
+    "Fix the reference: prim.GetReferences().ClearReferences(); prim.GetReferences().AddReference('./assets/chair.usda').",
+    "In Composer/Isaac use the Content browser to drag the asset again so the path is correct."
+   ],
+   "example_fix": "refs = prim.GetReferences()\nrefs.ClearReferences()\nrefs.AddReference(\"./assets/chair.usda\")   # path relative to the layer that holds this reference",
+   "docs_query": "asset path resolve references relative path"
+  },
+  {
+   "kind": "reference_default_prim_missing",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "Unresolved (?:reference|payload) prim path @(?P<path>[^@\\n]{0,300})@<\\s*>",
+    "(?:no|missing|without|has no|does not have|doesn't have|not set|unset|empty|invalid) (?:a )?default ?prim",
+    "default ?prim[^\\n]{0,60}(?:missing|not (?:set|found|specified|authored|defined)|is empty|is invalid|does not exist)",
+    "Cannot determine default prim"
+   ],
+   "summary": "The file you referenced has no defaultPrim, so USD does not know which prim inside it to bring in.",
+   "what_happened": "A reference without a prim path (AddReference('chair.usda')) brings in the file's defaultPrim. If that file never set defaultPrim, the reference resolves to nothing and your prim stays empty.",
+   "likely_causes": [
+    "The referenced asset was saved without setting a default prim.",
+    "The defaultPrim names a prim that does not exist in that file."
+   ],
+   "how_to_fix": [
+    "Open the asset and set it: stage.SetDefaultPrim(stage.GetPrimAtPath('/Chair')); then save.",
+    "Or reference a specific prim: AddReference('chair.usda', '/Chair').",
+    "In Composer: right-click the top prim of the asset > Set as Default Prim, then save."
+   ],
+   "example_fix": "# Option 1: fix the asset file\nasset = Usd.Stage.Open(\"chair.usda\")\nasset.SetDefaultPrim(asset.GetPrimAtPath(\"/Chair\"))\nasset.GetRootLayer().Save()\n# Option 2: name the prim in the reference\nprim.GetReferences().AddReference(\"chair.usda\", \"/Chair\")",
+   "docs_query": "defaultPrim reference SetDefaultPrim"
+  },
+  {
+   "kind": "reference_prim_path_unresolved",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "Unresolved (?:reference|payload|inherit|specializes)? ?prim path @(?P<path>[^@\\n]{0,300})@<(?P<prim>[^>\\n]{1,200})>",
+    "Unresolved (?:reference|payload) prim path"
+   ],
+   "summary": "The reference points at prim {{prim}} inside {{path}}, but that prim does not exist in the file.",
+   "what_happened": "A reference can name a specific prim inside another file (AddReference(file, '/Chair')). If that prim path is not in the file, nothing is brought in.",
+   "likely_causes": [
+    "A typo or wrong case in the target prim path.",
+    "The asset's prims were renamed or moved."
+   ],
+   "how_to_fix": [
+    "Open the referenced file and check its prim paths.",
+    "Fix the reference with the right prim path, or omit it to use the file's defaultPrim."
+   ],
+   "example_fix": "prim.GetReferences().ClearReferences()\nprim.GetReferences().AddReference(\"chair.usda\", \"/Chair\")  # exact path inside chair.usda",
+   "docs_query": "reference prim path AddReference"
+  },
+  {
+   "kind": "variant_not_found",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "[Vv]ariant (?:set )?'?(?P<name>[\\w\\-]{1,80})'? (?:not found|does not exist|is not defined|is unknown)",
+    "(?:[Nn]o|[Ii]nvalid|[Uu]nknown) variant ?set (?:named |called )?'?(?P<name>[\\w\\-]{1,80})",
+    "[Ii]nvalid variant selection(?: \\{?(?P<name>[^}\\n]{1,80})\\}?)?",
+    "variant selection[^\\n]{0,80}(?:invalid|not (?:found|exist))",
+    "Accessed invalid (?:null )?VariantSet",
+    "VariantSet[^\\n]{0,40}(?:is invalid|not valid|not found)"
+   ],
+   "summary": "The variant set or variant name ({{name}}) does not exist on this prim.",
+   "what_happened": "A variant set is a named switch (like 'color') with named choices (like 'red', 'blue'). Names must match exactly. Asking for a set or a choice that the prim does not have gives an invalid VariantSet or a selection that composes to nothing.",
+   "likely_causes": [
+    "A typo or wrong case in the variant set or variant name.",
+    "The variants live on a different prim (often the asset's root prim).",
+    "The variant set is defined in a layer/reference that did not load."
+   ],
+   "how_to_fix": [
+    "List what exists: print(prim.GetVariantSets().GetNames()).",
+    "List the choices: print(prim.GetVariantSets().GetVariantSet('color').GetVariantNames()).",
+    "Select with the exact names: vset.SetVariantSelection('red')."
+   ],
+   "example_fix": "vsets = prim.GetVariantSets()\nprint(vsets.GetNames())                       # e.g. ['color']\nvset = vsets.GetVariantSet(\"color\")\nprint(vset.GetVariantNames())                 # e.g. ['blue', 'red']\nvset.SetVariantSelection(\"red\")",
+   "docs_query": "variant set GetVariantSets SetVariantSelection"
+  },
+  {
+   "kind": "layer_not_found",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "Failed to open layer @(?P<path>[^@\\n]{0,300})@",
+    "(?:Could not|Cannot|Can't|Unable to) open (?:the )?(?:layer|stage)(?: @(?P<path>[^@\\n]{0,300})@)?",
+    "Failed to open (?:USD )?(?:stage|layer)",
+    "layer @(?P<path>[^@\\n]{0,300})@ (?:not found|does not exist)",
+    "No such file or directory: '(?P<path>[^'\\n]{0,300}\\.usd[acz]?)'"
+   ],
+   "summary": "USD could not open the file '{{path}}' - it does not exist at that path or is not a valid USD file.",
+   "what_happened": "Usd.Stage.Open(path) and Sdf.Layer.FindOrOpen(path) need an existing, readable USD file. A wrong path, a missing file, or a file that is not USD makes them fail (Open raises, FindOrOpen returns None).",
+   "likely_causes": [
+    "The path is wrong, or the file is not where you think (relative paths depend on the current folder).",
+    "A Windows path typed with single backslashes in a normal string.",
+    "The file was moved, renamed, or never saved; or it is not a USD file."
+   ],
+   "how_to_fix": [
+    "Print os.path.exists(path) before opening it.",
+    "Use an absolute path with forward slashes, or a path built from a known folder.",
+    "To make a new file use Usd.Stage.CreateNew(path) instead of Open."
+   ],
+   "example_fix": "import os\nfrom pxr import Usd\npath = \"C:/scenes/demo.usda\"\nif not os.path.exists(path):\n    raise FileNotFoundError(path)\nstage = Usd.Stage.Open(path)",
+   "docs_query": "Usd.Stage.Open Sdf.Layer FindOrOpen"
+  },
+  {
+   "kind": "layer_permission_denied",
+   "category": "usd",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "\\bPermissionError\\b",
+    "[Pp]ermission denied",
+    "\\[Errno 13\\]",
+    "[Aa]ccess is denied",
+    "(?:Failed|Unable|Could not|Cannot) (?:to )?(?:save|export|write) (?:the )?(?:layer|stage|file)?",
+    "(?:layer|stage|file) is (?:read-?only|not (?:writable|editable))",
+    "read-?only (?:layer|file|stage)"
+   ],
+   "summary": "The file could not be written - Windows refused permission or the layer is read-only.",
+   "what_happened": "Saving a stage/layer needs write access to the file and its folder. Files inside Program Files or the Isaac Sim install, files opened by another program, read-only files and read-only (locked) layers cannot be saved.",
+   "likely_causes": [
+    "Saving into a protected folder (Program Files, the app install folder, the Nucleus/library cache).",
+    "The file is marked read-only or open/locked in another program (or another Kit app).",
+    "The layer is locked or is a sample asset opened from a read-only location."
+   ],
+   "how_to_fix": [
+    "Save to a folder you own, e.g. your project folder: stage.GetRootLayer().Export('C:/Users/<you>/projects/scene.usda').",
+    "Close other programs using the file, and clear the read-only flag in the file's Properties.",
+    "Use File > Save As in the app to pick a writable location."
+   ],
+   "example_fix": "layer = stage.GetRootLayer()\nlayer.Export(\"C:/Users/me/projects/my_scene.usda\")  # write a copy somewhere you own",
+   "docs_query": "Sdf.Layer Save Export permission"
+  },
+  {
+   "kind": "file_not_found",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "\\bFileNotFoundError\\b",
+    "No such file or directory",
+    "\\[Errno 2\\]",
+    "The system cannot find the (?:file|path) specified"
+   ],
+   "summary": "Python could not find the file or folder you asked for.",
+   "what_happened": "open(), os functions and many loaders need the file to exist. Relative paths are looked up from the current working folder, which inside Kit is usually the app's folder - not where your script is.",
+   "likely_causes": [
+    "A typo in the path, or the file is in another folder.",
+    "A relative path used inside Kit, where the working folder is not your project.",
+    "Backslashes in a normal string changed the path (use r\"...\" or forward slashes)."
+   ],
+   "how_to_fix": [
+    "Print the absolute path you are using: print(os.path.abspath(path)).",
+    "Use a full path with forward slashes, or build it from a known folder with os.path.join.",
+    "Check it first: os.path.exists(path)."
+   ],
+   "example_fix": "import os\npath = \"C:/Users/me/projects/data.json\"\nprint(os.path.abspath(path), os.path.exists(path))",
+   "docs_query": ""
+  },
+  {
+   "kind": "physx_triangle_mesh_dynamic",
+   "category": "physics",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "triangle mesh collision[^\\n]{0,160}(?:cannot|can't) be (?:a )?part of a dynamic body",
+    "triangle mesh[^\\n]{0,80}dynamic (?:rigid )?body",
+    "falling back to convex ?hull"
+   ],
+   "summary": "A moving (dynamic) rigid body uses an exact triangle-mesh collider, which PhysX does not allow.",
+   "what_happened": "PhysX can only collide moving bodies with convex shapes. A triangle mesh (collision approximation 'none') is allowed only for static objects, so PhysX switches the dynamic body to a convex hull instead and warns you.",
+   "likely_causes": [
+    "UsdPhysics.MeshCollisionAPI approximation is 'none' (triangle mesh) on a prim that also has RigidBodyAPI.",
+    "Defaults from an imported asset."
+   ],
+   "how_to_fix": [
+    "Set the approximation to 'convexHull' or 'convexDecomposition' for moving objects.",
+    "Keep 'none' (triangle mesh) only on static collision geometry (floors, walls) without RigidBodyAPI."
+   ],
+   "example_fix": "from pxr import UsdPhysics\nmesh_api = UsdPhysics.MeshCollisionAPI.Apply(mesh_prim)\nmesh_api.CreateApproximationAttr().Set(\"convexDecomposition\")  # or \"convexHull\"",
+   "docs_query": "MeshCollisionAPI approximation convexHull convexDecomposition rigid body"
+  },
+  {
+   "kind": "physx_rigid_body_no_collider",
+   "category": "physics",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "rigid ?body[^\\n]{0,120}\\b(?:without|no|missing|has no|does not have|doesn't have)\\b[^\\n]{0,40}(?:collider|collision)",
+    "(?:no|missing|without) (?:collider|collision)(?: shapes?| api)?[^\\n]{0,80}rigid ?body",
+    "CollisionAPI[^\\n]{0,60}(?:missing|not (?:found|applied))"
+   ],
+   "summary": "A rigid body has no collider, so it will fall through everything.",
+   "what_happened": "RigidBodyAPI makes a prim move under physics (gravity, forces). CollisionAPI gives it a shape to hit things with. A rigid body without any collider underneath it has mass but nothing to collide with.",
+   "likely_causes": [
+    "RigidBodyAPI was applied but CollisionAPI was not (on the prim or its child meshes).",
+    "The collider is on a different prim than the meshes you see, or was disabled."
+   ],
+   "how_to_fix": [
+    "Apply UsdPhysics.CollisionAPI to the mesh prims under the rigid body (and MeshCollisionAPI for the shape).",
+    "In the UI: select the prim > Add > Physics > Rigid Body with Colliders Preset.",
+    "Make sure the floor has a collider too."
+   ],
+   "example_fix": "from pxr import UsdPhysics\nUsdPhysics.RigidBodyAPI.Apply(body_prim)\nUsdPhysics.CollisionAPI.Apply(mesh_prim)   # the shape it collides with\nUsdPhysics.MeshCollisionAPI.Apply(mesh_prim).CreateApproximationAttr().Set(\"convexHull\")",
+   "docs_query": "RigidBodyAPI CollisionAPI collider physics"
+  },
+  {
+   "kind": "physx_joint_missing_bodies",
+   "category": "physics",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "no bodies defined at body0 and body1",
+    "joint[^\\n]{0,80}(?:body0|body1|bodies)[^\\n]{0,80}(?:not found|missing|invalid|not defined|does not exist)",
+    "(?:body0|body1) [^\\n]{0,60}(?:not found|missing|invalid|does not exist)"
+   ],
+   "summary": "A physics joint does not point at valid bodies (body0/body1).",
+   "what_happened": "A joint connects two things: body0 and body1 are relationships to prims. If they are empty, point to prims that do not exist, or point to prims that are not rigid bodies (or children of one), PhysX cannot build the joint.",
+   "likely_causes": [
+    "The body0/body1 relationship targets were never set or have a typo.",
+    "The target prims are not rigid bodies (no RigidBodyAPI) and are not static colliders.",
+    "The targets were renamed or deleted."
+   ],
+   "how_to_fix": [
+    "Set the targets: joint.CreateBody0Rel().SetTargets(['/World/Base']) and the same for body1.",
+    "Make sure at least one target is a rigid body; the other may be a static collider or left empty to attach to the world."
+   ],
+   "example_fix": "from pxr import UsdPhysics\njoint = UsdPhysics.RevoluteJoint.Define(stage, \"/World/Hinge\")\njoint.CreateBody0Rel().SetTargets([\"/World/Base\"])\njoint.CreateBody1Rel().SetTargets([\"/World/Door\"])",
+   "docs_query": "physics joint body0 body1"
+  },
+  {
+   "kind": "physx_no_scene",
+   "category": "physics",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "\\b(?:no|missing|could not find(?: a)?|without(?: a)?) (?:usd ?)?physics ?scene\\b",
+    "physics ?scene[^\\n]{0,40}(?:not found|missing|does not exist)"
+   ],
+   "summary": "There is no Physics Scene prim, so physics settings (gravity, solver) are missing.",
+   "what_happened": "A UsdPhysics.Scene prim holds gravity and solver settings. Kit adds a default one in many cases, but scripts and some tools expect one to be present explicitly.",
+   "likely_causes": [
+    "The stage was created from a script without a PhysicsScene.",
+    "The PhysicsScene prim was deleted."
+   ],
+   "how_to_fix": [
+    "Add one: UsdPhysics.Scene.Define(stage, '/World/PhysicsScene').",
+    "In the UI: Create > Physics > Physics Scene."
+   ],
+   "example_fix": "from pxr import UsdPhysics, Gf\nscene = UsdPhysics.Scene.Define(stage, \"/World/PhysicsScene\")\nscene.CreateGravityDirectionAttr().Set(Gf.Vec3f(0, 0, -1))\nscene.CreateGravityMagnitudeAttr().Set(9.81)",
+   "docs_query": "UsdPhysics Scene gravity"
+  },
+  {
+   "kind": "simulation_view_invalidated",
+   "category": "physics",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "[Ss]imulation view (?:object )?is invalidated",
+    "simulation view[^\\n]{0,60}(?:invalid|expired|not valid)"
+   ],
+   "summary": "The physics simulation view you are using was invalidated (usually because the simulation stopped or the stage changed).",
+   "what_happened": "Isaac Sim's tensor/physics views are created for one running simulation. Stopping the timeline, resetting, opening another stage, or adding/removing physics prims destroys them; using the old view afterwards fails.",
+   "likely_causes": [
+    "Pressing Stop (or calling world.stop()) and then using an old Articulation/RigidPrim view.",
+    "Adding or deleting physics prims while the simulation runs.",
+    "Opening a new stage but keeping objects from the old one."
+   ],
+   "how_to_fix": [
+    "After a stop or a stage change, call world.reset() (Script Editor: await world.reset_async()) and re-create or re-initialize your views.",
+    "Make structural changes (add/remove prims, apply physics APIs) while the simulation is stopped."
+   ],
+   "example_fix": "world.stop()\n# ... make structural changes here ...\nworld.reset()            # rebuilds the physics views\nrobot.initialize()       # re-initialize objects created before the reset",
+   "docs_query": "simulation view invalidated reset initialize"
+  },
+  {
+   "kind": "simulation_running_edit",
+   "category": "physics",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "(?:not (?:supported|allowed)|cannot|can't|ignored|unsupported|unable)[^\\n]{0,120}(?:while|during) (?:the )?(?:simulation|sim|play(?:back)?|timeline)\\b",
+    "(?:while|during) (?:the )?(?:simulation|timeline) (?:is )?(?:running|playing)[^\\n]{0,120}(?:not (?:supported|allowed)|cannot|can't|ignored|unsupported)",
+    "stop the (?:simulation|timeline) (?:before|first)"
+   ],
+   "summary": "You changed something that physics does not allow while the simulation is playing.",
+   "what_happened": "While the timeline plays, PhysX owns the physics objects. Some edits (adding/removing rigid bodies, colliders, joints, changing physics schema or the scene) cannot be applied live; PhysX ignores them or needs a restart.",
+   "likely_causes": [
+    "Running a script that adds/removes physics prims or APIs while Play is active.",
+    "Editing collision or joint settings during simulation."
+   ],
+   "how_to_fix": [
+    "Press Stop (or timeline.stop()), make the change, then press Play again.",
+    "In scripts, check first: omni.timeline.get_timeline_interface().is_playing().",
+    "For things that must change during play (forces, velocities, joint targets) use the physics/Isaac APIs made for that."
+   ],
+   "example_fix": "import omni.timeline\ntimeline = omni.timeline.get_timeline_interface()\nif timeline.is_playing():\n    timeline.stop()       # make structural physics edits while stopped\n# ... edit physics prims ...\ntimeline.play()",
+   "docs_query": "timeline stop play simulation running physics"
+  },
+  {
+   "kind": "name_error_missing_import",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "name '(?P<name>Usd|Sdf|Gf|Vt|Tf|Kind|Ar|Pcp|Plug|UsdGeom|UsdShade|UsdLux|UsdPhysics|PhysxSchema|UsdSkel|UsdUtils|UsdSemantics|omni|carb|asyncio|math|np|numpy|os|sys|json|random|time)' is not defined"
+   ],
+   "summary": "'{{name}}' is not defined because the module was never imported in this script.",
+   "what_happened": "Python only knows names you create or import. '{{name}}' is a module (or a common alias for one), so it must be imported first. Each Script Editor run should include its own imports.",
+   "likely_causes": [
+    "The import line is missing at the top of the script.",
+    "The import was in a different Script Editor tab or an earlier run that you did not re-run."
+   ],
+   "how_to_fix": [
+    "Add the import at the top: e.g. 'from pxr import Usd, UsdGeom, Sdf, Gf' or 'import omni.usd'.",
+    "Keep imports at the top of every script you run."
+   ],
+   "example_fix": "from pxr import Usd, UsdGeom, Sdf, Gf   # USD modules\nimport omni.usd                           # Kit's USD context\nimport numpy as np                        # if you use np",
+   "docs_query": "",
+   "locate": [
+    "name"
+   ]
+  },
+  {
+   "kind": "unbound_local_error",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "\\bUnboundLocalError\\b",
+    "cannot access local variable '(?P<name>\\w{1,80})'",
+    "local variable '(?P<name>\\w{1,80})' referenced before assignment"
+   ],
+   "summary": "The variable '{{name}}' was used inside a function before it got a value there.",
+   "what_happened": "If a function assigns to a variable anywhere, Python treats it as local to that function everywhere in it. Reading it before that assignment - or when the assignment is inside an if that did not run - fails, even if a global with the same name exists.",
+   "likely_causes": [
+    "Assigning to a global variable inside a function without 'global name'.",
+    "The variable is only set inside an if/for/try block that did not run."
+   ],
+   "how_to_fix": [
+    "Give the variable a starting value at the top of the function (e.g. name = None).",
+    "If you mean the global variable, add 'global name' at the start of the function - or better, pass it as a parameter and return the new value."
+   ],
+   "example_fix": "count = 0\n\ndef add_cube():\n    global count        # use the module-level variable\n    count = count + 1",
+   "docs_query": "",
+   "locate": [
+    "name"
+   ]
+  },
+  {
+   "kind": "name_error",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "name '(?P<name>[^'\\n]{1,80})' is not defined",
+    "\\bNameError\\b"
+   ],
+   "summary": "Python does not know the name '{{name}}' at that point in the code.",
+   "what_happened": "A NameError means a variable, function or module is used before it was created or imported - or the name is spelt differently from where it was created. Python names are case sensitive.",
+   "likely_causes": [
+    "A typo or different capitalisation (stage vs Stage).",
+    "Using a variable before the line that creates it, or from another Script Editor run/tab.",
+    "A missing import."
+   ],
+   "how_to_fix": [
+    "Search the script for where '{{name}}' is created and check the spelling matches exactly.",
+    "Make sure that line runs before the line that uses it.",
+    "If it is a module or class, import it at the top."
+   ],
+   "example_fix": "stage = omni.usd.get_context().get_stage()   # create the variable first\nprint(stage.GetRootLayer().identifier)        # then use it, spelt the same way",
+   "docs_query": "",
+   "locate": [
+    "name"
+   ]
+  },
+  {
+   "kind": "missing_call_parentheses",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "'(?P<type>method|builtin_function_or_method|function|instancemethod)' object (?:is not subscriptable|is not iterable|has no attribute '(?P<attr>\\w{1,80})')",
+    "unsupported operand type\\(s\\) for [^\\n]{1,6}: '(?:method|builtin_function_or_method|function)'"
+   ],
+   "summary": "You used a function/method without calling it - the () brackets are probably missing.",
+   "what_happened": "In Python, prim.GetName is the method itself and prim.GetName() is its result. Without the brackets you are working with the method object, which cannot be indexed, looped over or used like the value.",
+   "likely_causes": [
+    "Writing prim.GetChildren instead of prim.GetChildren().",
+    "Writing stage.GetPrimAtPath['/World'] instead of stage.GetPrimAtPath('/World')."
+   ],
+   "how_to_fix": [
+    "Add () after the method name, with any arguments inside the brackets (not square brackets)."
+   ],
+   "example_fix": "# Bad:  for child in prim.GetChildren:\nfor child in prim.GetChildren():\n    print(child.GetName())",
+   "docs_query": ""
+  },
+  {
+   "kind": "type_error_not_callable",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "'(?P<type>[\\w.]{1,80})' object is not callable"
+   ],
+   "summary": "You used () on something that is a value ({{type}}), not a function.",
+   "what_happened": "Brackets after a name call it. If that name holds a value (a string, number, list, prim...) instead of a function, Python cannot call it. Often a variable accidentally has the same name as a function.",
+   "likely_causes": [
+    "A variable that overwrote a function name (e.g. str = 'x' then str(5)).",
+    "An attribute that is a value used like a method, e.g. layer.identifier() instead of layer.identifier.",
+    "A missing operator, like 2(3) instead of 2*(3)."
+   ],
+   "how_to_fix": [
+    "Check what the name holds: print(type(name)).",
+    "Rename variables that clash with function names.",
+    "Remove the () when the thing is a property, not a method."
+   ],
+   "example_fix": "layer = stage.GetRootLayer()\nprint(layer.identifier)   # property: no ()\nprint(layer.GetDisplayName())  # method: needs ()",
+   "docs_query": ""
+  },
+  {
+   "kind": "type_error_arg_count",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "(?P<func>[\\w.<>]{1,120})\\(\\) takes (?P<expected>\\d+) positional arguments? but (?P<given>\\d+) (?:was|were) given",
+    "(?P<func>[\\w.<>]{1,120})\\(\\) missing (?P<count>\\d+) required (?:positional |keyword-only )?arguments?:? ?(?P<arg>[^\\n]{0,160})",
+    "(?P<func>[\\w.<>]{1,120})\\(\\) got an unexpected keyword argument '(?P<arg>\\w{1,80})'",
+    "(?P<func>[\\w.<>]{1,120})\\(\\) takes no (?:keyword )?arguments",
+    "got multiple values for argument '(?P<arg>\\w{1,80})'"
+   ],
+   "summary": "{{func}}() was called with the wrong number or names of arguments.",
+   "what_happened": "Every function expects a certain set of arguments. Passing too many, too few, or a keyword name the function does not have raises this TypeError before the function runs. Methods also receive 'self' automatically, which is why counts can look one higher than what you typed.",
+   "likely_causes": [
+    "Missing or extra arguments in the call.",
+    "A misspelt keyword argument.",
+    "A method defined without 'self', or a method called on the class instead of an object."
+   ],
+   "how_to_fix": [
+    "Look up the function's parameters (help(func) or the docs) and match them.",
+    "Check spelling of keyword arguments.",
+    "In your own classes, make 'self' the first parameter of every method."
+   ],
+   "example_fix": "import inspect\nprint(inspect.signature(my_function))   # shows the parameters it expects\n\nclass Spinner:\n    def spin(self, speed):   # 'self' first\n        ...",
+   "docs_query": "",
+   "locate": [
+    "func",
+    "arg"
+   ]
+  },
+  {
+   "kind": "none_value_used",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "unsupported operand type\\(s\\) for [^\\n]{1,6}: '[\\w.]{1,40}' and 'NoneType'",
+    "unsupported operand type\\(s\\) for [^\\n]{1,6}: 'NoneType'",
+    "'NoneType' object is not (?:subscriptable|iterable)",
+    "cannot unpack non-iterable NoneType object",
+    "argument of type 'NoneType' is not iterable"
+   ],
+   "summary": "A value you used is None (empty) - often attr.Get() returned None because the attribute has no value.",
+   "what_happened": "None means 'nothing'. Functions that find nothing often return None: attr.Get() on an attribute with no authored or default value, dict.get() on a missing key, or a function you wrote that forgot 'return'. Doing maths, indexing or looping on None fails.",
+   "likely_causes": [
+    "attr.Get() returned None (attribute has no value, or it does not exist).",
+    "A function without a 'return' statement (it returns None).",
+    "A lookup that found nothing (dict.get, GetPrimAtPath on a missing prim's attribute...)."
+   ],
+   "how_to_fix": [
+    "Print the value just before the failing line to see it is None.",
+    "Check before using it: if value is None: ... (set a default or fix the source).",
+    "For attributes, check attr.HasValue() / attr.IsValid(), or Set a value first."
+   ],
+   "example_fix": "value = prim.GetAttribute(\"size\").Get()\nif value is None:\n    value = 1.0    # no authored value - pick a default\nprint(value * 2)",
+   "docs_query": "Attribute Get HasValue"
+  },
+  {
+   "kind": "module_attribute_error",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "module '(?P<module>[\\w.]{1,120})' has no attribute '(?P<attr>\\w{1,80})'"
+   ],
+   "summary": "The module '{{module}}' has nothing called '{{attr}}'.",
+   "what_happened": "You asked a module for a function/class it does not contain. With USD this usually means the class lives in another module (UsdGeom.Cube, not Usd.Cube), the name is misspelt, or it changed in this version.",
+   "likely_causes": [
+    "Using the wrong pxr module (Usd vs UsdGeom vs UsdShade vs UsdPhysics).",
+    "A typo or wrong case in the name.",
+    "A file of yours with the same name as the module (e.g. omni.py, usd.py) hides the real one.",
+    "The function was renamed or removed in this version."
+   ],
+   "how_to_fix": [
+    "Print the available names: print([n for n in dir(module) if '{{attr}}'.lower() in n.lower()]).",
+    "Check the API docs for which module defines it.",
+    "Rename any of your own files that shadow a library name."
+   ],
+   "example_fix": "from pxr import UsdGeom\ncube = UsdGeom.Cube.Define(stage, \"/World/Cube\")   # Cube is in UsdGeom, not Usd",
+   "docs_query": "",
+   "locate": [
+    "attr"
+   ]
+  },
+  {
+   "kind": "key_error",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "\\bKeyError\\b:? ?(?P<key>[^\\n]{0,80})"
+   ],
+   "summary": "A dictionary (or similar) has no entry for the key {{key}}.",
+   "what_happened": "d[key] needs the key to exist. Keys are exact: a different spelling, case, or type (1 vs '1') is a different key. Settings and config dictionaries often fail this way.",
+   "likely_causes": [
+    "The key is misspelt or uses different case.",
+    "The entry was never added, or was removed.",
+    "Using a string key where an int was stored (or the reverse)."
+   ],
+   "how_to_fix": [
+    "Print the keys that exist: print(list(d.keys())).",
+    "Use d.get(key, default) when the key may be missing.",
+    "Check with 'if key in d:' before reading."
+   ],
+   "example_fix": "settings = {\"speed\": 2.0}\nprint(list(settings.keys()))\nspeed = settings.get(\"sped\", 1.0)   # .get() gives a default instead of KeyError",
+   "docs_query": "",
+   "locate": [
+    "key"
+   ]
+  },
+  {
+   "kind": "index_error",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "\\bIndexError\\b",
+    "index out of range",
+    "index \\d+ is out of bounds"
+   ],
+   "summary": "You asked for an item position that does not exist in the list/array.",
+   "what_happened": "Lists start at index 0, so a list of 3 items has indexes 0, 1, 2. Asking for [3], or for [0] of an empty list (for example when GetChildren() or a query found nothing), raises IndexError.",
+   "likely_causes": [
+    "The list is shorter than expected - often empty because nothing matched.",
+    "Counting from 1 instead of 0.",
+    "Looping with range(len(x) + 1)."
+   ],
+   "how_to_fix": [
+    "Print len(the_list) before indexing.",
+    "Check it is not empty: if items: first = items[0].",
+    "Loop over items directly (for item in items:) instead of by index."
+   ],
+   "example_fix": "children = prim.GetChildren()\nif children:                 # empty list -> skip\n    first = children[0]\nelse:\n    print(\"no children under\", prim.GetPath())",
+   "docs_query": ""
+  },
+  {
+   "kind": "zero_division",
+   "category": "python",
+   "severity": "error",
+   "generic": false,
+   "match": [
+    "\\bZeroDivisionError\\b",
+    "division by zero",
+    "divided by zero"
+   ],
+   "summary": "The code divided a number by zero.",
+   "what_happened": "Dividing by 0 has no answer, so Python raises ZeroDivisionError. The 0 often comes from an empty list (count 0), a time step of 0, or an attribute that is 0 by default.",
+   "likely_causes": [
+    "Dividing by len(...) of an empty list.",
+    "A time delta or frame rate that is 0 on the first frame.",
+    "A scale or size attribute that is 0."
+   ],
+   "how_to_fix": [
+    "Print the divisor before the line.",
+    "Guard it: if divisor != 0: ... else use a default.",
+    "Find why the value is 0 (empty selection, first frame...)."
+   ],
+   "example_fix": "count = len(prims)\naverage = total / count if count else 0.0   # avoid dividing by zero",
+   "docs_query": ""
+  },
+  {
+   "kind": "type_error",
+   "category": "python",
+   "severity": "error",
+   "generic": true,
+   "match": [
+    "\\bTypeError\\b:? ?(?P<message>[^\\n]{0,200})"
+   ],
+   "summary": "A value of the wrong type was used (TypeError).",
+   "what_happened": "Python got a value whose type does not fit the operation - for example adding a string to a number, or passing a list where a single value is expected.",
+   "likely_causes": [
+    "Mixing strings and numbers (e.g. 'Cube' + 1).",
+    "Passing the wrong kind of object to a function.",
+    "A value that is None."
+   ],
+   "how_to_fix": [
+    "Print type(value) for each value used on the failing line.",
+    "Convert explicitly: str(x), float(x), Gf.Vec3f(x, y, z).",
+    "Read the end of the message: it names the types involved."
+   ],
+   "example_fix": "name = \"Cube_\" + str(1)   # convert the number to text before joining",
+   "docs_query": ""
+  },
+  {
+   "kind": "attribute_error_none",
+   "category": "python",
+   "severity": "error",
+   "generic": true,
+   "match": [
+    "'NoneType' object has no attribute '(?P<attr>\\w{1,80})'"
+   ],
+   "summary": "Something you expected to be an object is None, so it has no '{{attr}}'.",
+   "what_happened": "None means 'nothing was returned'. The variable before .{{attr}} holds None - usually because a function that looks something up found nothing, or a function you wrote has no 'return'.",
+   "likely_causes": [
+    "A lookup returned None (no stage open, no selection, nothing found).",
+    "Your own function forgot to 'return' its result.",
+    "A method that changes something in place returns None and its result was stored."
+   ],
+   "how_to_fix": [
+    "Print the variable just before the failing line.",
+    "Find where it was set and check that call really returns something.",
+    "Add a check: if obj is None: ... before using it."
+   ],
+   "example_fix": "obj = find_thing()\nif obj is None:\n    raise RuntimeError(\"find_thing() returned None - check its input\")\nobj.{{attr}}",
+   "docs_query": "",
+   "locate": [
+    "attr"
+   ]
+  },
+  {
+   "kind": "attribute_error",
+   "category": "python",
+   "severity": "error",
+   "generic": true,
+   "match": [
+    "'(?P<type>[\\w.]{1,80})' object has no attribute '(?P<attr>\\w{1,80})'",
+    "\\bAttributeError\\b"
+   ],
+   "summary": "A {{type}} object does not have anything called '{{attr}}'.",
+   "what_happened": "You asked an object for a method/property it does not have. Usually the name is misspelt, the object is a different type than you think, or the method belongs to a schema class (e.g. UsdGeom.Mesh(prim).GetPointsAttr()).",
+   "likely_causes": [
+    "A typo or wrong case (GetAttribute vs getAttribute).",
+    "The object is a different type (a Usd.Prim, not a UsdGeom.Mesh).",
+    "The method comes from a different API or version."
+   ],
+   "how_to_fix": [
+    "Print type(obj) and dir(obj) to see what is available.",
+    "Wrap the prim in the right schema: UsdGeom.Mesh(prim), UsdGeom.Xformable(prim).",
+    "Check the spelling against the docs."
+   ],
+   "example_fix": "mesh = UsdGeom.Mesh(prim)          # schema wrapper has the mesh-specific methods\npoints = mesh.GetPointsAttr().Get()",
+   "docs_query": "",
+   "locate": [
+    "attr"
+   ]
+  },
+  {
+   "kind": "value_error",
+   "category": "python",
+   "severity": "error",
+   "generic": true,
+   "match": [
+    "\\bValueError\\b:? ?(?P<message>[^\\n]{0,200})"
+   ],
+   "summary": "A function got a value of the right type but with an unusable content (ValueError).",
+   "what_happened": "ValueError means the type was fine but the value was not - like float('abc'), or unpacking 3 items into 2 variables.",
+   "likely_causes": [
+    "Converting text that is not a number.",
+    "Unpacking a list with a different number of items.",
+    "A value outside the allowed range."
+   ],
+   "how_to_fix": [
+    "Print the value on the failing line.",
+    "Read the end of the message - it usually names the bad value.",
+    "Validate input before using it."
+   ],
+   "example_fix": null,
+   "docs_query": ""
+  },
+  {
+   "kind": "usd_tf_error",
+   "category": "usd",
+   "severity": "error",
+   "generic": true,
+   "match": [
+    "Tf\\.ErrorException",
+    "\\bCoding Error\\b",
+    "\\bRuntime Error\\b",
+    "Error in '[^'\\n]{1,200}' at line \\d+",
+    "TF_(?:CODING_|RUNTIME_)?ERROR",
+    "^\\s*Warning: in [\\w:]{1,120} at line \\d+"
+   ],
+   "summary": "USD (its C++ core, 'Tf') reported an error.",
+   "what_happened": "USD's C++ libraries report problems through Tf errors. In Python these show up as 'Error in ... at line N in file ...cpp' messages or a pxr.Tf.ErrorException. The C++ file and line are USD's own code; the useful part is the quoted message at the end, and the Python line of yours that triggered it.",
+   "likely_causes": [
+    "Invalid input to a USD call (bad path, invalid prim/attribute, wrong type).",
+    "Editing something USD does not allow (instance proxies, locked layers)."
+   ],
+   "how_to_fix": [
+    "Read the quoted text at the end of the message - that is the real reason.",
+    "Find your own line in the traceback (not the .cpp file) and check its inputs.",
+    "Validate prims/attributes with IsValid() before using them."
+   ],
+   "example_fix": null,
+   "docs_query": "USD Tf error"
+  },
+  {
+   "kind": "physx_error",
+   "category": "physics",
+   "severity": "error",
+   "generic": true,
+   "match": [
+    "\\[omni\\.physx[\\w.]{0,60}\\]",
+    "PhysicsUSD:",
+    "\\bPhysX (?:error|warning)",
+    "\\bPx(?:Scene|RigidDynamic|RigidStatic|Articulation)\\w*"
+   ],
+   "summary": "PhysX reported a problem with the physics setup of a prim.",
+   "what_happened": "PhysX checks the physics schemas on your prims (rigid bodies, colliders, joints, materials) when the simulation starts or changes. The message names the prim and what it did not like.",
+   "likely_causes": [
+    "Missing or mismatched physics APIs (collider, rigid body, mass).",
+    "Invalid joint or articulation setup.",
+    "Edits during simulation."
+   ],
+   "how_to_fix": [
+    "Read the prim path in the message and inspect that prim's Physics properties.",
+    "Stop the simulation, fix the prim, and press Play again.",
+    "Search the physics docs for the exact message."
+   ],
+   "example_fix": null,
+   "docs_query": "PhysX physics schema rigid body"
+  },
+  {
+   "kind": "python_exception",
+   "category": "python",
+   "severity": "error",
+   "generic": true,
+   "match": [
+    "^\\s*(?:[A-Za-z_]\\w*\\.){0,6}(?P<exception>[A-Za-z_]\\w*(?:Error|Exception))\\b:? ?(?P<message>[^\\n]{0,200})"
+   ],
+   "summary": "Python raised {{exception}}.",
+   "what_happened": "An exception stopped the script. The last line of the traceback names the exception type and the reason; the 'File ..., line N' lines above it show where it happened, with your own file usually last.",
+   "likely_causes": [
+    "Invalid input to a function, or a situation the code did not expect."
+   ],
+   "how_to_fix": [
+    "Read the last line of the traceback for the reason.",
+    "Go to the last 'File ..., line N' that is your own script and inspect the values used there.",
+    "Search the docs for the exception name and message."
+   ],
+   "example_fix": null,
+   "docs_query": ""
+  },
+  {
+   "kind": "kit_error",
+   "category": "kit",
+   "severity": "error",
+   "generic": true,
+   "match": [
+    "\\[Error\\]",
+    "carb\\.log_error"
+   ],
+   "summary": "The Kit app logged an error.",
+   "what_happened": "Kit apps (USD Composer, Isaac Sim) log messages as [Error] [extension.name] text. The part in the second brackets is the extension that reported it; the text after it is the reason.",
+   "likely_causes": [
+    "An extension hit a problem with the current stage, settings or your script's inputs."
+   ],
+   "how_to_fix": [
+    "Note the extension name in brackets and read the message after it.",
+    "Look for the first [Error] after your action - later ones are often consequences.",
+    "Search the Kit docs for that extension and message."
+   ],
+   "example_fix": null,
+   "docs_query": ""
+  },
+  {
+   "kind": "kit_warning",
+   "category": "kit",
+   "severity": "warning",
+   "generic": true,
+   "match": [
+    "\\[Warning\\]",
+    "\\bcarb\\b[^\\n]{0,80}warn",
+    "^\\s*Warning:",
+    "\\b\\w*Warning:"
+   ],
+   "summary": "The app printed a warning - something unusual happened, but it is usually not fatal.",
+   "what_happened": "Warnings tell you about something that might be a problem (a deprecated API, a fallback, a missing optional setting). Your script usually keeps running. Fix warnings when the behaviour you see is wrong.",
+   "likely_causes": [
+    "Deprecated API use, an optional plugin/setting missing, or a fallback being used."
+   ],
+   "how_to_fix": [
+    "Read the extension name in brackets and the message.",
+    "If things work as expected you can usually ignore it; if not, search the docs for the message."
+   ],
+   "example_fix": null,
+   "docs_query": ""
+  }
+ ]
+}

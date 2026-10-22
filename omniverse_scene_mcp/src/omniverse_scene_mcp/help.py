@@ -249,6 +249,37 @@ TOOL_CATALOG: dict[str, list[dict[str, Any]]] = {
               'usd_playground_compose(layers={"root.usda": "#usda 1.0\\ndef \\"A\\" {}"}, root="root.usda", '
               'queries=["/A"])', False, False),
     ],
+    "Learning Python & homework": [
+        _tool("python_show", "Show the OpenUSD Python for one task (move a prim, add a light, bind a material, ...) "
+              "with every line explained; nothing runs.",
+              'python_show(action="move", args={"prim_path": "/World/Cube", "translate": [0, 0, 1]})', False, False),
+        _tool("python_topics", "List every task python_show can explain, grouped, with the arguments each one takes.",
+              "python_topics()", False, False),
+        _tool("python_practice_list", "List the Python practice exercises in order, which ones you passed and the "
+              "next one to do.", 'python_practice_list(level="beginner")', False, False),
+        _tool("python_practice_get", "One Python exercise: goal, starter code, hints and checks; with no id it picks "
+              "your next exercise.", 'python_practice_get(exercise_id="py01-define-xform")', False, False),
+        _tool("python_practice_run", "Run your answer on a throwaway copy of the exercise scene, check it, and save "
+              "the result to your exam progress.",
+              """python_practice_run(exercise_id="py01-define-xform", code="UsdGeom.Xform.Define(stage, '/World')")""",
+              True, False),
+        _tool("explain_error", "Explain a pasted traceback or Kit / USD / PhysX error in plain English, with fix "
+              "steps and related docs; nothing in it is run.",
+              """explain_error(text="AttributeError: 'NoneType' object has no attribute 'GetAttribute'")""", False,
+              False),
+        _tool("assignment_list", "List the homework assignments the checker knows.", "assignment_list()", False, False),
+        _tool("assignment_check", "Check your homework scene (the live stage or a saved file) against the class "
+              "rubric: what passes, what is missing and the next step.",
+              'assignment_check(assignment_id="isaac_session02_warehouse")', False, False),
+        _tool("scene_explain", "Explain your scene in plain words: groups, geometry, lights, cameras, materials, "
+              "physics and layers, with a glossary.", 'scene_explain(focus_path="/World")', False, False),
+        _tool("class_sessions", "List the mentorship class sessions found in your class folder and revision notes.",
+              "class_sessions()", False, False),
+        _tool("class_ask", "What did the teacher say about something? The best passages from the class subtitles "
+              "and notes, by session.", 'class_ask(question="how do I add a ground plane", session=2)', False, False),
+        _tool("class_search", "Keyword search of the class subtitles, Gemini notes and revision notes.",
+              'class_search(query="xform", top_k=5)', False, False),
+    ],
     "Health & connection": [
         _tool("router_dispatch", "The front door: send any sentence and the router picks the right tool; scene edits "
               "by exact path apply unless dry_run=True.",
@@ -283,6 +314,9 @@ GROUP_ABOUT = {
     "Knowledge & docs": "Ask questions and search docs; USD, Kit, omni.ui and Isaac Sim answers work offline.",
     "Exam prep": "NCP-OUSD daily lessons, practice questions, timed mock exams and composition puzzles.",
     "Learning": "Lessons, drills, quizzes and a USD playground that never touches your scenes.",
+    "Learning Python & homework": "See the Python behind every action, practise it on throwaway scenes, decode "
+                                  "errors, check your homework, tour your scene and search your class notes; all "
+                                  "read-only except saving practice results.",
     "Health & connection": "Is everything connected, and which app is the router talking to?",
 }
 
@@ -315,6 +349,14 @@ GROUP_PHRASES = {
     "Knowledge & docs": ["what is a payload in USD?", "how do I subscribe to stage events in Kit?"],
     "Exam prep": ["start day 1", "next lesson", "mock exam", "show my dashboard"],
     "Learning": ["teach me schemas", "quiz me on prims", "practice transforms with me"],
+    "Learning Python & homework": [
+        "show me the python for moving a cube",
+        "give me a python exercise",
+        "explain this error: NameError: name 'stage' is not defined",
+        "check my homework",
+        "explain my scene",
+        "what did the teacher say about ground plane",
+    ],
     "Health & connection": ["help", "status"],
 }
 
@@ -351,6 +393,10 @@ _GROUP_ALIASES = {
                   "daily lesson", "daily lessons", "puzzle", "puzzles", "progress", "dashboard"),
     "Learning": ("learn", "learning", "lesson", "lessons", "tutor", "practice", "drill", "quiz", "quizzes", "study",
                  "playground", "cheat sheet", "cheatsheet", "roadmap"),
+    "Learning Python & homework": ("python", "learning python", "code", "snippet", "snippets", "script", "exercise",
+                                   "exercises", "python practice", "error", "errors", "traceback", "homework",
+                                   "assignment", "assignments", "explain my scene", "scene tour", "tour", "class",
+                                   "class notes", "teacher", "sessions"),
     "Health & connection": ("health", "connection", "connect", "connected", "status", "bridge", "bridges", "router",
                             "setup", "troubleshoot", "troubleshooting", "targets", "scene target", "ports"),
 }

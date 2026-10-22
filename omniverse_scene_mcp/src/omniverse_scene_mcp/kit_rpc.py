@@ -7,7 +7,8 @@ which holds the insight time budget, is imported lazily). Every mutating method 
 dry_run=false; for the tier3-1 edit and undo methods and the tier4-1 add_reference and physics methods a missing or
 malformed dry_run is also a dry run. The tier4-1 viewport capture and simulation methods have no dry_run: capture only
 reads the viewport (it writes a new PNG), and simulation play/pause/stop/step change simulation state, not authored
-scene data.
+scene data. The tier5-1 homework methods (assignment_check, scene_tour) only read the open stage, under the same
+cooperative time budget as insight.
 
 The extended server's HTTP handler is wrapped by guard_handler_class (localhost CSRF / DNS-rebinding guard): browser
 requests (an Origin or Sec-Fetch-* header), POSTs whose Content-Type is not application/json, requests whose Host is
@@ -30,6 +31,7 @@ from .bridge import (
     BASIC_RPC_METHODS,
     CAPTURE_RPC_METHODS,
     EDIT_RPC_METHODS,
+    HOMEWORK_RPC_METHODS,
     INSIGHT_QUERIES,
     LIVE_RPC_METHODS,
     PHYSICS_RPC_METHODS,
@@ -75,6 +77,11 @@ INSIGHT_MAX_BUDGET_MS = 10000.0
 _CALLER_WAIT_S = 15.0
 _RESULT_MARGIN_S = 2.0
 _MIN_BUDGET_MS = 1.0
+# Read-only methods that get the queue-aware time budget (see _dispatch): insight and the tier5-1 homework methods.
+_BUDGETED_METHODS = ("insight", *HOMEWORK_RPC_METHODS)
+_TOUR_MAX_DEPTH = 50
+_TOUR_MAX_PRIMS = 20_000
+_DEFAULT_ASSIGNMENT = "isaac_session02_warehouse"
 
 Handler = Callable[[Any, dict[str, Any]], dict[str, Any]]
 
@@ -126,8 +133,8 @@ def make_extended_server_class(base_cls: type) -> type:
                 params = {}
             if not isinstance(params, dict):
                 raise ValueError(f"params for '{method}' must be a JSON object")
-            if method == "insight":  # the time budget also accounts for how long the request waited in the queue
-                return {"ok": True, "result": _insight(self._bridge, params, queued_at=queued)}
+            if method in _BUDGETED_METHODS:  # the time budget also accounts for how long the request waited in the queue
+                return {"ok": True, "result": handler(self._bridge, params, queued_at=queued)}
             return {"ok": True, "result": handler(self._bridge, params)}
 
     ExtendedLiveSceneControlServer.__name__ = f"Extended{base_cls.__name__}"
@@ -252,6 +259,7 @@ def _capabilities(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
             "physics_methods": list(PHYSICS_RPC_METHODS),
             "capture_methods": list(CAPTURE_RPC_METHODS),
             "simulation_methods": list(SIMULATION_RPC_METHODS),
+            "homework_methods": list(HOMEWORK_RPC_METHODS),
             "dry_run_default": True,
         }
     )
@@ -279,16 +287,21 @@ def _insight(bridge: Any, params: dict[str, Any], queued_at: Any = None) -> dict
     runner = getattr(bridge, "insight", None)
     if not callable(runner):
         return _bridge_lacks("insight", bridge)
+    return _run_budgeted(lambda: runner(name, args), requested, queued_at)
+
+
+def _run_budgeted(call: Callable[[], Any], requested: float, queued_at: Any) -> Any:
+    """Run one read-only bridge call under the ambient time budget, cut to what is left of the caller's wait."""
     waited_s = max(0.0, time.monotonic() - queued_at) if isinstance(queued_at, float) else 0.0
     left_ms = (_CALLER_WAIT_S - _RESULT_MARGIN_S - waited_s) * 1000.0
     budget_ms = max(_MIN_BUDGET_MS, min(requested, INSIGHT_MAX_BUDGET_MS, left_ms))
     budget = _time_budget(budget_ms)
     started = time.perf_counter()
     if budget is None:
-        result = runner(name, args)
+        result = call()
     else:
-        with budget:  # the ambient budget usd_insight/usd_validate pick up inside the bridge's query
-            result = runner(name, args)
+        with budget:  # the ambient budget usd_insight/usd_validate/scene_tour pick up inside the bridge's call
+            result = call()
     timing = {
         "budget_ms": round(budget_ms, 1),
         "requested_budget_ms": round(requested, 1),
@@ -601,6 +614,35 @@ def _remove_physics(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
     return _with_warning(result, warning)
 
 
+# --- RPC tier5-1: read-only homework check and scene tour (same time budget as insight) ----------------------
+
+
+def _assignment_check(bridge: Any, params: dict[str, Any], queued_at: Any = None) -> dict[str, Any]:
+    """Check the open stage against a homework rubric (assignments.check_assignment); never writes anything."""
+    _check_params("assignment_check", params, ("assignment_id", "budget_ms"))
+    runner = getattr(bridge, "assignment_check", None)
+    if not callable(runner):
+        return _bridge_lacks("assignment_check", bridge)
+    assignment_id = _word(params, "assignment_id") or _DEFAULT_ASSIGNMENT
+    return _run_budgeted(lambda: runner(assignment_id), _budget_ms(params.get("budget_ms")), queued_at)
+
+
+def _scene_tour(bridge: Any, params: dict[str, Any], queued_at: Any = None) -> dict[str, Any]:
+    """A beginner tour of the open stage (scene_tour.scene_tour); never writes anything."""
+    _check_params("scene_tour", params, ("focus_path", "depth", "max_prims", "budget_ms"))
+    runner = getattr(bridge, "scene_tour", None)
+    if not callable(runner):
+        return _bridge_lacks("scene_tour", bridge)
+    focus_path = _path(params, "focus_path", required=False)
+    depth = _whole(params, "depth", 0, _TOUR_MAX_DEPTH)
+    max_prims = _whole(params, "max_prims", 1, _TOUR_MAX_PRIMS)
+    return _run_budgeted(
+        lambda: runner(focus_path, depth=3 if depth is None else depth, max_prims=400 if max_prims is None else max_prims),
+        _budget_ms(params.get("budget_ms")),
+        queued_at,
+    )
+
+
 def _capture_viewport(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
     _check_params("capture_viewport", params, ("output_dir", "width", "height"))
     capture = getattr(bridge, "capture_viewport", None)
@@ -669,6 +711,8 @@ _HANDLERS: dict[str, Handler] = {
     "simulation_pause": _simulation("simulation_pause"),
     "simulation_stop": _simulation("simulation_stop"),
     "simulation_step": _simulation_step,
+    "assignment_check": _assignment_check,
+    "scene_tour": _scene_tour,
 }
 
 

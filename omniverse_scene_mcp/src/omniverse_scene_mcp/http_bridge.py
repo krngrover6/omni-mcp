@@ -388,6 +388,17 @@ class HttpSceneBridge:
     def simulation_step(self, frames: int = 1) -> dict[str, Any]:
         return self._rpc_optional("simulation_step", {"frames": frames}, timeout=LIVE_TIMEOUT)
 
+    # --- RPC tier5-1: read-only homework check and scene tour on the live stage --------------------------------
+
+    def assignment_check(self, assignment_id: str = "isaac_session02_warehouse") -> dict[str, Any]:
+        """Check the open stage against a homework rubric (read-only)."""
+        return self._rpc_optional("assignment_check", {"assignment_id": assignment_id}, timeout=LIVE_TIMEOUT)
+
+    def scene_tour(self, focus_path: str | None = None, *, depth: int = 3, max_prims: int = 400) -> dict[str, Any]:
+        """A beginner tour of the open stage, or one subtree (read-only)."""
+        params = _without_none(focus_path=focus_path, depth=depth, max_prims=max_prims)
+        return self._rpc_optional("scene_tour", params, timeout=LIVE_TIMEOUT)
+
     def _rpc_optional(
         self, method: str, params: dict[str, Any] | None = None, timeout: float = DEFAULT_TIMEOUT
     ) -> dict[str, Any]:

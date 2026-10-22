@@ -12,11 +12,13 @@ from typing import Any, Callable, Iterable, Sequence
 
 from mcp.server.fastmcp import FastMCP
 
-from . import physics, usd_insight, usd_validate
+from . import assignments, error_explainer, physics, python_links, python_teacher, usd_insight, usd_validate
+from . import scene_tour as scene_tour_module
 from .bridge import (
     ASSET_RPC_METHODS,
     CAPTURE_RPC_METHODS,
     EDIT_RPC_METHODS,
+    HOMEWORK_RPC_METHODS,
     LIVE_RPC_METHODS,
     PHYSICS_RPC_METHODS,
     RPC_VERSION,
@@ -27,7 +29,9 @@ from .exam import bank as exam_bank
 from .exam import blueprint as exam_blueprint
 from .exam import daily as exam_daily
 from .exam import puzzles as exam_puzzles
+from .exam import python_practice
 from .exam import sandbox as exam_sandbox
+from .class_notes import ClassNotes
 from .exam.mock import MockExamError
 from .file_stage import ReadOnlyViolation, SceneFileError, readonly_stage, resolve_scene_file
 from .health import router_health as check_router_health
@@ -381,6 +385,72 @@ def _physics_report_mode(router: OmniverseRouter, prim_path: Any, file: Any, mod
     }
 
 
+def _with_python(payload: Any, show_python: Any, tool: str, **arguments: Any) -> Any:
+    """With show_python=True, attach the matching OpenUSD snippet as payload['python']; never fails the edit."""
+    if show_python is not True or not isinstance(payload, dict):
+        return payload
+    return {**payload, "python": python_links.python_for_tool(tool, arguments)}
+
+
+def _dispatch_python(router: OmniverseRouter, request: str, result: Any) -> dict:
+    """The OpenUSD snippet for a router_dispatch sentence (scene edits only); never raises."""
+    if result.decision.target is not RouteTarget.SCENE:
+        return {"ok": False, "error": "This request is not a scene edit, so there is no matching Python snippet; "
+                "python_show(action, args) or 'show me the python for ...' explains one."}
+    try:
+        parsed = router._parse_scene_command(request)
+        if parsed is None:
+            parsed, _candidates = router._resolve_by_name(request)
+    except Exception as exc:  # noqa: BLE001 - the snippet is a bonus
+        return {"ok": False, "error": f"Could not read the command for the snippet: {type(exc).__name__}: {exc}"}
+    return python_links.python_for_command(dict(parsed) if isinstance(parsed, dict) else None)
+
+
+# The homework check and scene tour read the LIVE stage through the bridge (RPC tier5-1), or a saved file read-only.
+_HOMEWORK_FILE_HINT = (
+    "Pass scene_file='isaacsim-mentorship/session02/main.usda' (a path relative to the workspace, or absolute inside "
+    "it) to check the saved file instead; save the scene first so it has your latest work."
+)
+_TOUR_MAX_DEPTH = 50
+_TOUR_MAX_PRIMS = 20_000
+_HOMEWORK_LABELS = {"assignment_check": "homework check", "scene_tour": "scene tour"}
+
+
+def _homework_live_or_file(router: OmniverseRouter, method: str, live: dict, file_action: Callable[[Any], dict]) -> dict:
+    """A tier5-1 live result, or (bridge too old / fake scene) the live scene's SAVED file read-only, like physics."""
+    if not (live.get("unsupported") or live.get("needs_bridge_update")):
+        return {**live, "mode": "live", "action": method}
+    reason = str(live.get("message") or f"the live bridge cannot run {method}").rstrip(". ")
+    label = _HOMEWORK_LABELS.get(method, method)
+    needs_update = bool(live.get("needs_bridge_update"))
+    fallback = _file_mode(router, None, file_action)
+    payload: dict[str, Any] = {
+        **fallback,
+        "action": method,
+        "live_fallback": {"reason": reason, "needs_bridge_update": needs_update},
+        "needs_bridge_update": needs_update,
+        "suggestion": _HOMEWORK_FILE_HINT,
+    }
+    if needs_update:
+        payload["how_to_enable"] = list(LIVE_ENABLE_STEPS)
+    if fallback.get("ok"):
+        payload["fallback_note"] = f"The live {label} is not available ({reason}), so this read the SAVED file instead."
+    else:
+        payload["saved_file_error"] = fallback.get("message")
+        payload["message"] = (
+            f"The live {label} is not available ({reason}). "
+            + ("Reload the bridge (see how_to_enable), or p" if needs_update else "P")
+            + _HOMEWORK_FILE_HINT[1:]
+        )
+    return payload
+
+
+def _whole_arg(value: Any, label: str, low: int, high: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise ValueError(f"{label} must be a whole number from {low} to {high}")
+    return value
+
+
 def _color_arg(value: Any, label: str) -> tuple[float, ...] | str | None:
     """[r, g, b] numbers, or a color string such as '#ff8800' that the bridge converts."""
     if value is None or (isinstance(value, str) and value.strip()):
@@ -538,10 +608,14 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
     )
 
     @app.tool(name="router_dispatch")
-    async def router_dispatch(request: str, dry_run: bool = False) -> dict:
-        """Route a natural-language or command-style request to the right Omniverse MCP backend."""
+    async def router_dispatch(request: str, dry_run: bool = False, show_python: bool = False) -> dict:
+        """Route a natural-language or command-style request to the right Omniverse MCP backend. show_python=True
+        also returns the OpenUSD Python for a scene edit (result['python'])."""
         result = await router.handle(request, dry_run=dry_run)
-        return {"decision": _decision_dict(result), "payload": result.payload}
+        response = {"decision": _decision_dict(result), "payload": result.payload}
+        if show_python is True:
+            response["python"] = _dispatch_python(router, request, result)
+        return response
 
     @app.tool(name="router_route")
     def router_route(request: str) -> dict:
@@ -663,22 +737,28 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return router._scene.list_children(path)
 
     @app.tool(name="scene_create")
-    def scene_create(path: str, type_name: str = "Xform", dry_run: bool = False) -> dict:
-        """Create a prim, optionally in dry-run mode."""
-        return router._wrap_operation_result("scene", router._scene.create_prim(path, type_name, dry_run=dry_run))
+    def scene_create(path: str, type_name: str = "Xform", dry_run: bool = False, show_python: bool = False) -> dict:
+        """Create a prim, optionally in dry-run mode.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        result = router._wrap_operation_result("scene", router._scene.create_prim(path, type_name, dry_run=dry_run))
+        return _with_python(result, show_python, "scene_create", path=path, type_name=type_name)
 
     @app.tool(name="scene_delete")
-    def scene_delete(path: str, dry_run: bool = False) -> dict:
-        """Delete a prim, optionally in dry-run mode."""
-        return router._wrap_operation_result("scene", router._scene.delete_prim(path, dry_run=dry_run))
+    def scene_delete(path: str, dry_run: bool = False, show_python: bool = False) -> dict:
+        """Delete a prim, optionally in dry-run mode.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        result = router._wrap_operation_result("scene", router._scene.delete_prim(path, dry_run=dry_run))
+        return _with_python(result, show_python, "scene_delete", path=path)
 
     @app.tool(name="scene_duplicate")
-    def scene_duplicate(source_path: str, target_path: str, dry_run: bool = False) -> dict:
-        """Duplicate one prim to another path."""
-        return router._wrap_operation_result(
+    def scene_duplicate(source_path: str, target_path: str, dry_run: bool = False, show_python: bool = False) -> dict:
+        """Duplicate one prim to another path.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        result = router._wrap_operation_result(
             "scene",
             router._scene.duplicate_prim(source_path, target_path, dry_run=dry_run),
         )
+        return _with_python(result, show_python, "scene_duplicate", source_path=source_path, target_path=target_path)
 
     @app.tool(name="scene_reparent")
     def scene_reparent(path: str, new_parent: str, dry_run: bool = False) -> dict:
@@ -692,9 +772,11 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         rotation: Sequence[float] | None = None,
         scale: Sequence[float] | None = None,
         dry_run: bool = False,
+        show_python: bool = False,
     ) -> dict:
-        """Apply transform updates to a prim."""
-        return router._wrap_operation_result(
+        """Apply transform updates to a prim.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        result = router._wrap_operation_result(
             "scene",
             router._scene.move_prim(
                 path,
@@ -704,19 +786,25 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
                 dry_run=dry_run,
             ),
         )
+        return _with_python(result, show_python, "scene_move", path=path, translation=translation, rotation=rotation,
+                            scale=scale)
 
     @app.tool(name="scene_material")
-    def scene_material(path: str, material_path: str, dry_run: bool = False) -> dict:
-        """Bind a material to a prim."""
-        return router._wrap_operation_result(
+    def scene_material(path: str, material_path: str, dry_run: bool = False, show_python: bool = False) -> dict:
+        """Bind a material to a prim.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        result = router._wrap_operation_result(
             "scene",
             router._scene.set_material(path, material_path, dry_run=dry_run),
         )
+        return _with_python(result, show_python, "scene_material", path=path, material_path=material_path)
 
     @app.tool(name="scene_rename")
-    def scene_rename(path: str, new_name: str, dry_run: bool = False) -> dict:
-        """Rename a prim and keep its subtree intact."""
-        return router._wrap_operation_result("scene", router._scene.rename_prim(path, new_name, dry_run=dry_run))
+    def scene_rename(path: str, new_name: str, dry_run: bool = False, show_python: bool = False) -> dict:
+        """Rename a prim and keep its subtree intact.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        result = router._wrap_operation_result("scene", router._scene.rename_prim(path, new_name, dry_run=dry_run))
+        return _with_python(result, show_python, "scene_rename", path=path, new_name=new_name)
 
     @app.tool(name="scene_variants")
     def scene_variants(path: str = "/World/Car") -> dict:
@@ -729,12 +817,16 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         selection: str,
         path: str = "/World/Car",
         dry_run: bool = False,
+        show_python: bool = False,
     ) -> dict:
-        """Select a native USD variant on a prim."""
-        return router._wrap_operation_result(
+        """Select a native USD variant on a prim.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        result = router._wrap_operation_result(
             "scene",
             router._scene.set_variant_selection(path, variant_set, selection, dry_run=dry_run),
         )
+        return _with_python(result, show_python, "scene_variant_set", path=path, variant_set=variant_set,
+                            selection=selection)
 
     @app.tool(name="scene_animation_actions")
     def scene_animation_actions() -> dict:
@@ -1352,8 +1444,11 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
             "viewport_capture": _feature_support(capabilities, insight, "capture", CAPTURE_RPC_METHODS, "viewport capture"),
             "simulation": _feature_support(capabilities, insight, "simulation", SIMULATION_RPC_METHODS,
                                            "simulation controls"),
+            "homework": _feature_support(capabilities, insight, "homework", HOMEWORK_RPC_METHODS,
+                                         "the live homework check and scene tour"),
         }
         tier4["viewport_capture"]["dry_run_default"] = tier4["simulation"]["dry_run_default"] = None
+        tier4["homework"]["dry_run_default"] = None
         missing = sorted(set(LIVE_RPC_METHODS) - methods) if capabilities.get("ok") else list(LIVE_RPC_METHODS)
         needs_update = bool(capabilities.get("needs_bridge_update")) or (
             bool(capabilities.get("ok")) and not capabilities.get("fake_scene") and bool(missing)
@@ -1362,7 +1457,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         if insight["available"] and authoring["available"] and edits["available"] and undo["available"] and everything:
             message = (
                 "Live insight, light/camera authoring, attribute/material edits, undo, assets, physics, viewport "
-                "capture and simulation controls are available on the open stage."
+                "capture, simulation controls, the homework check and the scene tour are available on the open stage."
             )
         elif needs_update:
             message = (
@@ -1408,11 +1503,14 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         translation: list[float] | None = None,
         aim_at: str | list[float] | None = None,
         dry_run: bool = True,
+        show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan a UsdLux light (rect, sphere, disk, distant, cylinder or dome) at path in the
         LIVE open scene and show the preview to the user first. dry_run=False changes the user's open scene (not
         saved; scene_undo_last can undo it). size: one number, or [width, height] for rect / [length, radius] for
-        cylinder; aim_at: a prim path or an [x, y, z] point the light's -Z axis should face."""
+        cylinder; aim_at: a prim path or an [x, y, z] point the light's -Z axis should face.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        python = dict(path=path, light_type=light_type, intensity=intensity, color=color, translation=translation)
         try:
             result = router._scene.create_light(
                 path,
@@ -1426,8 +1524,9 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
                 dry_run=dry_run,
             )
         except (ValueError, TypeError) as exc:
-            return _error(str(exc), target="scene", dry_run=bool(dry_run), applied=False, path=path)
-        return _authoring_payload(router, result)
+            failed = _error(str(exc), target="scene", dry_run=bool(dry_run), applied=False, path=path)
+            return _with_python(failed, show_python, "scene_create_light", **python)
+        return _with_python(_authoring_payload(router, result), show_python, "scene_create_light", **python)
 
     @app.tool(name="scene_create_camera")
     def scene_create_camera(
@@ -1439,10 +1538,13 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         aim_at: str | list[float] | None = None,
         copy_optics_from: str | None = None,
         dry_run: bool = True,
+        show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan a camera at path in the LIVE open scene and show the preview to the user first.
         dry_run=False changes the user's open scene (not saved; scene_undo_last can undo it). clipping_range is
-        [near, far]; aim_at is a prim path or an [x, y, z] point; copy_optics_from copies another camera's lens."""
+        [near, far]; aim_at is a prim path or an [x, y, z] point; copy_optics_from copies another camera's lens.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        python = dict(path=path, focal_length=focal_length, translation=translation, aim_at=aim_at)
         try:
             result = router._scene.create_camera(
                 path,
@@ -1455,22 +1557,25 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
                 dry_run=dry_run,
             )
         except (ValueError, TypeError) as exc:
-            return _error(str(exc), target="scene", dry_run=bool(dry_run), applied=False, path=path)
-        return _authoring_payload(router, result)
+            failed = _error(str(exc), target="scene", dry_run=bool(dry_run), applied=False, path=path)
+            return _with_python(failed, show_python, "scene_create_camera", **python)
+        return _with_python(_authoring_payload(router, result), show_python, "scene_create_camera", **python)
 
     @app.tool(name="scene_aim")
-    def scene_aim(path: str, target: str | list[float], dry_run: bool = True) -> dict:
+    def scene_aim(path: str, target: str | list[float], dry_run: bool = True, show_python: bool = False) -> dict:
         """DRY RUN BY DEFAULT: plan rotating a light, camera or other prim in the LIVE open scene so its -Z axis faces
         target (a prim path or an [x, y, z] point), and show the preview to the user first. dry_run=False changes
-        the user's open scene (not saved; scene_undo_last can undo it)."""
+        the user's open scene (not saved; scene_undo_last can undo it).
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
         try:
             aimed_at = _target_arg(target, "target")
             if aimed_at is None:
                 raise ValueError("target is required: a prim path or an [x, y, z] point")
             result = router._scene.aim(path, aimed_at, dry_run=dry_run)
         except (ValueError, TypeError) as exc:
-            return _error(str(exc), target="scene", dry_run=bool(dry_run), applied=False, path=path)
-        return _authoring_payload(router, result)
+            failed = _error(str(exc), target="scene", dry_run=bool(dry_run), applied=False, path=path)
+            return _with_python(failed, show_python, "scene_aim", path=path, target=target)
+        return _with_python(_authoring_payload(router, result), show_python, "scene_aim", path=path, target=target)
 
     # --- safe attribute / material edits and undo (dry run by default) -------------------------------------------
 
@@ -1482,23 +1587,32 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         time: float | None = None,
         create_type: str | None = None,
         dry_run: bool = True,
+        show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan setting one attribute (e.g. inputs:intensity on a light, focalLength on a camera,
         primvars:displayColor as [[r, g, b]]) on a prim in the open scene and show the preview to the user first: it
         lists the value before and where it comes from, the value coerced to the attribute's USD type, and whether a
         stronger opinion would hide it. dry_run=False changes the user's open scene (not saved; scene_undo_last can
         undo it). time=None sets the default value, a number writes a time sample; create_type (e.g. 'float',
-        'color3f') creates a missing custom attribute."""
+        'color3f') creates a missing custom attribute.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        python = dict(path=path, name=name, value=value, create_type=create_type)
         try:
             result = router._scene.set_attribute(
                 path, name, value, time=time, create_type=create_type, dry_run=dry_run
             )
         except (ValueError, TypeError) as exc:
-            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=path)
+            failed = _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=path)
+            return _with_python(failed, show_python, "scene_set_attribute", **python)
         payload = _authoring_payload(router, result)
         if payload.get("preview"):
             payload["message"] = _EDIT_PREVIEW
-        return payload
+        inner = result.payload if isinstance(result.payload, dict) else {}
+        if create_type is None and isinstance(inner.get("type_name"), str):
+            # The attribute's real USD type (e.g. radius is a double): guessing from the JSON value would give
+            # 'float' for 2.0, and the snippet would then refuse the existing attribute.
+            python["create_type"] = inner["type_name"]
+        return _with_python(payload, show_python, "scene_set_attribute", **python)
 
     @app.tool(name="scene_create_material")
     def scene_create_material(
@@ -1511,12 +1625,15 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         ior: float | None = None,
         create_parent: bool = True,
         dry_run: bool = True,
+        show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan a UsdPreviewSurface material at path (a Material with a PreviewSurface shader
         wired to outputs:surface) in the open scene and show the preview to the user first. dry_run=False changes the
         user's open scene (not saved; scene_undo_last can undo it). Colors are [r, g, b] in 0-1 (or '#RRGGBB');
         roughness, metallic and opacity are 0-1; only the given inputs are authored. create_parent also plans a
-        missing direct parent such as /World/Looks as a Scope. Bind it with scene_bind_material."""
+        missing direct parent such as /World/Looks as a Scope. Bind it with scene_bind_material.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        python = dict(path=path, diffuse_color=diffuse_color, roughness=roughness, metallic=metallic)
         try:
             result = router._scene.create_material(
                 path,
@@ -1530,11 +1647,12 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
                 create_parent=create_parent is not False,
             )
         except (ValueError, TypeError) as exc:
-            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=path)
+            failed = _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=path)
+            return _with_python(failed, show_python, "scene_create_material", **python)
         payload = _authoring_payload(router, result)
         if payload.get("preview"):
             payload["message"] = _EDIT_PREVIEW
-        return payload
+        return _with_python(payload, show_python, "scene_create_material", **python)
 
     @app.tool(name="scene_bind_material")
     def scene_bind_material(
@@ -1543,22 +1661,26 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         strength: str | None = None,
         purpose: str | None = None,
         dry_run: bool = True,
+        show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan binding a material to a prim (MaterialBindingAPI, material:binding) in the open
         scene and show the preview to the user first: it reports the material the prim resolves to now and predicts
         the one after, warning when another binding still wins. dry_run=False changes the user's open scene (not
         saved; scene_undo_last can undo it). strength: weakerThanDescendants (default) or strongerThanDescendants;
-        purpose: allPurpose (default), preview or full."""
+        purpose: allPurpose (default), preview or full.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        python = dict(prim_path=prim_path, material_path=material_path, strength=strength)
         try:
             result = router._scene.bind_material(
                 prim_path, material_path, strength=strength, purpose=purpose, dry_run=dry_run
             )
         except (ValueError, TypeError) as exc:
-            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
+            failed = _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
+            return _with_python(failed, show_python, "scene_bind_material", **python)
         payload = _authoring_payload(router, result)
         if payload.get("preview"):
             payload["message"] = _EDIT_PREVIEW
-        return payload
+        return _with_python(payload, show_python, "scene_bind_material", **python)
 
     @app.tool(name="scene_undo_last")
     def scene_undo_last(dry_run: bool = True) -> dict:
@@ -1616,13 +1738,16 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         correct_units: bool = False,
         asset_prim_path: str | None = None,
         dry_run: bool = True,
+        show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan adding an asset file (find one with asset_search) to the open scene as a new Xform
         at prim_path that references it, and show the preview to the user first: it lists the reference, the
         translate/rotateXYZ/scale ops and any upAxis or metersPerUnit mismatch with the stage. dry_run=False changes
         the user's open scene (not saved; scene_undo_last can undo it). correct_units=True fills an unspecified
         rotation/scale with the suggested up-axis and unit correction; asset_prim_path picks a prim in an asset
-        without a defaultPrim. The asset file itself is only read, never changed."""
+        without a defaultPrim. The asset file itself is only read, never changed.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        python = dict(prim_path=prim_path, asset_path=asset_path, asset_prim_path=asset_prim_path)
         try:
             result = router._scene.add_asset(
                 prim_path,
@@ -1636,13 +1761,14 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
                 dry_run=dry_run,
             )
         except (ValueError, TypeError) as exc:
-            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
+            failed = _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
+            return _with_python(failed, show_python, "scene_add_asset", **python)
         payload = _authoring_payload(router, result)
         inner = result.payload if isinstance(result.payload, dict) else {}
         for key in ("suggestions", "asset_path"):
             if key in inner:
                 payload[key] = inner[key]
-        return payload
+        return _with_python(payload, show_python, "scene_add_asset", **python)
 
     # --- UsdPhysics setup (report read-only; edits dry run by default) ------------------------------------------
 
@@ -1655,16 +1781,24 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         return _physics_report_mode(router, prim_path, file, mode)
 
     @app.tool(name="scene_add_physics_scene")
-    def scene_add_physics_scene(path: str = "/physicsScene", gravity: float | list[float] | None = None, dry_run: bool = True) -> dict:
+    def scene_add_physics_scene(
+        path: str = "/physicsScene",
+        gravity: float | list[float] | None = None,
+        dry_run: bool = True,
+        show_python: bool = False,
+    ) -> dict:
         """DRY RUN BY DEFAULT: plan a UsdPhysics PhysicsScene (nothing simulates without one) in the open scene and
         show the preview to the user first. dry_run=False changes the user's open scene (not saved; scene_undo_last
         can undo it). gravity is m/s^2: a number pointing down the stage up axis, or [x, y, z] written Z-up (default
-        9.81 down); it is converted to the stage's units."""
+        9.81 down); it is converted to the stage's units.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
         try:
             result = router._scene.add_physics_scene(path, gravity=_scale_arg(gravity, "gravity"), dry_run=dry_run)
         except (ValueError, TypeError) as exc:
-            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=path)
-        return _authoring_payload(router, result)
+            failed = _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=path)
+            return _with_python(failed, show_python, "scene_add_physics_scene", path=path, gravity=gravity)
+        return _with_python(_authoring_payload(router, result), show_python, "scene_add_physics_scene", path=path,
+                            gravity=gravity)
 
     @app.tool(name="scene_make_rigid_body")
     def scene_make_rigid_body(
@@ -1675,12 +1809,15 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         add_collider: bool = True,
         approximation: str | None = None,
         dry_run: bool = True,
+        show_python: bool = False,
     ) -> dict:
         """DRY RUN BY DEFAULT: plan making a prim a rigid body (RigidBodyAPI, optional MassAPI with mass in kg or
         density in kg/m^3, and colliders on its geometry when add_collider=True) in the open scene, and show the
         preview to the user first. dry_run=False changes the user's open scene (not saved; scene_undo_last can undo
         it). kinematic=True makes an animated body that pushes others but is not pushed; approximation is
-        convexHull, convexDecomposition, boundingCube, boundingSphere, meshSimplification or none."""
+        convexHull, convexDecomposition, boundingCube, boundingSphere, meshSimplification or none.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        python = dict(prim_path=prim_path, mass=mass, add_collider=add_collider)
         try:
             result = router._scene.make_rigid_body(
                 prim_path,
@@ -1692,20 +1829,26 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
                 dry_run=dry_run,
             )
         except (ValueError, TypeError) as exc:
-            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
-        return _authoring_payload(router, result)
+            failed = _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
+            return _with_python(failed, show_python, "scene_make_rigid_body", **python)
+        return _with_python(_authoring_payload(router, result), show_python, "scene_make_rigid_body", **python)
 
     @app.tool(name="scene_make_collider")
-    def scene_make_collider(prim_path: str, approximation: str | None = None, dry_run: bool = True) -> dict:
+    def scene_make_collider(
+        prim_path: str, approximation: str | None = None, dry_run: bool = True, show_python: bool = False
+    ) -> dict:
         """DRY RUN BY DEFAULT: plan adding collision (CollisionAPI) to a gprim, or to every gprim below a group prim,
         in the open scene and show the preview to the user first. dry_run=False changes the user's open scene (not
         saved; scene_undo_last can undo it). approximation (convexHull, convexDecomposition, boundingCube,
-        boundingSphere, meshSimplification or none) applies to meshes; a collider without a rigid body is static."""
+        boundingSphere, meshSimplification or none) applies to meshes; a collider without a rigid body is static.
+        show_python=True also returns the OpenUSD Python for the same change (result['python'])."""
+        python = dict(prim_path=prim_path, approximation=approximation)
         try:
             result = router._scene.make_collider(prim_path, approximation=approximation, dry_run=dry_run)
         except (ValueError, TypeError) as exc:
-            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
-        return _authoring_payload(router, result)
+            failed = _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
+            return _with_python(failed, show_python, "scene_make_collider", **python)
+        return _with_python(_authoring_payload(router, result), show_python, "scene_make_collider", **python)
 
     @app.tool(name="scene_remove_physics")
     def scene_remove_physics(prim_path: str, include_descendants: bool = False, dry_run: bool = True) -> dict:
@@ -1793,6 +1936,239 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         dashboard.html in the exam-prep folder next to progress.json, replacing the previous dashboard. Your progress
         itself is only read, never changed."""
         return exam_dashboard_result(progress_store, mock_store, write=write is True)
+
+    # --- learning Python, homework and class notes (read-only unless a docstring says otherwise) -----------------
+
+    class_notes_holder: dict[str, ClassNotes] = {}
+
+    def _class_notes() -> ClassNotes:
+        """One lazily indexed ClassNotes per server (the folders are read on the first question)."""
+        # setdefault is atomic, so two first questions on worker threads share one index (ClassNotes() reads nothing).
+        return class_notes_holder.setdefault("notes", ClassNotes())
+
+    def _practice_passed() -> set[str]:
+        """Exercise ids with a passing python_practice attempt in the saved exam progress (empty when unreadable)."""
+        try:
+            history = progress_store.history(limit=200)
+        except (OSError, ValueError, TypeError):
+            return set()
+        return {
+            str(row.get("question_id")) for row in history
+            if row.get("source") == python_practice.SOURCE and row.get("is_correct") is True
+        }
+
+    def _error_knowledge() -> list[Any]:
+        """The offline USD docs plus the installed Isaac Sim / Kit docs that exist here (each indexes lazily)."""
+        backends: list[Any] = [offline_usd]
+        for name in ("isaac_sim", "kit"):
+            knowledge = docs_knowledge.get(name)
+            if knowledge is not None and getattr(knowledge, "available", False):
+                backends.append(knowledge)
+        return backends
+
+    @app.tool(name="python_show")
+    def python_show(action: str, args: dict[str, Any] | None = None, context: str = "script_editor") -> dict:
+        """Read-only, runs nothing: "show me the Python" for one OpenUSD task, e.g. action='move' with
+        args={'prim_path': '/World/Cube', 'translate': [0, 0, 1]}. Returns a short runnable snippet, a plain-English
+        explanation of every line, the USD concepts it uses, where to run it, what it would change and the
+        NCP-OUSD objectives it practices. context 'script_editor' (paste into Isaac Sim / Composer: Window > Script
+        Editor; it edits the open scene) or 'standalone' (a .py file with usd-core that opens a .usda file). Router
+        tool names work as actions too (scene_move, scene_create_light, ...); python_topics lists them all."""
+        return python_teacher.python_for(action, args, context=context if isinstance(context, str) else "")
+
+    @app.tool(name="python_topics")
+    def python_topics() -> dict:
+        """Read-only: every task python_show can explain (inspect, create, move/rotate/scale, attributes, lights,
+        cameras, materials, references, variants, layers, physics, save/export, undo), grouped, with the
+        arguments each one takes and their defaults."""
+        return python_teacher.list_python_topics()
+
+    @app.tool(name="python_practice_list")
+    def python_practice_list(level: str | None = None) -> dict:
+        """Read-only: the OpenUSD Python practice exercises in suggested order (level 'beginner' or 'intermediate'
+        narrows it), each with its goal, exam objectives and whether you have passed it, plus the next one to do.
+        Starter code and solutions are not included; python_practice_get shows one exercise."""
+        listing = python_practice.list_exercises(level)
+        if not listing.get("ok"):
+            return listing
+        passed = _practice_passed()
+        for row in listing["exercises"]:
+            row["passed"] = row["id"] in passed
+        pending = [row["id"] for row in listing["exercises"] if not row["passed"]]
+        return {
+            **listing,
+            "passed_count": sum(1 for row in listing["exercises"] if row["passed"]),
+            "next_exercise": pending[0] if pending else None,
+            "how_to_practice": "python_practice_get(exercise_id) shows the task and starter code; "
+            "python_practice_run(exercise_id, code) runs your answer on a throwaway copy of the scene and checks it.",
+        }
+
+    @app.tool(name="python_practice_get")
+    def python_practice_get(exercise_id: str | None = None, reveal: bool = False, level: str | None = None) -> dict:
+        """Read-only: one Python practice exercise: goal, starter code, hints, what is checked and the starting
+        scene. exercise_id=None picks your next exercise not yet passed (level narrows the choice). The solution is
+        only included with reveal=True; try first, it is how you learn."""
+        chosen = exercise_id.strip() if isinstance(exercise_id, str) and exercise_id.strip() else None
+        picked = False
+        if chosen is None:
+            listing = python_practice.list_exercises(level)
+            if not listing.get("ok"):
+                return listing
+            passed = _practice_passed()
+            rows = listing["exercises"]
+            if not rows:
+                return {"ok": False, "error": "No exercises match that level.", "levels": listing.get("levels")}
+            pending = [row for row in rows if row["id"] not in passed]
+            chosen = (pending or rows)[0]["id"]
+            picked = True
+        result = python_practice.get_exercise(chosen, reveal=reveal is True)
+        if result.get("ok"):
+            result["passed_before"] = chosen in _practice_passed()
+            if picked:
+                result["why_this_one"] = "Your next exercise not passed yet, in the suggested order."
+            result["how_to_answer"] = "python_practice_run(exercise_id, code) runs and checks your answer."
+        return result
+
+    @app.tool(name="python_practice_run")
+    async def python_practice_run(exercise_id: str, code: str, timeout_s: float = 10, record: bool = True) -> dict:
+        """Run YOUR answer to a Python practice exercise and check it. The code runs in a separate Python process on
+        a throwaway temporary copy of the exercise scene (never your real scenes), is stopped after timeout_s
+        seconds (1-60) and is graded by automatic checks with hints. With record=True (the default) the graded
+        result is saved to your NCP-OUSD exam progress (source python_practice); record=False saves nothing."""
+        result = await asyncio.to_thread(python_practice.run_attempt, exercise_id, code, timeout_s=timeout_s)
+        if record is True and result.get("ok") and isinstance(result.get("passed"), bool):
+            try:
+                result["progress"] = python_practice.record_progress(progress_store, exercise_id, result["passed"])
+            except (TypeError, ValueError, OSError) as exc:
+                result["progress"] = _error(f"Checked but not saved to progress: {exc}")
+        else:
+            result["progress"] = {"saved": False, "reason": "record=False" if record is not True else "not graded"}
+        return result
+
+    @app.tool(name="explain_error")
+    async def explain_error(text: str, code: str | None = None, search_docs: bool = True) -> dict:
+        """Read-only: explain an error you pasted (a Python traceback, a Kit [Error] line, a USD/Tf message, a PhysX
+        warning) in plain English: what happened, likely causes, numbered fix steps, a short example fix and where
+        in your code it happened (code= is the script that failed, used only to show the line). Nothing in the text
+        or code is ever run. search_docs=True adds related pages from the offline USD and Isaac Sim / Kit docs."""
+        knowledge = _error_knowledge() if search_docs is True else None
+        return await asyncio.to_thread(error_explainer.explain_error, text, code=code, knowledge=knowledge)
+
+    @app.tool(name="assignment_list")
+    def assignment_list() -> dict:
+        """Read-only: the homework assignments the checker knows (id, title, class session, summary and how many
+        rules it checks). Check one with assignment_check."""
+        found = assignments.list_assignments()
+        return {"ok": True, "count": len(found), "assignments": found, "default": assignments.DEFAULT_ASSIGNMENT}
+
+    @app.tool(name="assignment_check")
+    def assignment_check(assignment_id: str = assignments.DEFAULT_ASSIGNMENT, scene_file: str | None = None) -> dict:
+        """Read-only: check your homework scene against the class rubric (default: Isaac Sim session 02, the
+        warehouse with walls, shelves, a 10-cube stack, a camera and lights) and say in plain words what passes,
+        what is missing and the ONE next step, with how-to-fix steps for each rule. Without scene_file it checks
+        the LIVE open stage in Isaac Sim / Composer (unsaved work included); scene_file checks a saved .usda opened
+        read-only (relative to the workspace). Nothing is ever changed or saved."""
+        wanted = assignment_id.strip() if isinstance(assignment_id, str) and assignment_id.strip() else assignments.DEFAULT_ASSIGNMENT
+        if isinstance(scene_file, str) and scene_file.strip():
+            try:
+                report = assignments.check_scene_file(scene_file.strip(), wanted, workspace_root=_workspace_root())
+            except (SceneFileError, ValueError, ImportError, ReadOnlyViolation) as exc:
+                return _error(str(exc), action="assignment_check", mode="saved_file", file=scene_file)
+            except Exception as exc:  # noqa: BLE001 - pxr raises Tf errors for unreadable layers
+                return _error(f"{type(exc).__name__}: {exc}", action="assignment_check", mode="saved_file", file=scene_file)
+            return {**report, "mode": "saved_file", "action": "assignment_check", "note": SAVED_FILE_NOTE}
+        live = router._scene.assignment_check(wanted)
+        return _homework_live_or_file(
+            router, "assignment_check", live, lambda stage: assignments.check_assignment(stage, wanted)
+        )
+
+    @app.tool(name="scene_explain")
+    def scene_explain(
+        focus_path: str | None = None, depth: int = 3, max_prims: int = 400, scene_file: str | None = None
+    ) -> dict:
+        """Read-only: explain my scene in plain language for a beginner: groups, geometry (size and where it sits),
+        lights, cameras, materials, physics, layers and referenced assets, each with one friendly sentence, plus a
+        short overview, a glossary of the USD words used and questions to explore next. focus_path limits it to one
+        prim and everything below; depth (0-50) is how many group levels to list; max_prims (1-20000) caps the walk.
+        Without scene_file it reads the LIVE open stage; scene_file reads a saved file read-only. Nothing changes."""
+        focus = focus_path.strip() if isinstance(focus_path, str) and focus_path.strip() else None
+        try:
+            levels = _whole_arg(depth, "depth", 0, _TOUR_MAX_DEPTH)
+            limit = _whole_arg(max_prims, "max_prims", 1, _TOUR_MAX_PRIMS)
+        except ValueError as exc:
+            return _error(str(exc), action="scene_explain")
+
+        def tour(stage: Any) -> dict:
+            budget = usd_insight.TimeBudget(10_000)  # file mode: stop a huge scene after 10 s with partial results
+            return scene_tour_module.scene_tour(stage, focus_path=focus, depth=levels, max_prims=limit, deadline=budget)
+
+        if isinstance(scene_file, str) and scene_file.strip():
+            return {**_file_mode(router, scene_file, tour), "action": "scene_explain"}
+        live = router._scene.scene_tour(focus, depth=levels, max_prims=limit)
+        return {**_homework_live_or_file(router, "scene_tour", live, tour), "action": "scene_explain"}
+
+    @app.tool(name="class_sessions")
+    async def class_sessions() -> dict:
+        """Read-only: the mentorship class sessions found in your class folder (subtitles, Gemini notes) and your
+        revision notes: session number, date, sources and length. The folders are only read, never changed."""
+        notes = _class_notes()
+        try:
+            sessions = await asyncio.to_thread(notes.sessions)
+            stats = await asyncio.to_thread(notes.stats)
+        except Exception as exc:  # noqa: BLE001 - unreadable folders are reported
+            return _error(f"Could not read the class notes: {type(exc).__name__}: {exc}", sessions=[])
+        payload: dict[str, Any] = {"ok": True, "count": len(sessions), "sessions": sessions, "sources": stats}
+        if not sessions:
+            payload["message"] = (
+                "No class sessions found under " + "; ".join(stats.get("roots") or []) + ". Set "
+                "OMNIVERSE_CLASS_NOTES_ROOT to your class recordings folder."
+            )
+        return payload
+
+    @app.tool(name="class_ask")
+    async def class_ask(question: str, session: int | str | None = None, top_k: int = 6) -> dict:
+        """Read-only: what did the teacher say about something? Searches the class subtitles, Gemini meeting notes
+        and your revision notes offline and returns the best passages grouped by session, each with its timestamp
+        and source, plus a one-line hint. session (e.g. 2) limits it to one class; top_k is 1-50. Subtitles are
+        auto-generated, so check odd words against the notes."""
+        if isinstance(top_k, bool) or not isinstance(top_k, int):
+            return _error("top_k must be a whole number from 1 to 50", question=question)
+        try:
+            return await asyncio.to_thread(_class_notes().ask, question, top_k=top_k, session=session)
+        except Exception as exc:  # noqa: BLE001
+            return _error(f"Could not search the class notes: {type(exc).__name__}: {exc}", question=question)
+
+    @app.tool(name="class_search")
+    async def class_search(query: str, session: int | str | None = None, top_k: int = 5) -> dict:
+        """Read-only: keyword search of the class subtitles, Gemini notes and revision notes; returns ranked
+        passages with session, source, timestamp and text. session limits it to one class; top_k is 1-50."""
+        if isinstance(top_k, bool) or not isinstance(top_k, int):
+            return _error("top_k must be a whole number from 1 to 50", query=query, results=[])
+        try:
+            hits = await asyncio.to_thread(_class_notes().search, query, top_k=top_k, session=session)
+        except Exception as exc:  # noqa: BLE001
+            return _error(f"Could not search the class notes: {type(exc).__name__}: {exc}", query=query, results=[])
+        payload: dict[str, Any] = {"ok": bool(hits), "query": query, "session": session, "count": len(hits), **hits.as_dict()}
+        if not hits:
+            payload["message"] = "Nothing in the indexed class sources matched; try other words or class_sessions."
+        return payload
+
+    # The router's learning-helper sentences ("show me the python for ...", "check my homework", "explain my scene",
+    # "what did the teacher say about ...") run these same tools.
+    router.attach_learning_helpers(
+        {
+            "python_show": python_show,
+            "python_topics": python_topics,
+            "python_exercise": lambda level=None: python_practice_get(None, False, level),
+            "python_practice_list": python_practice_list,
+            "explain_error": lambda text="": error_explainer.explain_error(text, knowledge=_error_knowledge()),
+            "assignment_check": lambda scene_file=None: assignment_check(scene_file=scene_file),
+            "assignment_list": assignment_list,
+            "scene_explain": lambda focus_path=None: scene_explain(focus_path=focus_path),
+            "class_ask": lambda question, session=None: _class_notes().ask(question, session=session),
+            "class_sessions": lambda: {"ok": True, "sessions": _class_notes().sessions()},
+        }
+    )
 
     # Tool descriptions come from raw docstrings; drop the continuation-line indentation clients would see.
     for tool in app._tool_manager.list_tools():

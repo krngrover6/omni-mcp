@@ -1,0 +1,1076 @@
+{
+  "schema_version": 1,
+  "description": "Original beginner-to-intermediate OpenUSD Python exercises. Each runs on a throwaway practice scene (scene.usda plus any setup files) in a temporary folder; checks are evaluated on the saved result.",
+  "levels": [
+    "beginner",
+    "intermediate"
+  ],
+  "exercises": [
+    {
+      "id": "py01-define-xform",
+      "title": "Your first prim: define an Xform",
+      "level": "beginner",
+      "objective_ids": [
+        "7.2"
+      ],
+      "goal": "Create a prim of type Xform at the path /World. An Xform is an empty 'group' prim that can be moved, rotated and scaled; most scenes keep everything under one root Xform like /World.",
+      "setup": {
+        "scene": "#usda 1.0\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import UsdGeom\n\n# TODO: define an Xform prim at the path \"/World\".\n",
+      "hints": [
+        "New prims are created with a schema class's Define(stage, path) method.",
+        "The schema for a transformable group prim is Xform, and it lives in the UsdGeom module.",
+        "Write one line: UsdGeom.Xform.Define(stage, \"/World\")"
+      ],
+      "solution": "from pxr import UsdGeom\n\n# Define = \"make sure a prim of this type exists at this path\".\n# It returns a UsdGeom.Xform schema object; we do not need to keep it here.\nUsdGeom.Xform.Define(stage, \"/World\")\n",
+      "checks": [
+        {
+          "type": "prim_type",
+          "path": "/World",
+          "equals": "Xform",
+          "hint": "There should be a prim at /World whose type is Xform. Use UsdGeom.Xform.Define(stage, \"/World\")."
+        }
+      ]
+    },
+    {
+      "id": "py02-cube-size",
+      "title": "Add a Cube and set its size",
+      "level": "beginner",
+      "objective_ids": [
+        "5.2",
+        "5.4"
+      ],
+      "goal": "Under /World, define a Cube prim called Box (path /World/Box) and set its size attribute to 2.5. A cube's size is the length of one edge; if you never set it, the schema fallback is 2.",
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import UsdGeom\n\n# TODO 1: define a Cube at \"/World/Box\" and keep the returned object in a variable called box.\n# TODO 2: set the cube's size attribute to 2.5.\n",
+      "hints": [
+        "Define the cube the same way you defined the Xform, but with the Cube schema.",
+        "Schema objects have getters for their attributes, for example box.GetSizeAttr().",
+        "box = UsdGeom.Cube.Define(stage, \"/World/Box\") and then box.GetSizeAttr().Set(2.5)"
+      ],
+      "solution": "from pxr import UsdGeom\n\n# Define the cube; the parent /World already exists in the practice scene.\nbox = UsdGeom.Cube.Define(stage, \"/World/Box\")\n# GetSizeAttr() returns the Usd.Attribute object; Set() authors a default value on it.\nbox.GetSizeAttr().Set(2.5)\n",
+      "checks": [
+        {
+          "type": "prim_type",
+          "path": "/World/Box",
+          "equals": "Cube",
+          "hint": "Define a Cube (not a generic prim) at exactly /World/Box: UsdGeom.Cube.Define(stage, \"/World/Box\")."
+        },
+        {
+          "type": "attribute",
+          "path": "/World/Box.size",
+          "equals": 2.5,
+          "authored": true,
+          "hint": "The size attribute must be authored as 2.5: box.GetSizeAttr().Set(2.5)."
+        }
+      ],
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n}\n"
+      }
+    },
+    {
+      "id": "py03-translate",
+      "title": "Move a prim with XformCommonAPI",
+      "level": "beginner",
+      "objective_ids": [
+        "5.2",
+        "5.4"
+      ],
+      "goal": "Move /World/Box to the position (1, 2, 3) using UsdGeom.XformCommonAPI. XformCommonAPI writes the standard xformOp:translate attribute and adds it to xformOpOrder for you.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import Gf, UsdGeom\n\nbox = stage.GetPrimAtPath(\"/World/Box\")\n\n# TODO: wrap the prim in UsdGeom.XformCommonAPI and set its translation to (1, 2, 3).\n",
+      "hints": [
+        "Wrap the prim: api = UsdGeom.XformCommonAPI(box).",
+        "The method is SetTranslate. Translations are double precision, so Gf.Vec3d is the matching type.",
+        "api.SetTranslate(Gf.Vec3d(1, 2, 3))"
+      ],
+      "solution": "from pxr import Gf, UsdGeom\n\nbox = stage.GetPrimAtPath(\"/World/Box\")\n\n# XformCommonAPI is a helper that knows the common translate/rotate/scale ops.\napi = UsdGeom.XformCommonAPI(box)\n# Translation uses doubles -> Gf.Vec3d.\napi.SetTranslate(Gf.Vec3d(1, 2, 3))\n",
+      "checks": [
+        {
+          "type": "attribute",
+          "path": "/World/Box.xformOp:translate",
+          "equals": [
+            1,
+            2,
+            3
+          ],
+          "hint": "Use UsdGeom.XformCommonAPI(box).SetTranslate(Gf.Vec3d(1, 2, 3)); it creates xformOp:translate."
+        },
+        {
+          "type": "world_translation",
+          "path": "/World/Box",
+          "equals": [
+            1,
+            2,
+            3
+          ],
+          "hint": "The box's world position should be (1, 2, 3). Check the numbers and their order (x, y, z)."
+        }
+      ]
+    },
+    {
+      "id": "py04-rotate-scale",
+      "title": "Rotate and scale (Vec3f vs Vec3d)",
+      "level": "beginner",
+      "objective_ids": [
+        "5.2"
+      ],
+      "goal": "Rotate /World/Box by 45 degrees around the Y axis and scale it by 2 on every axis, again with XformCommonAPI. Note the types: SetRotate and SetScale take Gf.Vec3f (floats), while SetTranslate takes Gf.Vec3d (doubles).",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import Gf, UsdGeom\n\napi = UsdGeom.XformCommonAPI(stage.GetPrimAtPath(\"/World/Box\"))\n\n# TODO 1: rotate 45 degrees around Y  -> rotation (0, 45, 0)\n# TODO 2: scale by 2 on X, Y and Z    -> scale (2, 2, 2)\n",
+      "hints": [
+        "The methods are api.SetRotate(...) and api.SetScale(...).",
+        "Both expect Gf.Vec3f: three floats (x, y, z). A value with the wrong number of parts, such as (0, 45), gives a 'did not match C++ signature' TypeError.",
+        "api.SetRotate(Gf.Vec3f(0, 45, 0)) and api.SetScale(Gf.Vec3f(2, 2, 2))"
+      ],
+      "solution": "from pxr import Gf, UsdGeom\n\napi = UsdGeom.XformCommonAPI(stage.GetPrimAtPath(\"/World/Box\"))\n# Rotation in degrees, applied in X, Y, Z order by default (xformOp:rotateXYZ). Floats -> Gf.Vec3f.\napi.SetRotate(Gf.Vec3f(0, 45, 0))\n# Scale factors per axis. Floats -> Gf.Vec3f.\napi.SetScale(Gf.Vec3f(2, 2, 2))\n",
+      "checks": [
+        {
+          "type": "attribute",
+          "path": "/World/Box.xformOp:rotateXYZ",
+          "equals": [
+            0,
+            45,
+            0
+          ],
+          "hint": "Rotation should be (0, 45, 0): api.SetRotate(Gf.Vec3f(0, 45, 0))."
+        },
+        {
+          "type": "attribute",
+          "path": "/World/Box.xformOp:scale",
+          "equals": [
+            2,
+            2,
+            2
+          ],
+          "hint": "Scale should be (2, 2, 2): api.SetScale(Gf.Vec3f(2, 2, 2))."
+        }
+      ]
+    },
+    {
+      "id": "py05-read-attribute",
+      "title": "Read attribute values",
+      "level": "beginner",
+      "objective_ids": [
+        "5.4"
+      ],
+      "goal": "The practice scene already has /World/Box (a Cube) and /World/Ball (a Sphere). Read the cube's size into a variable called box_size and the sphere's radius into ball_radius, then print both.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n        double size = 4\n    }\n\n    def Sphere \"Ball\"\n    {\n        double radius = 0.75\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import UsdGeom\n\nbox_size = None     # TODO: read the size of /World/Box\nball_radius = None  # TODO: read the radius of /World/Ball\n\nprint(\"box size:\", box_size)\nprint(\"ball radius:\", ball_radius)\n",
+      "hints": [
+        "Get the prim first with stage.GetPrimAtPath(path), then get the attribute, then call .Get().",
+        "prim.GetAttribute(\"size\").Get() works on any prim; UsdGeom.Cube(prim).GetSizeAttr().Get() is the schema way.",
+        "box_size = stage.GetPrimAtPath(\"/World/Box\").GetAttribute(\"size\").Get()"
+      ],
+      "solution": "from pxr import UsdGeom\n\n# Generic way: prim -> attribute by name -> value.\nbox_size = stage.GetPrimAtPath(\"/World/Box\").GetAttribute(\"size\").Get()\n# Schema way: wrap the prim in its schema class and use the typed getter.\nball_radius = UsdGeom.Sphere(stage.GetPrimAtPath(\"/World/Ball\")).GetRadiusAttr().Get()\n\nprint(\"box size:\", box_size)\nprint(\"ball radius:\", ball_radius)\n",
+      "report_vars": [
+        "box_size",
+        "ball_radius"
+      ],
+      "checks": [
+        {
+          "type": "variable",
+          "name": "box_size",
+          "equals": 4,
+          "hint": "box_size should hold the cube's size (4). Remember to call .Get() on the attribute."
+        },
+        {
+          "type": "variable",
+          "name": "ball_radius",
+          "equals": 0.75,
+          "hint": "ball_radius should hold the sphere's radius (0.75)."
+        }
+      ]
+    },
+    {
+      "id": "py06-authored-vs-fallback",
+      "title": "Authored value or schema fallback?",
+      "level": "beginner",
+      "objective_ids": [
+        "5.4"
+      ],
+      "goal": "An attribute can return a value even when nobody wrote one: the schema 'fallback'. /World/Ball has no radius written, /World/Box has its size written. Store the ball's radius in ball_radius, and use HasAuthoredValue() to fill ball_radius_authored and box_size_authored with True or False.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Sphere \"Ball\"\n    {\n    }\n\n    def Cube \"Box\"\n    {\n        double size = 3\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nball_radius = None           # TODO: the value .Get() returns for /World/Ball's radius\nball_radius_authored = None  # TODO: True or False - was the radius written in a layer?\nbox_size_authored = None     # TODO: True or False - was the box size written in a layer?\n",
+      "hints": [
+        "Get the attributes first: stage.GetPrimAtPath(\"/World/Ball\").GetAttribute(\"radius\").",
+        "attr.Get() returns the fallback (1.0 for a sphere radius) when nothing is authored; attr.HasAuthoredValue() tells you which case you are in.",
+        "ball_radius_authored = radius_attr.HasAuthoredValue()  (it returns a real bool you can store directly)"
+      ],
+      "solution": "radius_attr = stage.GetPrimAtPath(\"/World/Ball\").GetAttribute(\"radius\")\nsize_attr = stage.GetPrimAtPath(\"/World/Box\").GetAttribute(\"size\")\n\n# Nobody wrote a radius, so Get() returns the Sphere schema's fallback value (1.0).\nball_radius = radius_attr.Get()\n# HasAuthoredValue() is False for fallbacks and True for values written in some layer.\nball_radius_authored = radius_attr.HasAuthoredValue()\nbox_size_authored = size_attr.HasAuthoredValue()\n",
+      "report_vars": [
+        "ball_radius",
+        "ball_radius_authored",
+        "box_size_authored"
+      ],
+      "checks": [
+        {
+          "type": "variable",
+          "name": "ball_radius",
+          "equals": 1.0,
+          "hint": "With nothing authored, the sphere's radius comes from the schema fallback, which is 1.0."
+        },
+        {
+          "type": "variable",
+          "name": "ball_radius_authored",
+          "equals": false,
+          "hint": "ball_radius_authored should be the bool returned by HasAuthoredValue() on the radius attribute."
+        },
+        {
+          "type": "variable",
+          "name": "box_size_authored",
+          "equals": true,
+          "hint": "box_size_authored should be the bool returned by HasAuthoredValue() on the size attribute."
+        }
+      ]
+    },
+    {
+      "id": "py07-children-traverse",
+      "title": "List children and traverse the stage",
+      "level": "beginner",
+      "objective_ids": [
+        "5.4",
+        "7.2"
+      ],
+      "goal": "Store the names of /World's direct children in child_names (a list of strings, in order), and the paths of every prim on the stage in all_paths (a list of strings, in traversal order).",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Table\"\n    {\n        def Sphere \"Lamp\"\n        {\n        }\n    }\n\n    def Cube \"Chair\"\n    {\n    }\n\n    def Cube \"Rug\"\n    {\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nworld = stage.GetPrimAtPath(\"/World\")\n\nchild_names = []  # TODO: names of world's direct children, e.g. [\"Table\", ...]\nall_paths = []    # TODO: str() of every prim path, walking the whole stage\n\nprint(child_names)\nprint(all_paths)\n",
+      "hints": [
+        "prim.GetChildren() gives the direct children; stage.Traverse() walks every prim (depth first).",
+        "Each prim has GetName() and GetPath(); turn a path into text with str(prim.GetPath()).",
+        "child_names = [c.GetName() for c in world.GetChildren()] and all_paths = [str(p.GetPath()) for p in stage.Traverse()]"
+      ],
+      "solution": "world = stage.GetPrimAtPath(\"/World\")\n\n# Direct children only (Lamp is a grandchild, so it is not listed here).\nchild_names = [child.GetName() for child in world.GetChildren()]\n# stage.Traverse() visits every active, defined prim depth first: parent, then its children.\nall_paths = [str(prim.GetPath()) for prim in stage.Traverse()]\n\nprint(child_names)\nprint(all_paths)\n",
+      "report_vars": [
+        "child_names",
+        "all_paths"
+      ],
+      "checks": [
+        {
+          "type": "variable",
+          "name": "child_names",
+          "equals": [
+            "Table",
+            "Chair",
+            "Rug"
+          ],
+          "hint": "Only direct children of /World, as names: [c.GetName() for c in world.GetChildren()]."
+        },
+        {
+          "type": "variable",
+          "name": "all_paths",
+          "equals": [
+            "/World",
+            "/World/Table",
+            "/World/Table/Lamp",
+            "/World/Chair",
+            "/World/Rug"
+          ],
+          "hint": "Use stage.Traverse() and str(prim.GetPath()) for each prim, keeping the traversal order."
+        }
+      ]
+    },
+    {
+      "id": "py08-rename-prim",
+      "title": "Rename a prim with a namespace edit",
+      "level": "beginner",
+      "objective_ids": [
+        "7.2",
+        "1.11"
+      ],
+      "goal": "Rename /World/Lamp to /World/DeskLamp. Renaming is a 'namespace edit': the prim and everything authored on it move to the new path. Its radius (0.4) must survive the rename.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Sphere \"Lamp\"\n    {\n        double radius = 0.4\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import Usd\n\nlamp = stage.GetPrimAtPath(\"/World/Lamp\")\n\n# TODO: rename the prim to \"DeskLamp\" (Usd.NamespaceEditor is the stage-level tool for this).\n",
+      "hints": [
+        "There is no prim.SetName(). Create an editor: editor = Usd.NamespaceEditor(stage).",
+        "The editor queues the change with RenamePrim(prim, new_name) and performs it with ApplyEdits().",
+        "editor.RenamePrim(lamp, \"DeskLamp\") then editor.ApplyEdits()  (the older Sdf.BatchNamespaceEdit on the root layer also works)"
+      ],
+      "solution": "from pxr import Usd\n\nlamp = stage.GetPrimAtPath(\"/World/Lamp\")\n\n# A namespace editor moves/renames prims and keeps their authored opinions.\neditor = Usd.NamespaceEditor(stage)\neditor.RenamePrim(lamp, \"DeskLamp\")  # queue the rename\neditor.ApplyEdits()                  # perform it\n",
+      "checks": [
+        {
+          "type": "prim_absent",
+          "path": "/World/Lamp",
+          "hint": "The old path /World/Lamp should be gone after the rename (defining a new prim is not a rename)."
+        },
+        {
+          "type": "prim_type",
+          "path": "/World/DeskLamp",
+          "equals": "Sphere",
+          "hint": "There should be a Sphere at /World/DeskLamp: use Usd.NamespaceEditor(stage).RenamePrim(...) and ApplyEdits()."
+        },
+        {
+          "type": "attribute",
+          "path": "/World/DeskLamp.radius",
+          "equals": 0.4,
+          "hint": "The radius 0.4 should move with the prim. A real rename keeps its authored values."
+        }
+      ]
+    },
+    {
+      "id": "py09-display-color",
+      "title": "Color a prim with displayColor",
+      "level": "beginner",
+      "objective_ids": [
+        "5.1",
+        "8.1"
+      ],
+      "goal": "Make /World/Box red by setting its displayColor primvar to a single color (1, 0, 0). displayColor is a color3f[] array primvar; with one entry and 'constant' interpolation it colors the whole prim.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import Gf, UsdGeom\n\nbox = UsdGeom.Gprim(stage.GetPrimAtPath(\"/World/Box\"))\n\n# TODO: create the displayColor attribute and set it to a list holding one red color.\n",
+      "hints": [
+        "Every Gprim (Cube, Sphere, Mesh...) has CreateDisplayColorAttr().",
+        "The value is an array, so pass a list with one color: [Gf.Vec3f(1, 0, 0)].",
+        "box.CreateDisplayColorAttr([Gf.Vec3f(1, 0, 0)])"
+      ],
+      "solution": "from pxr import Gf, UsdGeom\n\nbox = UsdGeom.Gprim(stage.GetPrimAtPath(\"/World/Box\"))\n# displayColor is an ARRAY of colors (color3f[]); one entry = one color for the whole prim.\nbox.CreateDisplayColorAttr([Gf.Vec3f(1, 0, 0)])\n",
+      "checks": [
+        {
+          "type": "primvar",
+          "path": "/World/Box",
+          "name": "displayColor",
+          "equals": [
+            [
+              1,
+              0,
+              0
+            ]
+          ],
+          "hint": "displayColor should be [(1, 0, 0)]: box.CreateDisplayColorAttr([Gf.Vec3f(1, 0, 0)])."
+        },
+        {
+          "type": "primvar_interpolation",
+          "path": "/World/Box",
+          "name": "displayColor",
+          "equals": "constant",
+          "hint": "One color for the whole prim uses 'constant' interpolation (the default for displayColor)."
+        }
+      ]
+    },
+    {
+      "id": "py10-custom-primvar",
+      "title": "Create your own primvar",
+      "level": "beginner",
+      "objective_ids": [
+        "5.1",
+        "5.2"
+      ],
+      "goal": "Create a float primvar named dirtiness on /World/Box with 'constant' interpolation and the value 0.3. Primvars are attributes in the primvars: namespace that renderers and shaders can read.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import Sdf, UsdGeom\n\nprimvars_api = UsdGeom.PrimvarsAPI(stage.GetPrimAtPath(\"/World/Box\"))\n\n# TODO: create a float primvar called \"dirtiness\" with constant interpolation, then set it to 0.3.\n",
+      "hints": [
+        "PrimvarsAPI has CreatePrimvar(name, type, interpolation).",
+        "Types come from Sdf.ValueTypeNames (Float here) and interpolation tokens from UsdGeom.Tokens (constant).",
+        "primvars_api.CreatePrimvar(\"dirtiness\", Sdf.ValueTypeNames.Float, UsdGeom.Tokens.constant).Set(0.3)"
+      ],
+      "solution": "from pxr import Sdf, UsdGeom\n\nprimvars_api = UsdGeom.PrimvarsAPI(stage.GetPrimAtPath(\"/World/Box\"))\n# Name without the \"primvars:\" prefix; USD adds it (attribute name becomes primvars:dirtiness).\ndirt = primvars_api.CreatePrimvar(\"dirtiness\", Sdf.ValueTypeNames.Float, UsdGeom.Tokens.constant)\ndirt.Set(0.3)\n",
+      "checks": [
+        {
+          "type": "primvar",
+          "path": "/World/Box",
+          "name": "dirtiness",
+          "equals": 0.3,
+          "tol": 1e-05,
+          "hint": "The primvar dirtiness should exist and hold 0.3."
+        },
+        {
+          "type": "attribute_type",
+          "path": "/World/Box.primvars:dirtiness",
+          "equals": "float",
+          "hint": "Use Sdf.ValueTypeNames.Float so the primvar is a single float (not double, not an array)."
+        },
+        {
+          "type": "primvar_interpolation",
+          "path": "/World/Box",
+          "name": "dirtiness",
+          "equals": "constant",
+          "hint": "Pass UsdGeom.Tokens.constant as the interpolation."
+        }
+      ]
+    },
+    {
+      "id": "py11-stage-metadata",
+      "title": "Stage metadata: defaultPrim, upAxis, metersPerUnit",
+      "level": "beginner",
+      "objective_ids": [
+        "5.5",
+        "7.2"
+      ],
+      "goal": "Make the practice scene a well-behaved asset: set its defaultPrim to World, its up axis to Z and its units to centimeters (metersPerUnit = 0.01). Wrong units or up axis are a classic cause of assets that show up huge, tiny or lying on their side.",
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import UsdGeom\n\nworld = stage.GetPrimAtPath(\"/World\")\n\n# TODO 1: make /World the default prim\n# TODO 2: up axis Z\n# TODO 3: metersPerUnit 0.01\n",
+      "hints": [
+        "defaultPrim is set on the stage itself: stage.SetDefaultPrim(prim).",
+        "UsdGeom has helper functions UsdGeom.SetStageUpAxis(stage, axis) and UsdGeom.SetStageMetersPerUnit(stage, value).",
+        "stage.SetDefaultPrim(world); UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z); UsdGeom.SetStageMetersPerUnit(stage, 0.01)"
+      ],
+      "solution": "from pxr import UsdGeom\n\nworld = stage.GetPrimAtPath(\"/World\")\n# defaultPrim tells a reference without a prim path which prim to bring in.\nstage.SetDefaultPrim(world)\n# Up axis is a token: UsdGeom.Tokens.y or UsdGeom.Tokens.z.\nUsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)\n# 0.01 meters per unit = 1 unit is 1 centimeter.\nUsdGeom.SetStageMetersPerUnit(stage, 0.01)\n",
+      "checks": [
+        {
+          "type": "metadata",
+          "path": "/",
+          "key": "defaultPrim",
+          "equals": "World",
+          "hint": "stage.SetDefaultPrim(stage.GetPrimAtPath(\"/World\"))"
+        },
+        {
+          "type": "metadata",
+          "path": "/",
+          "key": "upAxis",
+          "equals": "Z",
+          "hint": "UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z). Without it the fallback up axis is Y."
+        },
+        {
+          "type": "metadata",
+          "path": "/",
+          "key": "metersPerUnit",
+          "equals": 0.01,
+          "hint": "UsdGeom.SetStageMetersPerUnit(stage, 0.01) means one unit is one centimeter."
+        }
+      ],
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n}\n"
+      }
+    },
+    {
+      "id": "py12-custom-metadata",
+      "title": "Custom metadata with customData",
+      "level": "beginner",
+      "objective_ids": [
+        "5.3",
+        "7.6"
+      ],
+      "goal": "Store pipeline notes as metadata. On /World/Chair set the customData key pipeline:status to \"approved\" (the ':' makes a nested dictionary). On the layer itself, add the customLayerData key notes with the value \"practice\".",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Chair\"\n    {\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nchair = stage.GetPrimAtPath(\"/World/Chair\")\n\n# TODO 1: prim metadata    -> customData key \"pipeline:status\" = \"approved\"\n# TODO 2: layer metadata   -> customLayerData {\"notes\": \"practice\"} on the root layer\n",
+      "hints": [
+        "Prims have SetCustomDataByKey(key, value); a key with ':' creates nested dictionaries.",
+        "Layer-level custom data lives on the root layer: stage.GetRootLayer().customLayerData is a dictionary you assign.",
+        "chair.SetCustomDataByKey(\"pipeline:status\", \"approved\") and stage.GetRootLayer().customLayerData = {\"notes\": \"practice\"}"
+      ],
+      "solution": "chair = stage.GetPrimAtPath(\"/World/Chair\")\n\n# customData is a free-form dictionary for your own pipeline data. \"pipeline:status\" means\n# {\"pipeline\": {\"status\": \"approved\"}}.\nchair.SetCustomDataByKey(\"pipeline:status\", \"approved\")\n\n# customLayerData is the same idea for a whole layer. Assigning a dict replaces what was there.\nlayer = stage.GetRootLayer()\nlayer.customLayerData = {\"notes\": \"practice\"}\n",
+      "checks": [
+        {
+          "type": "custom_data",
+          "path": "/World/Chair",
+          "key": "pipeline:status",
+          "equals": "approved",
+          "hint": "chair.SetCustomDataByKey(\"pipeline:status\", \"approved\")"
+        },
+        {
+          "type": "custom_data",
+          "path": "/",
+          "key": "notes",
+          "equals": "practice",
+          "hint": "Set the root layer's customLayerData: stage.GetRootLayer().customLayerData = {\"notes\": \"practice\"}."
+        }
+      ]
+    },
+    {
+      "id": "py13-model-kind",
+      "title": "Set model kinds",
+      "level": "intermediate",
+      "objective_ids": [
+        "7.2",
+        "3.3"
+      ],
+      "goal": "Kinds describe a prim's role in the model hierarchy. Make /World an assembly and /World/Chair a component. (A component should sit under group/assembly prims for the model hierarchy to be valid.)",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Chair\"\n    {\n        def Cube \"Seat\"\n        {\n        }\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import Kind, Usd\n\n# TODO 1: kind \"assembly\" on /World\n# TODO 2: kind \"component\" on /World/Chair\n",
+      "hints": [
+        "Kind is set through Usd.ModelAPI(prim).SetKind(kind).",
+        "The standard kind tokens live in Kind.Tokens (assembly, group, component, subcomponent).",
+        "Usd.ModelAPI(stage.GetPrimAtPath(\"/World\")).SetKind(Kind.Tokens.assembly)"
+      ],
+      "solution": "from pxr import Kind, Usd\n\n# ModelAPI reads and writes the 'kind' metadata.\nUsd.ModelAPI(stage.GetPrimAtPath(\"/World\")).SetKind(Kind.Tokens.assembly)\nUsd.ModelAPI(stage.GetPrimAtPath(\"/World/Chair\")).SetKind(Kind.Tokens.component)\n",
+      "checks": [
+        {
+          "type": "metadata",
+          "path": "/World",
+          "key": "kind",
+          "equals": "assembly",
+          "hint": "Usd.ModelAPI(world_prim).SetKind(Kind.Tokens.assembly)"
+        },
+        {
+          "type": "metadata",
+          "path": "/World/Chair",
+          "key": "kind",
+          "equals": "component",
+          "hint": "Usd.ModelAPI(chair_prim).SetKind(Kind.Tokens.component)"
+        }
+      ]
+    },
+    {
+      "id": "py14-apply-api-schema",
+      "title": "Apply API schemas (physics)",
+      "level": "intermediate",
+      "objective_ids": [
+        "3.4",
+        "3.6"
+      ],
+      "goal": "API schemas add behavior to an existing prim without changing its type. Make /World/Crate a physics rigid body with collision, and give it a mass of 5 using UsdPhysics.RigidBodyAPI, CollisionAPI and MassAPI (the same schemas Isaac Sim uses).",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Cube \"Crate\"\n    {\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import UsdPhysics\n\ncrate = stage.GetPrimAtPath(\"/World/Crate\")\n\n# TODO 1: apply UsdPhysics.RigidBodyAPI\n# TODO 2: apply UsdPhysics.CollisionAPI\n# TODO 3: apply UsdPhysics.MassAPI and set its mass attribute to 5\n",
+      "hints": [
+        "API schemas are applied with SchemaClass.Apply(prim), which returns the schema object.",
+        "MassAPI has CreateMassAttr(); the attribute is called physics:mass.",
+        "UsdPhysics.MassAPI.Apply(crate).CreateMassAttr(5.0)"
+      ],
+      "solution": "from pxr import UsdPhysics\n\ncrate = stage.GetPrimAtPath(\"/World/Crate\")\n# Apply() records the schema name in the prim's apiSchemas metadata.\nUsdPhysics.RigidBodyAPI.Apply(crate)\nUsdPhysics.CollisionAPI.Apply(crate)\nmass_api = UsdPhysics.MassAPI.Apply(crate)\nmass_api.CreateMassAttr(5.0)  # physics:mass, in the stage's mass units (kilograms by default)\n",
+      "checks": [
+        {
+          "type": "has_api",
+          "path": "/World/Crate",
+          "api": "PhysicsRigidBodyAPI",
+          "hint": "UsdPhysics.RigidBodyAPI.Apply(crate)"
+        },
+        {
+          "type": "has_api",
+          "path": "/World/Crate",
+          "api": "PhysicsCollisionAPI",
+          "hint": "UsdPhysics.CollisionAPI.Apply(crate)"
+        },
+        {
+          "type": "has_api",
+          "path": "/World/Crate",
+          "api": "PhysicsMassAPI",
+          "hint": "UsdPhysics.MassAPI.Apply(crate)"
+        },
+        {
+          "type": "attribute",
+          "path": "/World/Crate.physics:mass",
+          "equals": 5,
+          "hint": "Set the mass through the MassAPI object: mass_api.CreateMassAttr(5.0)."
+        }
+      ]
+    },
+    {
+      "id": "py15-material-binding",
+      "title": "Make and bind a simple material",
+      "level": "intermediate",
+      "objective_ids": [
+        "8.2",
+        "8.3"
+      ],
+      "goal": "Create a Material at /World/Looks/RedPaint containing a UsdPreviewSurface shader called Surface with diffuseColor (0.8, 0.1, 0.1). Connect the shader to the material's surface output and bind the material to /World/Box.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import Gf, Sdf, UsdShade\n\nbox = stage.GetPrimAtPath(\"/World/Box\")\n\n# TODO 1: define a Material at /World/Looks/RedPaint\n# TODO 2: define a Shader at /World/Looks/RedPaint/Surface with id \"UsdPreviewSurface\"\n# TODO 3: create the shader input diffuseColor (Color3f) = (0.8, 0.1, 0.1)\n# TODO 4: connect the material's surface output to the shader's \"surface\" output\n# TODO 5: bind the material to the box (MaterialBindingAPI)\n",
+      "hints": [
+        "UsdShade.Material.Define and UsdShade.Shader.Define work like other Define calls; the shader needs shader.CreateIdAttr(\"UsdPreviewSurface\").",
+        "Inputs: shader.CreateInput(\"diffuseColor\", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(0.8, 0.1, 0.1)). Wiring: material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), \"surface\").",
+        "Binding: UsdShade.MaterialBindingAPI.Apply(box).Bind(material)"
+      ],
+      "solution": "from pxr import Gf, Sdf, UsdShade\n\nbox = stage.GetPrimAtPath(\"/World/Box\")\n\n# The material is a container; the shader inside it does the actual shading.\nmaterial = UsdShade.Material.Define(stage, \"/World/Looks/RedPaint\")\nshader = UsdShade.Shader.Define(stage, \"/World/Looks/RedPaint/Surface\")\nshader.CreateIdAttr(\"UsdPreviewSurface\")  # which shader this is (info:id)\nshader.CreateInput(\"diffuseColor\", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(0.8, 0.1, 0.1))\n\n# outputs:surface on the material <- outputs:surface on the shader.\nmaterial.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), \"surface\")\n\n# Applying MaterialBindingAPI then Bind() writes the material:binding relationship.\nUsdShade.MaterialBindingAPI.Apply(box).Bind(material)\n",
+      "checks": [
+        {
+          "type": "prim_type",
+          "path": "/World/Looks/RedPaint",
+          "equals": "Material",
+          "hint": "UsdShade.Material.Define(stage, \"/World/Looks/RedPaint\")"
+        },
+        {
+          "type": "attribute",
+          "path": "/World/Looks/RedPaint/Surface.info:id",
+          "equals": "UsdPreviewSurface",
+          "hint": "Define the shader at /World/Looks/RedPaint/Surface and call shader.CreateIdAttr(\"UsdPreviewSurface\")."
+        },
+        {
+          "type": "attribute",
+          "path": "/World/Looks/RedPaint/Surface.inputs:diffuseColor",
+          "equals": [
+            0.8,
+            0.1,
+            0.1
+          ],
+          "tol": 1e-05,
+          "hint": "shader.CreateInput(\"diffuseColor\", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(0.8, 0.1, 0.1))"
+        },
+        {
+          "type": "connection",
+          "path": "/World/Looks/RedPaint.outputs:surface",
+          "equals": "/World/Looks/RedPaint/Surface.outputs:surface",
+          "hint": "material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), \"surface\")"
+        },
+        {
+          "type": "has_api",
+          "path": "/World/Box",
+          "api": "MaterialBindingAPI",
+          "hint": "Apply the binding API before binding: UsdShade.MaterialBindingAPI.Apply(box)."
+        },
+        {
+          "type": "material_binding",
+          "path": "/World/Box",
+          "equals": "/World/Looks/RedPaint",
+          "hint": "UsdShade.MaterialBindingAPI.Apply(box).Bind(material)"
+        }
+      ]
+    },
+    {
+      "id": "py16-sublayer-strength",
+      "title": "Sublayers: which opinion wins?",
+      "level": "intermediate",
+      "objective_ids": [
+        "1.1",
+        "1.3",
+        "1.5"
+      ],
+      "goal": "The practice folder has two layers: base.usda sets /World/Box size to 2 and override.usda sets it to 5. Add BOTH as sublayers of the root layer so that override.usda is the stronger one, then read the composed size into winning_size. Remember: in subLayerPaths, earlier entries are stronger.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n    }\n}\n",
+        "files": {
+          "base.usda": "#usda 1.0\n\nover \"World\"\n{\n    over \"Box\"\n    {\n        double size = 2\n    }\n}\n",
+          "override.usda": "#usda 1.0\n\nover \"World\"\n{\n    over \"Box\"\n    {\n        double size = 5\n    }\n}\n"
+        }
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nroot = stage.GetRootLayer()\n\n# TODO 1: add \"override.usda\" and \"base.usda\" to root.subLayerPaths (strongest first)\n# TODO 2: read the composed size of /World/Box\nwinning_size = None\nprint(\"composed size:\", winning_size)\n",
+      "hints": [
+        "root.subLayerPaths behaves like a Python list of file paths (relative to the root layer's folder).",
+        "Order matters: the FIRST entry is the strongest sublayer. The stage recomposes as soon as you change the list.",
+        "root.subLayerPaths.append(\"override.usda\"); root.subLayerPaths.append(\"base.usda\"); then read the size attribute."
+      ],
+      "solution": "root = stage.GetRootLayer()\n\n# Strongest first: override.usda beats base.usda.\nroot.subLayerPaths.append(\"override.usda\")\nroot.subLayerPaths.append(\"base.usda\")\n\n# The stage recomposed automatically, so this reads the winning opinion (5).\nwinning_size = stage.GetPrimAtPath(\"/World/Box\").GetAttribute(\"size\").Get()\nprint(\"composed size:\", winning_size)\n",
+      "report_vars": [
+        "winning_size"
+      ],
+      "checks": [
+        {
+          "type": "sublayers",
+          "equals": [
+            "override.usda",
+            "base.usda"
+          ],
+          "hint": "The root layer's subLayerPaths should be exactly [\"override.usda\", \"base.usda\"] (strongest first)."
+        },
+        {
+          "type": "attribute",
+          "path": "/World/Box.size",
+          "equals": 5,
+          "hint": "The composed size should be 5. If you see 2, base.usda is first in the list (stronger)."
+        },
+        {
+          "type": "variable",
+          "name": "winning_size",
+          "equals": 5,
+          "hint": "winning_size should be read AFTER adding the sublayers: .GetAttribute(\"size\").Get()."
+        }
+      ]
+    },
+    {
+      "id": "py17-edit-target",
+      "title": "Write into a sublayer with an edit target",
+      "level": "intermediate",
+      "objective_ids": [
+        "1.1",
+        "1.5"
+      ],
+      "goal": "The root layer already has shading.usda as a sublayer. Make /World/Box blue (displayColor [(0, 0, 1)]) but store that opinion in shading.usda, not in scene.usda. That is what an edit target is for: it decides which layer new edits go to.",
+      "setup": {
+        "scene": "#usda 1.0\n(\n    subLayers = [\n        @./shading.usda@\n    ]\n)\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n    }\n}\n",
+        "files": {
+          "shading.usda": "#usda 1.0\n"
+        }
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import Gf, Sdf, Usd, UsdGeom\n\nroot = stage.GetRootLayer()\nshading = Sdf.Layer.FindRelativeToLayer(root, root.subLayerPaths[0])  # the shading.usda layer\n\n# TODO 1: point the stage's edit target at the shading layer\n# TODO 2: set /World/Box's displayColor to [(0, 0, 1)]\n",
+      "hints": [
+        "By default edits go to the root layer. stage.SetEditTarget(...) changes that.",
+        "An edit target is built from a layer: Usd.EditTarget(shading) (passing the layer directly also works).",
+        "stage.SetEditTarget(Usd.EditTarget(shading)) and then UsdGeom.Gprim(box_prim).CreateDisplayColorAttr([Gf.Vec3f(0, 0, 1)])"
+      ],
+      "solution": "from pxr import Gf, Sdf, Usd, UsdGeom\n\nroot = stage.GetRootLayer()\nshading = Sdf.Layer.FindRelativeToLayer(root, root.subLayerPaths[0])\n\n# From now on every edit made through the stage is written into shading.usda.\nstage.SetEditTarget(Usd.EditTarget(shading))\n\nbox = UsdGeom.Gprim(stage.GetPrimAtPath(\"/World/Box\"))\nbox.CreateDisplayColorAttr([Gf.Vec3f(0, 0, 1)])\n",
+      "checks": [
+        {
+          "type": "layer_spec",
+          "file": "shading.usda",
+          "path": "/World/Box.primvars:displayColor",
+          "exists": true,
+          "hint": "The displayColor opinion should be written in shading.usda: set the edit target before authoring."
+        },
+        {
+          "type": "layer_spec",
+          "file": "scene.usda",
+          "path": "/World/Box.primvars:displayColor",
+          "exists": false,
+          "hint": "scene.usda (the root layer) should NOT hold displayColor; you authored it before switching the edit target."
+        },
+        {
+          "type": "primvar",
+          "path": "/World/Box",
+          "name": "displayColor",
+          "equals": [
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "hint": "The composed displayColor should be [(0, 0, 1)]."
+        }
+      ]
+    },
+    {
+      "id": "py18-add-reference",
+      "title": "Bring in an asset with a reference",
+      "level": "intermediate",
+      "objective_ids": [
+        "1.3"
+      ],
+      "goal": "The practice folder has chair.usda, whose default prim /Chair has Seat and Back cubes. Define an Xform at /World/Chair_01 and add a reference to ./chair.usda on it, so the chair's children appear under /World/Chair_01.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n}\n",
+        "files": {
+          "chair.usda": "#usda 1.0\n(\n    defaultPrim = \"Chair\"\n)\n\ndef Xform \"Chair\" (\n    kind = \"component\"\n)\n{\n    def Cube \"Seat\"\n    {\n        double size = 1\n    }\n\n    def Cube \"Back\"\n    {\n        double size = 0.5\n    }\n}\n"
+        }
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import UsdGeom\n\n# TODO 1: define an Xform at /World/Chair_01\n# TODO 2: add a reference to \"./chair.usda\" on that prim\n",
+      "hints": [
+        "Every prim has a references list: prim.GetReferences().",
+        "AddReference(assetPath) without a prim path uses the asset's defaultPrim (here /Chair).",
+        "chair = UsdGeom.Xform.Define(stage, \"/World/Chair_01\").GetPrim(); chair.GetReferences().AddReference(\"./chair.usda\")"
+      ],
+      "solution": "from pxr import UsdGeom\n\nchair = UsdGeom.Xform.Define(stage, \"/World/Chair_01\").GetPrim()\n# No prim path given -> the reference targets chair.usda's defaultPrim (/Chair).\nchair.GetReferences().AddReference(\"./chair.usda\")\n",
+      "checks": [
+        {
+          "type": "reference",
+          "path": "/World/Chair_01",
+          "asset": "chair.usda",
+          "hint": "/World/Chair_01 should reference chair.usda: prim.GetReferences().AddReference(\"./chair.usda\")."
+        },
+        {
+          "type": "prim_type",
+          "path": "/World/Chair_01/Seat",
+          "equals": "Cube",
+          "hint": "The referenced Seat should appear at /World/Chair_01/Seat. Check the asset path spelling."
+        },
+        {
+          "type": "prim_exists",
+          "path": "/World/Chair_01/Back",
+          "hint": "The referenced Back should appear at /World/Chair_01/Back."
+        }
+      ]
+    },
+    {
+      "id": "py19-local-beats-reference",
+      "title": "Local opinions beat references",
+      "level": "intermediate",
+      "objective_ids": [
+        "1.1",
+        "1.6"
+      ],
+      "goal": "/World/Chair_01 references chair.usda, where the Seat size is 1. Make THIS chair's seat size 1.5 by authoring on /World/Chair_01/Seat in the root layer. Do not edit chair.usda: local opinions (L) are stronger than references (R) in LIVERPS.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Xform \"Chair_01\" (\n        prepend references = @./chair.usda@\n    )\n    {\n    }\n}\n",
+        "files": {
+          "chair.usda": "#usda 1.0\n(\n    defaultPrim = \"Chair\"\n)\n\ndef Xform \"Chair\" (\n    kind = \"component\"\n)\n{\n    def Cube \"Seat\"\n    {\n        double size = 1\n    }\n\n    def Cube \"Back\"\n    {\n        double size = 0.5\n    }\n}\n"
+        }
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nseat = stage.GetPrimAtPath(\"/World/Chair_01/Seat\")\n\n# TODO: set this seat's size to 1.5 (the edit goes to the root layer by default)\n",
+      "hints": [
+        "The Seat prim exists on the stage through the reference, so you can get its attribute like any other.",
+        "Setting a value through the stage writes to the current edit target, which is the root layer.",
+        "seat.GetAttribute(\"size\").Set(1.5)"
+      ],
+      "solution": "seat = stage.GetPrimAtPath(\"/World/Chair_01/Seat\")\n# This writes an 'over' for /World/Chair_01/Seat in scene.usda; chair.usda stays untouched.\nseat.GetAttribute(\"size\").Set(1.5)\n",
+      "checks": [
+        {
+          "type": "attribute",
+          "path": "/World/Chair_01/Seat.size",
+          "equals": 1.5,
+          "hint": "The composed seat size should be 1.5: seat.GetAttribute(\"size\").Set(1.5)."
+        },
+        {
+          "type": "layer_spec",
+          "file": "scene.usda",
+          "path": "/World/Chair_01/Seat.size",
+          "exists": true,
+          "hint": "The 1.5 opinion should live in scene.usda (the root layer), which is a local opinion."
+        },
+        {
+          "type": "layer_spec",
+          "file": "chair.usda",
+          "path": "/Chair/Seat.size",
+          "equals": 1,
+          "hint": "chair.usda must keep size 1: do not change the edit target or edit the asset file."
+        }
+      ]
+    },
+    {
+      "id": "py20-create-variant-set",
+      "title": "Create a variant set and pick a variant",
+      "level": "intermediate",
+      "objective_ids": [
+        "1.7"
+      ],
+      "goal": "On /World/Car create a variant set called paint with two variants: red (displayColor [(1, 0, 0)]) and blue (displayColor [(0, 0, 1)]). Author each color INSIDE its variant, then select blue.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Cube \"Car\"\n    {\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import Gf, UsdGeom\n\ncar = stage.GetPrimAtPath(\"/World/Car\")\n\n# TODO 1: add a variant set called \"paint\"\n# TODO 2: for each variant (\"red\", \"blue\"): add it, select it, and inside its edit context set displayColor\n# TODO 3: finish with \"blue\" selected\n",
+      "hints": [
+        "car.GetVariantSets().AddVariantSet(\"paint\") returns a variant set object with AddVariant and SetVariantSelection.",
+        "Edits go inside the selected variant only within: with paint.GetVariantEditContext(): ...",
+        "paint.AddVariant(\"red\"); paint.SetVariantSelection(\"red\"); with paint.GetVariantEditContext(): UsdGeom.Gprim(car).CreateDisplayColorAttr([Gf.Vec3f(1, 0, 0)])"
+      ],
+      "solution": "from pxr import Gf, UsdGeom\n\ncar = stage.GetPrimAtPath(\"/World/Car\")\npaint = car.GetVariantSets().AddVariantSet(\"paint\")\n\nfor name, color in ((\"red\", Gf.Vec3f(1, 0, 0)), (\"blue\", Gf.Vec3f(0, 0, 1))):\n    paint.AddVariant(name)\n    paint.SetVariantSelection(name)       # the edit context writes into the SELECTED variant\n    with paint.GetVariantEditContext():   # edits inside this block go into {paint=name}\n        UsdGeom.Gprim(car).CreateDisplayColorAttr([color])\n\npaint.SetVariantSelection(\"blue\")         # the selection itself is written outside the variants\n",
+      "checks": [
+        {
+          "type": "variant_set",
+          "path": "/World/Car",
+          "set": "paint",
+          "includes": [
+            "red",
+            "blue"
+          ],
+          "hint": "There should be a variant set 'paint' with variants 'red' and 'blue'."
+        },
+        {
+          "type": "variant_selection",
+          "path": "/World/Car",
+          "set": "paint",
+          "equals": "blue",
+          "hint": "Finish with paint.SetVariantSelection(\"blue\")."
+        },
+        {
+          "type": "layer_spec",
+          "file": "scene.usda",
+          "path": "/World/Car{paint=red}.primvars:displayColor",
+          "exists": true,
+          "hint": "The red color must be authored INSIDE the red variant: select red, then use 'with paint.GetVariantEditContext():'."
+        },
+        {
+          "type": "primvar",
+          "path": "/World/Car",
+          "name": "displayColor",
+          "equals": [
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "hint": "With blue selected, the composed displayColor should be [(0, 0, 1)]."
+        }
+      ]
+    },
+    {
+      "id": "py21-switch-variant",
+      "title": "Switch an existing variant",
+      "level": "intermediate",
+      "objective_ids": [
+        "1.7",
+        "1.6"
+      ],
+      "goal": "/World/Lamp already has a variant set called size with variants small (radius 0.5) and large (radius 2); small is selected. Switch it to large and read the composed radius into lamp_radius.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Sphere \"Lamp\" (\n        variants = {\n            string size = \"small\"\n        }\n        prepend variantSets = \"size\"\n    )\n    {\n        variantSet \"size\" = {\n            \"large\" {\n                double radius = 2\n            }\n            \"small\" {\n                double radius = 0.5\n            }\n        }\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nlamp = stage.GetPrimAtPath(\"/World/Lamp\")\n\n# TODO 1: select the \"large\" variant of the \"size\" variant set\nlamp_radius = None  # TODO 2: read the composed radius after switching\nprint(\"radius:\", lamp_radius)\n",
+      "hints": [
+        "lamp.GetVariantSets().GetVariantSet(\"size\") gives you the existing variant set.",
+        "SetVariantSelection(\"large\") switches it; the stage recomposes right away.",
+        "lamp.GetVariantSet(\"size\").SetVariantSelection(\"large\"); lamp_radius = lamp.GetAttribute(\"radius\").Get()"
+      ],
+      "solution": "lamp = stage.GetPrimAtPath(\"/World/Lamp\")\n\n# Changing the selection is a normal (local) edit in the root layer.\nlamp.GetVariantSet(\"size\").SetVariantSelection(\"large\")\n\n# Now the opinions inside {size=large} are the ones that compose.\nlamp_radius = lamp.GetAttribute(\"radius\").Get()\nprint(\"radius:\", lamp_radius)\n",
+      "report_vars": [
+        "lamp_radius"
+      ],
+      "checks": [
+        {
+          "type": "variant_selection",
+          "path": "/World/Lamp",
+          "set": "size",
+          "equals": "large",
+          "hint": "lamp.GetVariantSet(\"size\").SetVariantSelection(\"large\")"
+        },
+        {
+          "type": "attribute",
+          "path": "/World/Lamp.radius",
+          "equals": 2,
+          "hint": "With 'large' selected the composed radius is 2."
+        },
+        {
+          "type": "variable",
+          "name": "lamp_radius",
+          "equals": 2,
+          "hint": "Read lamp_radius AFTER switching the variant."
+        }
+      ]
+    },
+    {
+      "id": "py22-time-samples",
+      "title": "Animate with time samples",
+      "level": "intermediate",
+      "objective_ids": [
+        "5.2",
+        "5.4"
+      ],
+      "goal": "Animate /World/Ball: translate (0, 0, 0) at time 1 and (0, 10, 0) at time 24. Set the stage's startTimeCode to 1 and endTimeCode to 24. Then read the y position at time 12 into y_at_12 (USD interpolates linearly between samples).",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Sphere \"Ball\"\n    {\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import Gf, Usd, UsdGeom\n\nball = stage.GetPrimAtPath(\"/World/Ball\")\n\n# TODO 1: time samples for the translation at times 1 and 24\n# TODO 2: stage start and end time codes\ny_at_12 = None  # TODO 3: the y value of the translation at time 12\nprint(\"y at 12:\", y_at_12)\n",
+      "hints": [
+        "XformCommonAPI(ball).SetTranslate(value, time) writes a time sample when you pass a time.",
+        "The stage has SetStartTimeCode() and SetEndTimeCode(). Reading at a time: attr.Get(12).",
+        "api.SetTranslate(Gf.Vec3d(0, 10, 0), Usd.TimeCode(24)); y_at_12 = ball.GetAttribute(\"xformOp:translate\").Get(12)[1]"
+      ],
+      "solution": "from pxr import Gf, Usd, UsdGeom\n\nball = stage.GetPrimAtPath(\"/World/Ball\")\napi = UsdGeom.XformCommonAPI(ball)\n\n# Passing a time code writes a time sample instead of a default value.\napi.SetTranslate(Gf.Vec3d(0, 0, 0), Usd.TimeCode(1))\napi.SetTranslate(Gf.Vec3d(0, 10, 0), Usd.TimeCode(24))\n\nstage.SetStartTimeCode(1)\nstage.SetEndTimeCode(24)\n\n# Between samples USD interpolates linearly: 10 * (12 - 1) / (24 - 1) = about 4.78.\ny_at_12 = ball.GetAttribute(\"xformOp:translate\").Get(12)[1]\nprint(\"y at 12:\", y_at_12)\n",
+      "report_vars": [
+        "y_at_12"
+      ],
+      "checks": [
+        {
+          "type": "time_samples",
+          "path": "/World/Ball.xformOp:translate",
+          "equals": [
+            1,
+            24
+          ],
+          "hint": "There should be exactly two time samples, at 1 and 24: pass a time to SetTranslate."
+        },
+        {
+          "type": "attribute",
+          "path": "/World/Ball.xformOp:translate",
+          "time": 24,
+          "equals": [
+            0,
+            10,
+            0
+          ],
+          "hint": "At time 24 the translation should be (0, 10, 0)."
+        },
+        {
+          "type": "metadata",
+          "path": "/",
+          "key": "startTimeCode",
+          "equals": 1,
+          "hint": "stage.SetStartTimeCode(1)"
+        },
+        {
+          "type": "metadata",
+          "path": "/",
+          "key": "endTimeCode",
+          "equals": 24,
+          "hint": "stage.SetEndTimeCode(24)"
+        },
+        {
+          "type": "variable",
+          "name": "y_at_12",
+          "equals": 4.7826,
+          "tol": 0.01,
+          "hint": "y_at_12 is the y component ([1]) of the translation read at time 12 - about 4.78."
+        }
+      ]
+    },
+    {
+      "id": "py23-recompute-extent",
+      "title": "Recompute a stale extent",
+      "level": "intermediate",
+      "objective_ids": [
+        "5.6",
+        "5.5"
+      ],
+      "goal": "Someone moved the points of /World/Ramp but left the old extent [(0, 0, 0), (1, 1, 1)]. A stale extent makes renderers cull or frame the mesh wrongly. Compute the correct extent from the points and write it back to the extent attribute.",
+      "setup": {
+        "scene": "#usda 1.0\n\ndef Xform \"World\"\n{\n    def Mesh \"Ramp\"\n    {\n        float3[] extent = [(0, 0, 0), (1, 1, 1)]\n        int[] faceVertexCounts = [4]\n        int[] faceVertexIndices = [0, 1, 2, 3]\n        point3f[] points = [(-1, 0, 0), (3, 0, 0), (3, 2, 1), (-1, 2, 1)]\n    }\n}\n"
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\nfrom pxr import Usd, UsdGeom\n\nramp = UsdGeom.Mesh(stage.GetPrimAtPath(\"/World/Ramp\"))\n\n# TODO 1: compute the extent from the mesh's points\n# TODO 2: write it to the extent attribute\n",
+      "hints": [
+        "UsdGeom.Boundable.ComputeExtentFromPlugins(boundable, time) computes an extent for any boundable prim.",
+        "Use Usd.TimeCode.Default() for the time, then set the result with ramp.GetExtentAttr().Set(...).",
+        "extent = UsdGeom.Boundable.ComputeExtentFromPlugins(ramp, Usd.TimeCode.Default()); ramp.GetExtentAttr().Set(extent)"
+      ],
+      "solution": "from pxr import Usd, UsdGeom\n\nramp = UsdGeom.Mesh(stage.GetPrimAtPath(\"/World/Ramp\"))\n# The extent is [min corner, max corner] of the points (in local space).\nextent = UsdGeom.Boundable.ComputeExtentFromPlugins(ramp, Usd.TimeCode.Default())\nramp.GetExtentAttr().Set(extent)\n",
+      "checks": [
+        {
+          "type": "attribute",
+          "path": "/World/Ramp.extent",
+          "equals": [
+            [
+              -1,
+              0,
+              0
+            ],
+            [
+              3,
+              2,
+              1
+            ]
+          ],
+          "hint": "The extent should be [(-1, 0, 0), (3, 2, 1)] - the min and max of the points."
+        }
+      ]
+    },
+    {
+      "id": "py24-flatten-export",
+      "title": "Flatten and export for delivery",
+      "level": "intermediate",
+      "objective_ids": [
+        "1.9"
+      ],
+      "goal": "The practice scene uses a sublayer (looks.usda) and a reference (chair.usda). Write a single, self-contained file called delivery.usda in the practice folder with every opinion baked in: no sublayers, no references.",
+      "setup": {
+        "scene": "#usda 1.0\n(\n    subLayers = [\n        @./looks.usda@\n    ]\n)\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n    }\n\n    def Xform \"Chair_01\" (\n        prepend references = @./chair.usda@\n    )\n    {\n    }\n}\n",
+        "files": {
+          "chair.usda": "#usda 1.0\n(\n    defaultPrim = \"Chair\"\n)\n\ndef Xform \"Chair\" (\n    kind = \"component\"\n)\n{\n    def Cube \"Seat\"\n    {\n        double size = 1\n    }\n\n    def Cube \"Back\"\n    {\n        double size = 0.5\n    }\n}\n",
+          "looks.usda": "#usda 1.0\n\nover \"World\"\n{\n    over \"Box\"\n    {\n        color3f[] primvars:displayColor = [(0, 1, 0)]\n    }\n}\n"
+        }
+      },
+      "starter_code": "# `stage` is already open for you. It is a throwaway practice scene, not one of your real scenes.\n# TODO: write the flattened (composed) stage to \"delivery.usda\" in the current folder\n",
+      "hints": [
+        "Flattening merges all layers and arcs into one layer: stage.Flatten() returns that layer.",
+        "A layer can be written to a new file with layer.Export(file_name). stage.Export(file_name) also flattens.",
+        "stage.Flatten().Export(\"delivery.usda\")"
+      ],
+      "solution": "# Flatten() composes everything (sublayers, references, variants...) into ONE anonymous layer,\n# and Export() writes it to a new file. The original layers are left unchanged.\nflat_layer = stage.Flatten()\nflat_layer.Export(\"delivery.usda\")\n",
+      "checks": [
+        {
+          "type": "file_exists",
+          "file": "delivery.usda",
+          "hint": "Export to the relative file name \"delivery.usda\" (the current folder is the practice folder)."
+        },
+        {
+          "type": "layer_no_arcs",
+          "file": "delivery.usda",
+          "hint": "delivery.usda should not contain sublayers, references or payloads: export stage.Flatten(), not the root layer."
+        },
+        {
+          "type": "layer_spec",
+          "file": "delivery.usda",
+          "path": "/World/Chair_01/Seat",
+          "exists": true,
+          "hint": "The referenced chair parts should be baked into delivery.usda (that is what flattening does)."
+        },
+        {
+          "type": "layer_spec",
+          "file": "delivery.usda",
+          "path": "/World/Box.primvars:displayColor",
+          "exists": true,
+          "hint": "The sublayer's displayColor opinion should be baked into delivery.usda."
+        }
+      ]
+    }
+  ]
+}

@@ -14,6 +14,7 @@ from .bridge import (
     BASIC_RPC_METHODS,
     CAPTURE_RPC_METHODS,
     EDIT_RPC_METHODS,
+    HOMEWORK_RPC_METHODS,
     INSIGHT_QUERIES,
     LIVE_RPC_METHODS,
     PHYSICS_RPC_METHODS,
@@ -447,6 +448,7 @@ class LiveKitSceneBridge:
             "physics": _module_info("physics", PHYSICS_RPC_METHODS, dry_run_default=True),
             "capture": _module_info("kit_live_extras", CAPTURE_RPC_METHODS),
             "simulation": _module_info("kit_live_extras", SIMULATION_RPC_METHODS),
+            "homework": _homework_info(),
             "dry_run_default": True,
             "stage_open": self._stage() is not None,
         }
@@ -872,6 +874,40 @@ class LiveKitSceneBridge:
     def simulation_step(self, frames: int = 1) -> dict[str, Any]:
         """Advance a paused (or stopped) simulation by frames (capped at 600)."""
         return self._extras("simulation_step", lambda extras: extras.simulation_step(frames))
+
+    # --- RPC tier5-1: read-only homework check and scene tour (assignments.py, scene_tour.py; pure pxr) ----------
+
+    def assignment_check(self, assignment_id: str = "isaac_session02_warehouse") -> dict[str, Any]:
+        """Check the LIVE stage (unsaved edits included) against a homework rubric; reads only, never writes."""
+        try:
+            from .assignments import check_assignment
+        except Exception as exc:  # noqa: BLE001
+            return _module_unavailable("assignment_check", "assignments", exc)
+        return self._read_only("assignment_check", lambda stage: check_assignment(stage, assignment_id))
+
+    def scene_tour(self, focus_path: str | None = None, *, depth: int = 3, max_prims: int = 400) -> dict[str, Any]:
+        """A beginner tour of the LIVE stage (or one subtree); reads only, never writes."""
+        try:
+            from .scene_tour import scene_tour as tour
+        except Exception as exc:  # noqa: BLE001
+            return _module_unavailable("scene_tour", "scene_tour", exc)
+        return self._read_only("scene_tour", lambda stage: tour(stage, focus_path=focus_path, depth=depth, max_prims=max_prims))
+
+    def _read_only(self, method: str, call: Callable[[Any], dict[str, Any]]) -> dict[str, Any]:
+        """Run one read-only pxr function on the live stage and report any layer it dirtied (it never should)."""
+        stage = self._require_stage()
+        dirty_before = _dirty_layer_ids(stage)
+        started = time.perf_counter()
+        result = call(stage)
+        payload: dict[str, Any] = dict(result) if isinstance(result, dict) else {"ok": True, "result": result}
+        payload.update(_live_layer_state(stage))
+        newly_dirty = sorted(_dirty_layer_ids(stage) - dirty_before)
+        if newly_dirty:
+            warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else []
+            payload["warnings"] = [*warnings, f"Read-only violation: these layers became dirty during {method}: "
+                                   f"{newly_dirty[:10]}"]
+        payload.update(mode="live", action=method, elapsed_ms=int((time.perf_counter() - started) * 1000), note=LIVE_NOTE)
+        return _fit_json(payload, LIVE_MAX_RESULT_BYTES)
 
     def _extras(self, method: str, call: Callable[[Any], dict[str, Any]]) -> dict[str, Any]:
         try:
@@ -1390,6 +1426,15 @@ def _module_info(module: str, methods: tuple[str, ...], *, dry_run_default: bool
     if dry_run_default is not None:
         info["dry_run_default"] = dry_run_default
     return info
+
+
+def _homework_info() -> dict[str, Any]:
+    """Capabilities entry for the tier5-1 homework methods: both modules must import here."""
+    first = _module_info("assignments", HOMEWORK_RPC_METHODS)
+    second = _module_info("scene_tour", HOMEWORK_RPC_METHODS)
+    if not first["available"]:
+        return first
+    return second
 
 
 def _undo_unavailable(method: str) -> dict[str, Any]:

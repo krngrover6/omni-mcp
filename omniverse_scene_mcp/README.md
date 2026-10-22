@@ -103,7 +103,7 @@ duplicating the underlying documentation tools.
 
 ## MCP Tools
 
-The server exposes 98 tools; `router_help()` lists all of them grouped by task.
+The server exposes 110 tools; `router_help()` lists all of them grouped by task.
 The main ones (Tier 4 below adds the asset, physics, screenshot, simulation and
 dashboard tools):
 
@@ -403,6 +403,84 @@ with `how_to_enable` (reload the Isaac or Composer bridge). The in-memory fake
 scene supports asset references and a physics-free timeline in memory; physics
 and screenshots say they are not supported there.
 
+### Learning Python, homework and class notes (Tier 5, RPC `tier5-1`)
+
+Six beginner helpers. Every tool here is read-only except `python_practice_run`,
+which saves the graded attempt to your exam progress.
+
+"Show me the Python" (`python_teacher.py`, `python_links.py`):
+
+- `python_show(action, args=None, context="script_editor")` - a short runnable
+  OpenUSD snippet for one task (inspect, create, move/rotate/scale, attributes,
+  time samples, lights, cameras, materials, references, payloads, variants,
+  sublayers, physics, save/export, undo) with every line explained, the USD
+  concepts, where to run it, what it changes and the exam objectives. Router
+  tool names work as actions (`scene_move`, `scene_create_light`, ...).
+  `context="standalone"` gives a usd-core script that opens a `.usda` file.
+  Nothing runs; user values only become `repr()` literals
+- `python_topics()` - every supported task with its arguments
+- `show_python=False` on `router_dispatch` and the editing tools (`scene_create`,
+  `scene_delete`, `scene_duplicate`, `scene_rename`, `scene_move`,
+  `scene_material`, `scene_variant_set`, `scene_set_attribute`,
+  `scene_create_light`, `scene_create_camera`, `scene_aim`,
+  `scene_create_material`, `scene_bind_material`, `scene_add_asset`,
+  `scene_add_physics_scene`, `scene_make_rigid_body`, `scene_make_collider`):
+  `True` adds `result["python"]`, the snippet for the same change with the same
+  values. A snippet problem is reported inside `python` and never fails the
+  edit; with `False` (the default) results are unchanged
+
+Python practice (`exam/python_practice.py`, 24 exercises in
+`exam/data/python_exercises.json`):
+
+- `python_practice_list(level=None)` - exercises in order with `passed` flags
+  and `next_exercise`
+- `python_practice_get(exercise_id=None, reveal=False, level=None)` - goal,
+  starter code, hints and checks; no id picks your next unpassed exercise; the
+  solution only with `reveal=True`
+- `python_practice_run(exercise_id, code, timeout_s=10, record=True)` - runs
+  your code in a separate `python -I` process on a throwaway temp copy of the
+  exercise scene, grades it, and with `record=True` saves the result to exam
+  progress (source `python_practice`)
+
+Errors (`error_explainer.py`, `data/error_patterns.json`):
+
+- `explain_error(text, code=None, search_docs=True)` - plain-English
+  explanation, likely causes, fix steps and an example for a traceback, Kit
+  `[Error]` line, USD/Tf or PhysX message; `search_docs` adds related offline
+  USD and Isaac Sim / Kit doc pages. The text is only read with regexes
+
+Homework and scene tour (`assignments.py` + `data/assignments/*.json`,
+`scene_tour.py`; pure pxr, read-only):
+
+- `assignment_list()` and `assignment_check(assignment_id="isaac_session02_warehouse",
+  scene_file=None)` - pass / partial / fail per rubric rule with how-to-fix
+  steps, a score and the ONE next step
+- `scene_explain(focus_path=None, depth=3, max_prims=400, scene_file=None)` -
+  a friendly tour: groups, geometry, lights, cameras, materials, physics,
+  layers and references, a glossary and questions to explore
+- Without `scene_file` both read the LIVE stage through the new RPC methods
+  `assignment_check` and `scene_tour` (time-budgeted like insight, never
+  writing). On a bridge older than `tier5-1` or the fake scene they fall back
+  to the live scene's saved file; if there is none they answer
+  `needs_bridge_update` (with `how_to_enable`) and suggest `scene_file=...`
+
+Class notes (`class_notes.py`, offline BM25, read-only): the class folder
+(`~/Downloads/Issac Sim Classes`, or `$OMNIVERSE_CLASS_NOTES_ROOT`) and
+`isaacsim-mentorship/**/REVISION_NOTES.md`:
+
+- `class_sessions()`, `class_ask(question, session=None, top_k=6)`,
+  `class_search(query, session=None, top_k=5)` - passages with session,
+  source and timestamp (subtitle and Gemini clocks differ; each hit says which)
+
+`router_dispatch` phrases (all read-only): "show me the python for moving a
+cube", "how do I write python to add a light", "python code for creating a
+camera" (add "standalone" for a usd-core script), "give me a python exercise",
+"list python exercises", "explain this error: ..." (or paste a traceback),
+"check my homework", "what's next on my homework", "check my homework in
+isaacsim-mentorship/session02/main.usda", "explain my scene", "describe the
+scene under /World/Shelves", "what did the teacher say about ground plane",
+"what did we learn in session 2", "list class sessions".
+
 ## Testing
 
 Run the whole suite offline (it sets `OMNIVERSE_SCENE_MCP_TEST=1`, refuses
@@ -417,7 +495,9 @@ non-loopback and live-stack connections, and never touches your scenes or
 With pytest installed outside Kit (`pip install -e "omniverse_scene_mcp[usd,test]"`;
 never into Kit, Isaac Sim or Composer): `pytest -q omniverse_scene_mcp/tests`.
 The Isaac Sim bridge reload runs `test_kit_bridge_usd.py`, `test_kit_rpc.py`,
-`test_edits.py` and `test_undo.py` inside Isaac before it swaps the bridge.
+`test_edits.py`, `test_undo.py`, `test_kit_live_extras.py`, `test_physics.py`,
+`test_scene_tour.py` and `test_assignments.py` inside Isaac before it swaps the
+bridge (Composer's reload runs the same optional files when present).
 
 ## Next step
 

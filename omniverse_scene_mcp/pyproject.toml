@@ -31,10 +31,12 @@ where = ["src"]
 include = ["omniverse_scene_mcp", "omniverse_scene_mcp.*"]
 exclude = ["*.__pycache__", "*.__pycache__.*"]
 
-# Non-.py files the package reads at runtime (exam/bank.py and exam/blueprint.py open these by __file__).
+# Non-.py files the package reads at runtime (exam/bank.py, exam/blueprint.py, exam/python_practice.py,
+# error_explainer.py and assignments.py open these by __file__).
 # Everything else the router reads (workspace notes, LearnOpenUSD docs, kit-usd-agents data) lives outside the
 # package in the workspace and is located through OMNIVERSE_ROOT / OMNIVERSE_USD_KNOWLEDGE_DATA.
 [tool.setuptools.package-data]
+"omniverse_scene_mcp" = ["data/*.json", "data/assignments/*.json"]
 "omniverse_scene_mcp.exam" = ["data/*.json"]
 
 # sys.path, OMNIVERSE_SCENE_MCP_TEST=1, the network guard and local-only skips come from tests/conftest.py,

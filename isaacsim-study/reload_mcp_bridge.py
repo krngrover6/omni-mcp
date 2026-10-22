@@ -1,7 +1,8 @@
 """Run in Isaac Sim's Script Editor: reload the 9911 scene bridge with the current omniverse_scene_mcp source.
 
 The new code is first self-tested on temporary stages (tests/test_kit_bridge_usd.py, tests/test_kit_rpc.py,
-tests/test_edits.py, tests/test_undo.py, tests/test_kit_live_extras.py and tests/test_physics.py, all fixture-free; Kit's command and undo modules are faked, never the
+tests/test_edits.py, tests/test_undo.py, tests/test_kit_live_extras.py, tests/test_physics.py, tests/test_scene_tour.py and
+tests/test_assignments.py, all fixture-free; Kit's command and undo modules are faked, never the
 real ones) using Isaac's own USD build; the open stage is never edited, selected or saved. The new server
 is live_scene_control.LiveSceneControlServer extended by omniverse_scene_mcp.kit_rpc (see start_mcp_bridge.py).
 If a self-test or the new server fails, the old bridge keeps running (or is restarted). The outcome is written
@@ -31,6 +32,10 @@ self_test_paths = [
     # and UsdPhysics setup on temporary stages.
     workspace / "omniverse_scene_mcp" / "tests" / "test_kit_live_extras.py",
     workspace / "omniverse_scene_mcp" / "tests" / "test_physics.py",
+    # RPC tier5-1: the read-only scene tour and homework checker (pure pxr) on temporary stages; their real-scene
+    # smoke tests return at once inside Kit.
+    workspace / "omniverse_scene_mcp" / "tests" / "test_scene_tour.py",
+    workspace / "omniverse_scene_mcp" / "tests" / "test_assignments.py",
 ]
 start_script = workspace / "isaacsim-study" / "start_mcp_bridge.py"
 result_path = workspace / "isaacsim-study" / "bridge-reload-result.json"

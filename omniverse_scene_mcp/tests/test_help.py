@@ -19,6 +19,7 @@ GROUPS = [
     "Knowledge & docs",
     "Exam prep",
     "Learning",
+    "Learning Python & homework",
     "Health & connection",
 ]
 REQUIRED_PLANNED = {

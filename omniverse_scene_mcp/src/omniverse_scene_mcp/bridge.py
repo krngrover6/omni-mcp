@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 # Version of the extended live RPC (kit_rpc.make_extended_server_class); bump when its methods change.
-RPC_VERSION = "tier4-1"
+RPC_VERSION = "tier5-1"
 # Methods every LiveSceneControlServer (live_scene_control.py) answers, Composer's 9910 bridge included.
 BASIC_RPC_METHODS: tuple[str, ...] = (
     "ping",
@@ -58,6 +58,9 @@ TIER4_RPC_METHODS: tuple[str, ...] = (
     *CAPTURE_RPC_METHODS,
     *SIMULATION_RPC_METHODS,
 )
+# Added in RPC tier5-1: read-only learning helpers that run on the open stage, the homework check
+# (assignments.check_assignment) and the beginner scene tour (scene_tour.scene_tour). Neither writes anything.
+HOMEWORK_RPC_METHODS: tuple[str, ...] = ("assignment_check", "scene_tour")
 # Methods only an extended bridge answers; an older bridge replies "Unsupported live scene method: <name>".
 LIVE_RPC_METHODS: tuple[str, ...] = (
     "capabilities",
@@ -68,6 +71,7 @@ LIVE_RPC_METHODS: tuple[str, ...] = (
     *EDIT_RPC_METHODS,
     *UNDO_RPC_METHODS,
     *TIER4_RPC_METHODS,
+    *HOMEWORK_RPC_METHODS,
 )
 # Read-only insight queries a live bridge runs on the open stage (usd_insight / usd_validate functions).
 INSIGHT_QUERIES: tuple[str, ...] = ("stage_info", "composition", "explain_value", "properties", "bounds", "validate")
@@ -310,3 +314,11 @@ class LiveSceneBridge(SceneBridge, Protocol):
     def simulation_stop(self) -> dict[str, Any]: ...
 
     def simulation_step(self, frames: int = 1) -> dict[str, Any]: ...
+
+    # --- RPC tier5-1: read-only homework check and scene tour on the open stage ---------------------------------
+
+    def assignment_check(self, assignment_id: str = "isaac_session02_warehouse") -> dict[str, Any]: ...
+
+    def scene_tour(
+        self, focus_path: str | None = None, *, depth: int = 3, max_prims: int = 400
+    ) -> dict[str, Any]: ...

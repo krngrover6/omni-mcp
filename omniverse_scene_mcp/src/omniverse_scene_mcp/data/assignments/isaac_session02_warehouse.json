@@ -1,0 +1,165 @@
+{
+  "id": "isaac_session02_warehouse",
+  "title": "Isaac Sim mentorship session 02: static warehouse scene",
+  "session": "Isaac Sim mentorship, session 02 (2026-10-08)",
+  "isaac_version_note": "The teacher used Isaac Sim 5.1 and you have 6.1.0, so a menu may sit in a slightly different place. If a menu path below is missing, look for the same word under the Create menu or in the Stage panel's right-click menu.",
+  "summary": "Build a static warehouse corner: one floor, three walls (front and top open), two shelves on an inside wall with small boxes on them, a front-facing stack of ten cubes in rows of 4, 3, 2 and 1, a camera and a light aimed at the stack, extra Rect or Sphere lights for the dark shelf areas, clear names, and Xform groups for the environment, the shelves and the lights.",
+  "notes": [
+    "The teacher's light intensities (about 15,000 to 7,500) were from their own scene, so they're an example, not a required value.",
+    "This is a static scene. You don't need to press Play or run the simulation.",
+    "The checker only reads your scene. It never changes or saves anything."
+  ],
+  "rules": [
+    {
+      "id": "floor",
+      "title": "One floor (ground plane)",
+      "weight": 8,
+      "why": "Everything in the warehouse stands on the floor. Having exactly one floor also keeps later physics lessons simple, because a single ground plane is what objects land on.",
+      "how_to_fix": [
+        "Create > Physics > Ground Plane (Isaac Sim adds a GroundPlane with a visible plane and a collision plane).",
+        "Select it in the Stage panel and set its size in the Property panel so it is larger than your walls.",
+        "If you already have a second floor (for example a flat cube under the ground plane), delete or hide one of them."
+      ],
+      "mcp_phrase": "show me the floor and its size"
+    },
+    {
+      "id": "three_walls",
+      "title": "Three walls around the floor",
+      "weight": 12,
+      "why": "The teacher's warehouse has a back wall and two side walls. Walls are thin, tall boxes standing on the floor, which makes a U shape you can look into.",
+      "how_to_fix": [
+        "Create > Shape > Cube (in some versions Create > Mesh > Cube) for each wall.",
+        "In the Property panel scale it so it is thin in one direction, long in another and tall in the up direction, for example scale (16, 0.2, 6) with Z up.",
+        "Move it so its bottom sits on the floor, and place one wall at the back and one on each side.",
+        "Leave the side facing the camera without a wall."
+      ],
+      "mcp_phrase": "list the walls and which side each one is on"
+    },
+    {
+      "id": "open_front_top",
+      "title": "Front and top left open",
+      "weight": 5,
+      "why": "The camera has to see inside the warehouse. A fourth wall or a ceiling would block the view and the light.",
+      "how_to_fix": [
+        "In the Stage panel, find any wall on the camera side or any large flat piece above the walls (a ceiling).",
+        "Delete it, or turn it off with the eye icon in the Stage panel.",
+        "Look through your camera to check that you can see inside."
+      ],
+      "mcp_phrase": "which side of the warehouse is open"
+    },
+    {
+      "id": "two_shelves_on_wall",
+      "title": "Two shelves attached to an inside wall",
+      "weight": 10,
+      "why": "Shelves are flat, thin boards above the floor. The teacher asked for two shelves fixed to the inside of a wall, not floating in the middle of the room.",
+      "how_to_fix": [
+        "Create > Shape > Cube and scale it into a flat board, for example (5, 1.6, 0.15) with Z up.",
+        "Move it so its back edge touches the inside face of a wall and lift it above the floor.",
+        "Duplicate it (Ctrl+D or right-click > Duplicate) and move the copy higher for the second shelf.",
+        "Optional: add two tall thin side supports so the shelves look like a rack."
+      ],
+      "mcp_phrase": "show me the shelves and the gap to the wall"
+    },
+    {
+      "id": "objects_on_shelves",
+      "title": "Small boxes resting on the shelves",
+      "weight": 8,
+      "why": "The shelves should hold small objects. An object looks right when its bottom touches the shelf top, so it isn't floating above the board or sunk into it.",
+      "how_to_fix": [
+        "Create > Shape > Cube and scale it small, for example 0.6.",
+        "Set its up position to (shelf top) + (half the box height). For a shelf whose top is at 1.275 and a 0.6 box, that is 1.275 + 0.3 = 1.575.",
+        "Duplicate the box along the shelf and repeat for the other shelf.",
+        "Tip: turn on snapping in the viewport toolbar to place boxes exactly on surfaces."
+      ],
+      "mcp_phrase": "check which shelf boxes are floating"
+    },
+    {
+      "id": "ten_cube_stack",
+      "title": "Ten central cubes stacked 4, 3, 2, 1 facing the front",
+      "weight": 15,
+      "why": "This is the main object of the homework: ten cubes in one front-facing wall of rows, with 4 on the bottom, then 3, then 2, then 1 on top. Each upper cube sits on the two cubes below it. It is not a four-sided pyramid with depth.",
+      "how_to_fix": [
+        "Make one cube, then duplicate it to get four side by side, touching, on the floor (the bottom row).",
+        "For row 2 make three cubes, raise them by one cube height and shift each by half a cube so it sits across two cubes below.",
+        "Repeat for 2 cubes and then 1 cube on top. Keep all cubes at the same depth so the stack faces the camera.",
+        "Group the ten cubes under an Xform called BoxStack and check the Stage panel shows exactly ten."
+      ],
+      "mcp_phrase": "show me the stack rows from bottom to top"
+    },
+    {
+      "id": "camera_aimed",
+      "title": "A camera aimed at the stack",
+      "weight": 10,
+      "why": "The camera is how the teacher will see your result. It should look straight at the cube stack, from the open front, so the stack is near the middle of the picture.",
+      "how_to_fix": [
+        "Create > Camera, then rename it, for example AssignmentCamera.",
+        "In the viewport's camera menu (top left of the viewport) choose your camera to look through it.",
+        "While looking through it, move the view (right mouse button + W/A/S/D, or Alt + mouse) until the stack is centred. This moves the camera itself.",
+        "Or type the Translate and Rotate values in the Property panel."
+      ],
+      "mcp_phrase": "is my camera looking at the stack"
+    },
+    {
+      "id": "key_light_aimed",
+      "title": "A light aimed at the stack",
+      "weight": 10,
+      "why": "A Rect light shines out of its front face, along its local -Z direction. If that face doesn't point at the stack, the stack stays dark even though the light exists.",
+      "how_to_fix": [
+        "Create > Light > Rect Light and rename it, for example MainLight.",
+        "Place it above or in front of the stack.",
+        "Rotate it so its front faces the stack. With Z up, a light straight above needs rotation (0, 0, 0) to point down.",
+        "Raise the intensity in the Property panel until the stack is clearly lit."
+      ],
+      "mcp_phrase": "preview a rect light above the stack"
+    },
+    {
+      "id": "extra_lights_shelves",
+      "title": "Extra Rect or Sphere lights, including the dark shelf areas",
+      "weight": 7,
+      "why": "One light leaves shadows. The lower shelf is usually dark because the upper shelf blocks light from above. A small extra Rect or Sphere light near it fixes that.",
+      "how_to_fix": [
+        "Create > Light > Rect Light (or Sphere Light) and rename it, for example LowerShelfLight.",
+        "Place it just under the upper shelf, above the lower shelf, and point it down at the lower shelf.",
+        "Start with a modest intensity and raise it until the boxes on the lower shelf are visible. The teacher's 15,000 to 7,500 is only an example.",
+        "Use RTX Real-Time (not Minimal) to judge the lighting."
+      ],
+      "mcp_phrase": "preview a rect light above the lower shelf"
+    },
+    {
+      "id": "clear_names",
+      "title": "Clear names for scene parts",
+      "weight": 5,
+      "why": "Names like Cube_03 or RectLight_01 don't say what something is. Names like BackWall, UpperShelf or MainLight make the Stage panel readable for you and your teacher.",
+      "how_to_fix": [
+        "In the Stage panel double-click a prim's name (or right-click > Rename).",
+        "Use names that describe the part: Floor or GroundPlane, BackWall, LeftWall, RightWall, LowerShelf, MainLight, AssignmentCamera.",
+        "Renaming changes the prim path, so rename before you write scripts that use the path."
+      ],
+      "mcp_phrase": "list prims that still have default names"
+    },
+    {
+      "id": "grouping",
+      "title": "Environment, shelves and lights grouped under Xforms",
+      "weight": 7,
+      "why": "An Xform is a folder that can also move its children. Grouping keeps the Stage panel tidy and lets you move a whole group (for example all shelves) at once.",
+      "how_to_fix": [
+        "Select the floor and walls in the Stage panel, right-click > Group Selected (or Create > Xform and drag the prims onto it).",
+        "Rename the groups Environment, Shelves and Lights.",
+        "Put the shelf boards (and their boxes) under Shelves and every light under Lights."
+      ],
+      "mcp_phrase": "show me the scene hierarchy"
+    },
+    {
+      "id": "static_scene",
+      "title": "Static scene (no simulation needed)",
+      "weight": 3,
+      "why": "This homework is a still scene that you look at through the camera. You don't need to press Play, and nothing needs to be animated.",
+      "how_to_fix": [
+        "Don't press Play for this homework.",
+        "If a prim was animated by accident (keyframes), remove its keys or time samples so it stays in place.",
+        "Rigid bodies are fine to keep, but they only matter when the simulation runs."
+      ],
+      "mcp_phrase": "is anything in my scene animated"
+    }
+  ]
+}

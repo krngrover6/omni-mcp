@@ -428,6 +428,14 @@ class FakeSceneBridge:
     def physics_report(self, prim_path: str | None = None) -> dict[str, Any]:
         return self._not_supported("physics_report", "The physics report", prim_path=prim_path)
 
+    # --- RPC tier5-1: the homework check and scene tour need a real USD stage -------------------------------------
+
+    def assignment_check(self, assignment_id: str = "isaac_session02_warehouse") -> dict[str, Any]:
+        return self._not_supported("assignment_check", "Checking homework", assignment_id=str(assignment_id))
+
+    def scene_tour(self, focus_path: str | None = None, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("scene_tour", "The scene tour", focus_path=focus_path)
+
     def add_physics_scene(self, path: str = "/physicsScene", **_options: Any) -> dict[str, Any]:
         return self._not_supported("add_physics_scene", "Adding a PhysicsScene", path=str(path))
 

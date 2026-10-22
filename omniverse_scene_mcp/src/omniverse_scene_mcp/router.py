@@ -10,7 +10,7 @@ from typing import Any, Protocol
 from urllib.parse import unquote
 
 from . import help as tool_guide
-from . import nl_tier4
+from . import nl_tier4, nl_tier5
 from .service import OperationResult, SceneMCPService
 
 _LEARNING_PHRASES = (
@@ -531,8 +531,12 @@ class OmniverseRouter:
         exam_day: Callable[[int | None], dict[str, Any]] | None = None,
         mock_status: Callable[[], dict[str, Any] | None] | None = None,
         dashboard: Callable[[bool], dict[str, Any]] | None = None,
+        learning_helpers: dict[str, Callable[..., dict[str, Any]]] | None = None,
     ) -> None:
         self._scene = scene_service
+        # Learning-helper callbacks by kind (server.build_server attaches its python_*, explain_error, assignment_*,
+        # scene_explain and class_* tools); without them the pure helpers still answer and the rest name their tool.
+        self._learning_helpers: dict[str, Callable[..., dict[str, Any]]] = dict(learning_helpers or {})
         # dashboard(write) builds the exam dashboard (and saves dashboard.html when write is True).
         self._dashboard = dashboard
         self._last_capture: str | None = None  # the newest screenshot path, for 'is my screenshot ready'
@@ -555,6 +559,10 @@ class OmniverseRouter:
             RouteTarget.BOWERBOT: bowerbot_backend or NullKnowledgeBackend("bowerbot"),
         }
 
+    def attach_learning_helpers(self, helpers: dict[str, Callable[..., dict[str, Any]]]) -> None:
+        """Use these callbacks (kind -> callable) for the learning-helper sentences in nl_tier5.py."""
+        self._learning_helpers.update(helpers)
+
     async def handle(self, request: str, dry_run: bool = False) -> RoutedResult:
         decision = self.route(request)
         payload = await self._dispatch(decision, request, dry_run=dry_run)
@@ -576,6 +584,10 @@ class OmniverseRouter:
         if self._practice_session is not None and normalized in {"done", "next", "continue", "ok", "finished"}:
             return RoutingDecision(RouteTarget.LEARN, 0.99, "Active practice session advance request", normalized)
         core = self._strip_politeness(normalized)
+        helper = nl_tier5.parse(request)
+        if helper is not None:  # Python snippets, exercises, error explanations, homework, scene tour, class notes
+            return RoutingDecision(RouteTarget.LEARN, 0.96, f"Learning helper request ({helper['kind']}, read-only)",
+                                   normalized)
         if self._help_request(core) is not None:
             return RoutingDecision(RouteTarget.LEARN, 0.97, "Help request (tool guide)", normalized)
         if nl_tier4.is_dashboard_request(core):
@@ -658,6 +670,9 @@ class OmniverseRouter:
             normalized = self._normalize(request)
             if self._practice_session is not None and normalized in {"done", "next", "continue", "ok", "finished"}:
                 return self.next_practice_step()
+            helper = nl_tier5.parse(request)
+            if helper is not None:
+                return await self._run_learning_helper(helper)
             help_request = self._help_request(self._strip_politeness(normalized))
             if help_request is not None:
                 return self.tool_help(help_request["topic"])
@@ -1953,6 +1968,32 @@ class OmniverseRouter:
             payload.setdefault(
                 "note", "Simulation state only: no authored scene data changed and nothing was saved."
             )
+        return payload
+
+    # --- tier 5: learning helpers (phrases in nl_tier5.py; every one is read-only) -----------------------------------
+
+    async def _run_learning_helper(self, spec: dict[str, Any]) -> dict[str, Any]:
+        """Run one nl_tier5 request: the attached tool when there is one, else the pure helper or the tool to call."""
+        kind = spec["kind"]
+        tool, arguments = _learning_helper_call(spec)
+        base: dict[str, Any] = {"target": "learn", "style": kind, "tool": tool, "arguments": arguments, "read_only": True}
+        self._record_learning_event(f"learning_helper_{kind}")
+        helper = self._learning_helpers.get(kind)
+        try:
+            if helper is not None:
+                result = await asyncio.to_thread(helper, **arguments)
+            else:
+                result = _pure_learning_helper(kind, arguments)
+        except Exception as exc:  # noqa: BLE001 - a broken helper is reported, never raised into the client
+            return {"ok": False, **base, "executed": True, "message": f"{tool} failed: {type(exc).__name__}: {exc}"}
+        if result is None:
+            call = ", ".join(f"{key}={value!r}" for key, value in arguments.items())
+            return {"ok": True, **base, "executed": False,
+                    "message": f"Call {tool}({call}) for this; this router has no {tool} helper attached."}
+        payload = {**base, "executed": True, **result}
+        payload.setdefault("ok", True)
+        if spec.get("next_step_only") and isinstance(result.get("next_step"), (str, dict)):
+            payload["answer"] = result["next_step"]
         return payload
 
     async def _run_dashboard(self, write: bool) -> dict[str, Any]:
@@ -3690,3 +3731,71 @@ class OmniverseRouter:
     @staticmethod
     def _normalize(text: str) -> str:
         return re.sub(r"\s+", " ", text.strip().lower())
+
+
+# --- tier 5 learning helpers: which tool a sentence maps to, and the helpers that need no server state ------------
+
+_HELPER_TOOLS = {
+    "python_show": "python_show",
+    "python_topics": "python_topics",
+    "python_exercise": "python_practice_get",
+    "python_practice_list": "python_practice_list",
+    "explain_error": "explain_error",
+    "assignment_check": "assignment_check",
+    "assignment_list": "assignment_list",
+    "scene_explain": "scene_explain",
+    "class_ask": "class_ask",
+    "class_sessions": "class_sessions",
+}
+
+
+def _learning_helper_call(spec: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """(tool name, keyword arguments) for one nl_tier5 spec; these are the arguments the helper callbacks take."""
+    kind = spec["kind"]
+    tool = _HELPER_TOOLS[kind]
+    if kind == "python_show":
+        return tool, {"action": spec["action"], "args": dict(spec.get("args") or {}), "context": spec["context"]}
+    if kind in ("python_exercise", "python_practice_list"):
+        return tool, {"level": spec.get("level")}
+    if kind == "explain_error":
+        return tool, {"text": spec.get("text") or ""}
+    if kind == "assignment_check":
+        return tool, {"scene_file": spec.get("scene_file")}
+    if kind == "scene_explain":
+        return tool, {"focus_path": spec.get("focus_path")}
+    if kind == "class_ask":
+        return tool, {"question": spec["question"], "session": spec.get("session")}
+    return tool, {}
+
+
+def _pure_learning_helper(kind: str, arguments: dict[str, Any]) -> dict[str, Any] | None:
+    """The helpers that need no live scene, progress store or class notes; None for the others."""
+    if kind == "python_show":
+        from .python_teacher import python_for
+
+        return python_for(arguments["action"], arguments["args"], context=arguments["context"])
+    if kind == "python_topics":
+        from .python_teacher import list_python_topics
+
+        return list_python_topics()
+    if kind == "python_practice_list":
+        from .exam.python_practice import list_exercises
+
+        return list_exercises(arguments.get("level"))
+    if kind == "python_exercise":
+        from .exam.python_practice import get_exercise, list_exercises
+
+        listing = list_exercises(arguments.get("level"))
+        if not listing.get("ok") or not listing.get("exercises"):
+            return listing
+        return get_exercise(listing["exercises"][0]["id"])
+    if kind == "explain_error":
+        from .error_explainer import explain_error
+
+        return explain_error(arguments.get("text") or "")
+    if kind == "assignment_list":
+        from .assignments import list_assignments
+
+        assignments = list_assignments()
+        return {"ok": True, "count": len(assignments), "assignments": assignments}
+    return None
