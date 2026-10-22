@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import math
 import os
@@ -9,11 +10,15 @@ from collections.abc import Callable
 from typing import Any
 
 from .bridge import (
+    ASSET_RPC_METHODS,
     BASIC_RPC_METHODS,
+    CAPTURE_RPC_METHODS,
     EDIT_RPC_METHODS,
     INSIGHT_QUERIES,
     LIVE_RPC_METHODS,
+    PHYSICS_RPC_METHODS,
     RPC_VERSION,
+    SIMULATION_RPC_METHODS,
     PrimRecord,
     SceneSnapshot,
     unsupported_result,
@@ -438,6 +443,10 @@ class LiveKitSceneBridge:
             "authoring": authoring_info,
             "edits": edits_info,
             "undo": self._undo_info(),
+            "assets": _module_info("asset_library", ASSET_RPC_METHODS, dry_run_default=True),
+            "physics": _module_info("physics", PHYSICS_RPC_METHODS, dry_run_default=True),
+            "capture": _module_info("kit_live_extras", CAPTURE_RPC_METHODS),
+            "simulation": _module_info("kit_live_extras", SIMULATION_RPC_METHODS),
             "dry_run_default": True,
             "stage_open": self._stage() is not None,
         }
@@ -681,6 +690,198 @@ class LiveKitSceneBridge:
             creates=False,
         )
         return self._authoring_result(result, prim_path, dry_run, select=False)
+
+    # --- RPC tier4-1: reference an asset, UsdPhysics setup (dry_run=True by default, undoable when they write) ---
+
+    def add_reference(
+        self,
+        prim_path: str,
+        asset_path: str,
+        *,
+        translation: Any = None,
+        rotation: Any = None,
+        scale: Any = None,
+        instanceable: bool | None = None,
+        asset_prim_path: str | None = None,
+        correct_units: bool = False,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Add (or with dry_run, preview adding) an Xform that references an asset file via asset_library.add_reference.
+
+        The router resolves library-relative paths, so asset_path is normally absolute; the asset file is only read
+        (a metadata-only anonymous open of its header), never written.
+        """
+        try:
+            from .asset_library import add_reference as author_reference
+        except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
+            return _module_unavailable("add_reference", "asset_library", exc)
+        stage = self._require_stage()
+        name = os.path.basename(str(asset_path or "")) or "asset"
+        result = self._authored(
+            f"Add {name} at {prim_path}",
+            stage,
+            prim_path,
+            dry_run,
+            lambda: author_reference(
+                stage,
+                prim_path,
+                asset_path,
+                translation=translation,
+                rotation=rotation,
+                scale=scale,
+                instanceable=instanceable,
+                asset_prim_path=asset_prim_path,
+                correct_units=correct_units is True,
+                dry_run=dry_run,
+            ),
+            creates=True,
+        )
+        return self._authoring_result(result, prim_path, dry_run, select=True)
+
+    def physics_report(self, prim_path: str | None = None) -> dict[str, Any]:
+        """Read-only UsdPhysics summary of the live stage (or one subtree) via physics.physics_report."""
+        try:
+            from .physics import physics_report as report
+        except Exception as exc:  # noqa: BLE001
+            return _module_unavailable("physics_report", "physics", exc)
+        stage = self._require_stage()
+        dirty_before = _dirty_layer_ids(stage)
+        payload: dict[str, Any] = {"mode": "live", **report(stage, prim_path)}
+        newly_dirty = sorted(_dirty_layer_ids(stage) - dirty_before)
+        if newly_dirty:
+            payload.setdefault("warnings", []).append(
+                f"Read-only violation: these layers became dirty during the report: {newly_dirty[:10]}"
+            )
+        payload["note"] = LIVE_NOTE
+        return _fit_json(payload, LIVE_MAX_RESULT_BYTES)
+
+    def add_physics_scene(self, path: str = "/physicsScene", *, gravity: Any = None, dry_run: bool = True) -> dict[str, Any]:
+        """Add (or with dry_run, preview adding) a PhysicsScene with explicit gravity (m/s^2; default 9.81 down)."""
+        try:
+            from . import physics
+        except Exception as exc:  # noqa: BLE001
+            return _module_unavailable("add_physics_scene", "physics", exc)
+        stage = self._require_stage()
+        wanted = physics.DEFAULT_GRAVITY if gravity is None else gravity
+        result = self._authored(
+            f"Add physics scene {path}",
+            stage,
+            path,
+            dry_run,
+            lambda: physics.add_physics_scene(stage, path, gravity=wanted, dry_run=dry_run),
+            creates=True,
+        )
+        return self._authoring_result(result, path, dry_run, select=False)
+
+    def make_rigid_body(
+        self,
+        prim_path: str,
+        *,
+        mass: float | None = None,
+        density: float | None = None,
+        kinematic: bool = False,
+        add_collider: bool = True,
+        approximation: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Apply (or with dry_run, preview applying) RigidBodyAPI, optional MassAPI and colliders below the prim."""
+        try:
+            from .physics import make_rigid_body as author_body
+        except Exception as exc:  # noqa: BLE001
+            return _module_unavailable("make_rigid_body", "physics", exc)
+        stage = self._require_stage()
+        result = self._authored(
+            f"Make {prim_path} a rigid body",
+            stage,
+            prim_path,
+            dry_run,
+            lambda: author_body(
+                stage,
+                prim_path,
+                mass=mass,
+                density=density,
+                kinematic=kinematic,
+                add_collider=add_collider,
+                approximation=approximation,
+                dry_run=dry_run,
+            ),
+            creates=True,  # colliders may go on descendants, so the whole subtree is snapshotted for undo
+        )
+        return self._authoring_result(result, prim_path, dry_run, select=False)
+
+    def make_collider(self, prim_path: str, *, approximation: str | None = None, dry_run: bool = True) -> dict[str, Any]:
+        """Apply (or with dry_run, preview applying) CollisionAPI to a gprim or every gprim below a group prim."""
+        try:
+            from .physics import make_collider as author_collider
+        except Exception as exc:  # noqa: BLE001
+            return _module_unavailable("make_collider", "physics", exc)
+        stage = self._require_stage()
+        result = self._authored(
+            f"Add collision to {prim_path}",
+            stage,
+            prim_path,
+            dry_run,
+            lambda: author_collider(stage, prim_path, approximation=approximation, dry_run=dry_run),
+            creates=True,  # subtree snapshot: colliders go on the gprims below a group prim
+        )
+        return self._authoring_result(result, prim_path, dry_run, select=False)
+
+    def remove_physics(self, prim_path: str, *, include_descendants: bool = False, dry_run: bool = True) -> dict[str, Any]:
+        """Remove (or with dry_run, preview removing) the RigidBody, Collision, MeshCollision and Mass APIs."""
+        try:
+            from .physics import remove_physics as author_removal
+        except Exception as exc:  # noqa: BLE001
+            return _module_unavailable("remove_physics", "physics", exc)
+        stage = self._require_stage()
+        result = self._authored(
+            f"Remove physics from {prim_path}",
+            stage,
+            prim_path,
+            dry_run,
+            lambda: author_removal(stage, prim_path, include_descendants=include_descendants, dry_run=dry_run),
+            creates=True,  # subtree snapshot: include_descendants edits every prim below
+        )
+        return self._authoring_result(result, prim_path, dry_run, select=False)
+
+    # --- RPC tier4-1: viewport capture and simulation (kit_live_extras.py; Kit only, no authored scene data) -----
+
+    def capture_viewport(self, output_dir: str | None = None, *, width: int | None = None, height: int | None = None) -> dict[str, Any]:
+        """Schedule a PNG capture of the ACTIVE viewport (camera and render settings untouched); returns at once."""
+        return self._extras("capture_viewport", lambda extras: extras.capture_viewport(output_dir, width=width, height=height))
+
+    def capture_status(self, path: str) -> dict[str, Any]:
+        """Whether a capture_viewport PNG has been written yet; never waits."""
+        return self._extras("capture_status", lambda extras: extras.capture_status(path))
+
+    def simulation_status(self) -> dict[str, Any]:
+        """Timeline/physics state: playing, paused, stopped, current time. Read-only."""
+        return self._extras("simulation_status", lambda extras: extras.simulation_status())
+
+    def simulation_play(self) -> dict[str, Any]:
+        """Play the timeline: physics simulates and moves simulated prims until stop restores them."""
+        return self._extras("simulation_play", lambda extras: extras.simulation_play())
+
+    def simulation_pause(self) -> dict[str, Any]:
+        """Pause the timeline at the current time."""
+        return self._extras("simulation_pause", lambda extras: extras.simulation_pause())
+
+    def simulation_stop(self) -> dict[str, Any]:
+        """Stop the timeline: it resets to the start time and PhysX restores pre-play poses."""
+        return self._extras("simulation_stop", lambda extras: extras.simulation_stop())
+
+    def simulation_step(self, frames: int = 1) -> dict[str, Any]:
+        """Advance a paused (or stopped) simulation by frames (capped at 600)."""
+        return self._extras("simulation_step", lambda extras: extras.simulation_step(frames))
+
+    def _extras(self, method: str, call: Callable[[Any], dict[str, Any]]) -> dict[str, Any]:
+        try:
+            from . import kit_live_extras
+        except Exception as exc:  # noqa: BLE001
+            return _module_unavailable(method, "kit_live_extras", exc)
+        result = call(kit_live_extras)
+        payload = dict(result) if isinstance(result, dict) else {"ok": True, "result": result}
+        payload.setdefault("mode", "live")
+        return _fit_json(payload, LIVE_MAX_RESULT_BYTES)
 
     # --- undo (see undo.py and kit_commands.py) -----------------------------------------------------------------
 
@@ -1166,6 +1367,29 @@ def _edits_unavailable(method: str, exc: Exception) -> dict[str, Any]:
         f"imported ({_clip(f'{type(exc).__name__}: {exc}', 200)}). Update the package and reload the bridge.",
         needs_bridge_update=True,
     )
+
+
+def _module_unavailable(method: str, module: str, exc: Exception) -> dict[str, Any]:
+    return unsupported_result(
+        method,
+        f"'{method}' is not available in this bridge: omniverse_scene_mcp.{module} could not be imported "
+        f"({_clip(f'{type(exc).__name__}: {exc}', 200)}). Update the package and reload the bridge.",
+        needs_bridge_update=True,
+    )
+
+
+def _module_info(module: str, methods: tuple[str, ...], *, dry_run_default: bool | None = None) -> dict[str, Any]:
+    """Whether omniverse_scene_mcp.<module> imports here (capabilities); only checks the import."""
+    try:
+        importlib.import_module(f"{__package__}.{module}")
+    except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
+        info: dict[str, Any] = {"available": False, "error": _clip(f"{type(exc).__name__}: {exc}")}
+    else:
+        info = {"available": True}
+    info["methods"] = list(methods)
+    if dry_run_default is not None:
+        info["dry_run_default"] = dry_run_default
+    return info
 
 
 def _undo_unavailable(method: str) -> dict[str, Any]:

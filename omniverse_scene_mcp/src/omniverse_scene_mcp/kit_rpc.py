@@ -4,22 +4,37 @@ make_extended_server_class(base_cls) subclasses the LiveSceneControlServer that 
 live_scene_control.py, without editing that file. New methods come from a fixed handler table; every other method
 goes to the base class's _dispatch unchanged. Runs inside Kit, but imports neither omni nor pxr itself (usd_insight,
 which holds the insight time budget, is imported lazily). Every mutating method is a dry run unless the caller sends
-dry_run=false; for the tier3-1 edit and undo methods a missing or malformed dry_run is also a dry run.
+dry_run=false; for the tier3-1 edit and undo methods and the tier4-1 add_reference and physics methods a missing or
+malformed dry_run is also a dry run. The tier4-1 viewport capture and simulation methods have no dry_run: capture only
+reads the viewport (it writes a new PNG), and simulation play/pause/stop/step change simulation state, not authored
+scene data.
+
+The extended server's HTTP handler is wrapped by guard_handler_class (localhost CSRF / DNS-rebinding guard): browser
+requests (an Origin or Sec-Fetch-* header), POSTs whose Content-Type is not application/json, requests whose Host is
+not 127.0.0.1:<port> or localhost:<port> and, when OMNIVERSE_BRIDGE_TOKEN is set in Kit, POSTs without the matching
+X-Omniverse-Bridge-Token header get a 403 JSON answer and are never dispatched.
 """
 
 from __future__ import annotations
 
+import hmac
+import json
 import math
+import os
 import time
 from collections.abc import Callable
 from typing import Any
 
 from .bridge import (
+    ASSET_RPC_METHODS,
     BASIC_RPC_METHODS,
+    CAPTURE_RPC_METHODS,
     EDIT_RPC_METHODS,
     INSIGHT_QUERIES,
     LIVE_RPC_METHODS,
+    PHYSICS_RPC_METHODS,
     RPC_VERSION,
+    SIMULATION_RPC_METHODS,
     UNDO_RPC_METHODS,
     unsupported_result,
 )
@@ -33,7 +48,24 @@ _MAX_VALUE_ITEMS = 200_000
 _MAX_HISTORY = 50
 # live_scene_control._submit stops waiting after 15 s but leaves the request queued, so Kit would still run it on a
 # later update while the caller was told it failed. Writes older than this are dropped instead (must stay below 15 s).
-_WRITE_METHODS = ("create_light", "create_camera", "aim", *EDIT_RPC_METHODS, "undo_last")
+_WRITE_METHODS = (
+    "create_light",
+    "create_camera",
+    "aim",
+    *EDIT_RPC_METHODS,
+    "undo_last",
+    "add_reference",
+    "add_physics_scene",
+    "make_rigid_body",
+    "make_collider",
+    "remove_physics",
+    "capture_viewport",
+    "simulation_play",
+    "simulation_pause",
+    "simulation_stop",
+    "simulation_step",
+)
+_MAX_CAPTURE_SIDE = 16384
 _STALE_AFTER_S = 10.0
 # Live insight runs on Kit's main thread: its traversals stop at a cooperative time budget (usd_insight.TimeBudget)
 # and return partial results. The budget is also cut to what is left of the caller's 15 s wait after queueing,
@@ -46,6 +78,11 @@ _MIN_BUDGET_MS = 1.0
 
 Handler = Callable[[Any, dict[str, Any]], dict[str, Any]]
 
+# Localhost CSRF / DNS-rebinding guard for the bridge's HTTP handler (see guard_handler_class).
+BRIDGE_TOKEN_ENV = "OMNIVERSE_BRIDGE_TOKEN"
+BRIDGE_TOKEN_HEADER = "X-Omniverse-Bridge-Token"
+_GUARD_DRAIN_LIMIT = 1 << 20  # a refused POST body up to 1 MiB is read (never parsed) so the 403 is not lost to a reset
+
 
 def make_extended_server_class(base_cls: type) -> type:
     """Return a subclass of base_cls (a LiveSceneControlServer) that also answers LIVE_RPC_METHODS."""
@@ -57,6 +94,9 @@ def make_extended_server_class(base_cls: type) -> type:
 
         rpc_version = RPC_VERSION
         rpc_methods = ALL_RPC_METHODS
+
+        def _build_handler(self):  # called by the base _build_server; the base request handling runs unchanged
+            return guard_handler_class(super()._build_handler())
 
         def _submit(self, payload: Any) -> dict[str, Any]:
             # Stamp the queue time so _dispatch (on Kit's main thread) can drop writes the caller stopped waiting for.
@@ -95,6 +135,106 @@ def make_extended_server_class(base_cls: type) -> type:
     return ExtendedLiveSceneControlServer
 
 
+def guard_handler_class(handler_cls: type) -> type:
+    """Subclass a BaseHTTPRequestHandler so refused requests get a 403 JSON answer before the base do_POST/do_GET."""
+    if getattr(handler_cls, "_omniverse_bridge_guarded", False):
+        return handler_cls
+
+    class GuardedHandler(handler_cls):  # type: ignore[misc, valid-type]
+        _omniverse_bridge_guarded = True
+
+        def do_POST(self) -> None:  # noqa: N802
+            if not self._omniverse_bridge_refused():
+                super().do_POST()
+
+        def do_GET(self) -> None:  # noqa: N802
+            if not self._omniverse_bridge_refused():
+                super().do_GET()
+
+        def _omniverse_bridge_refused(self) -> bool:
+            try:
+                port = int(self.server.server_address[1])
+            except Exception:  # pragma: no cover - defensive: without a port no Host can match, so all is refused
+                port = None
+            token = os.environ.get(BRIDGE_TOKEN_ENV, "").strip() or None
+            refusal = bridge_request_refusal(self.command, self.headers, port, token)
+            if refusal is None:
+                return False
+            reason, message = refusal
+            if self.command == "POST":
+                _drain_body(self)
+            body = json.dumps(
+                {"ok": False, "forbidden": True, "error": "forbidden", "reason": reason, "message": message}
+            ).encode("utf-8")
+            self.close_connection = True
+            self.send_response(403)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            return True
+
+    GuardedHandler.__name__ = GuardedHandler.__qualname__ = f"Guarded{handler_cls.__name__}"
+    return GuardedHandler
+
+
+def bridge_request_refusal(command: str, headers: Any, port: int | None, token: str | None) -> tuple[str, str] | None:
+    """(reason, message) when a bridge HTTP request must be refused, else None. headers: an email.message.Message.
+
+    * origin / browser: an Origin or any Sec-Fetch-* header means a browser page sent it (the router's urllib client
+      sends neither), so a web page cannot drive the open scene (localhost CSRF);
+    * host: exactly one Host header, equal to 127.0.0.1:<port> or localhost:<port> (blocks DNS rebinding);
+    * content_type: a POST must say Content-Type: application/json (a no-cors fetch cannot send that);
+    * token: when OMNIVERSE_BRIDGE_TOKEN is set in Kit, a POST must carry the same X-Omniverse-Bridge-Token value
+      (constant-time compare). GET /health stays token-free so the router's /health probes keep working.
+    """
+    if _header_values(headers, "Origin"):
+        return "origin", "Refused: requests with an Origin header (sent by web browsers) may not use the scene bridge."
+    browser = sorted({key.lower() for key in _header_keys(headers) if key.lower().startswith("sec-fetch-")})
+    if browser:
+        return "browser", f"Refused: browser request headers ({', '.join(browser)}) may not use the scene bridge."
+    hosts = [value.strip().lower() for value in _header_values(headers, "Host")]
+    allowed = {f"127.0.0.1:{port}", f"localhost:{port}"} if port is not None else set()
+    if len(hosts) != 1 or hosts[0] not in allowed:
+        return "host", f"Refused: the Host header must be 127.0.0.1:{port} or localhost:{port}."
+    if str(command).upper() == "POST":
+        types = [value.split(";", 1)[0].strip().lower() for value in _header_values(headers, "Content-Type")]
+        if types != ["application/json"]:
+            return "content_type", "Refused: POST /rpc needs Content-Type: application/json."
+        if token:
+            given = _header_values(headers, BRIDGE_TOKEN_HEADER)
+            expected = token.encode("utf-8")
+            if len(given) != 1 or not hmac.compare_digest(given[0].strip().encode("utf-8", "replace"), expected):
+                return "token", (
+                    f"Refused: this bridge requires a matching {BRIDGE_TOKEN_HEADER} header; set {BRIDGE_TOKEN_ENV} "
+                    "to the same value in the router's environment as in Kit's."
+                )
+    return None
+
+
+def _header_values(headers: Any, name: str) -> list[str]:
+    getter = getattr(headers, "get_all", None)
+    if callable(getter):
+        return [str(value) for value in (getter(name) or [])]
+    return [str(value) for key, value in dict(headers or {}).items() if str(key).lower() == name.lower()]
+
+
+def _header_keys(headers: Any) -> list[str]:
+    keys = getattr(headers, "keys", None)
+    return [str(key) for key in keys()] if callable(keys) else []
+
+
+def _drain_body(handler: Any) -> None:
+    """Read and discard a refused POST body (never parsed) so closing the socket does not reset the 403 away."""
+    try:
+        length = int(handler.headers.get("Content-Length", "0") or 0)
+        if 0 < length <= _GUARD_DRAIN_LIMIT:
+            handler.rfile.read(length)
+    except Exception:  # pragma: no cover - defensive: the 403 is sent either way
+        pass
+
+
 def _capabilities(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
     _check_params("capabilities", params, ())
     getter = getattr(bridge, "capabilities", None)
@@ -108,6 +248,10 @@ def _capabilities(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
             "insight_budget_ms": {"default": INSIGHT_DEFAULT_BUDGET_MS, "max": INSIGHT_MAX_BUDGET_MS},
             "edit_methods": list(EDIT_RPC_METHODS),
             "undo_methods": list(UNDO_RPC_METHODS),
+            "asset_methods": list(ASSET_RPC_METHODS),
+            "physics_methods": list(PHYSICS_RPC_METHODS),
+            "capture_methods": list(CAPTURE_RPC_METHODS),
+            "simulation_methods": list(SIMULATION_RPC_METHODS),
             "dry_run_default": True,
         }
     )
@@ -360,6 +504,146 @@ def _undo_history(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
     return history(max(1, min(int(limit), _MAX_HISTORY)))
 
 
+# --- RPC tier4-1: add_reference, physics, viewport capture and simulation ---------------------------------------
+
+_ADD_REFERENCE_PARAMS = (
+    "prim_path",
+    "asset_path",
+    "translation",
+    "rotation",
+    "scale",
+    "instanceable",
+    "asset_prim_path",
+    "correct_units",
+    "dry_run",
+)
+_RIGID_BODY_PARAMS = ("prim_path", "mass", "density", "kinematic", "add_collider", "approximation", "dry_run")
+
+
+def _add_reference(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("add_reference", params, _ADD_REFERENCE_PARAMS)
+    author = getattr(bridge, "add_reference", None)
+    if not callable(author):
+        return _bridge_lacks("add_reference", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    instanceable = None if params.get("instanceable") is None else _flag(params, "instanceable", default=False)
+    result = author(
+        _path(params, "prim_path"),
+        _file_path(params, "asset_path"),
+        translation=_vector(params, "translation", 3),
+        rotation=_vector(params, "rotation", 3),
+        scale=_scale(params, "scale"),
+        instanceable=instanceable,
+        asset_prim_path=_path(params, "asset_prim_path", required=False),
+        correct_units=_flag(params, "correct_units", default=False),
+        dry_run=dry_run,
+    )
+    return _with_warning(result, warning)
+
+
+def _physics_report(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("physics_report", params, ("prim_path",))
+    report = getattr(bridge, "physics_report", None)
+    if not callable(report):
+        return _bridge_lacks("physics_report", bridge)
+    return report(_path(params, "prim_path", required=False))
+
+
+def _add_physics_scene(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("add_physics_scene", params, ("path", "gravity", "dry_run"))
+    author = getattr(bridge, "add_physics_scene", None)
+    if not callable(author):
+        return _bridge_lacks("add_physics_scene", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    path = _path(params, "path", required=False) or "/physicsScene"
+    return _with_warning(author(path, gravity=_scale(params, "gravity"), dry_run=dry_run), warning)
+
+
+def _make_rigid_body(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("make_rigid_body", params, _RIGID_BODY_PARAMS)
+    author = getattr(bridge, "make_rigid_body", None)
+    if not callable(author):
+        return _bridge_lacks("make_rigid_body", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    result = author(
+        _path(params, "prim_path"),
+        mass=_number(params, "mass"),
+        density=_number(params, "density"),
+        kinematic=_flag(params, "kinematic", default=False),
+        add_collider=_flag(params, "add_collider", default=True),
+        approximation=_word(params, "approximation"),
+        dry_run=dry_run,
+    )
+    return _with_warning(result, warning)
+
+
+def _make_collider(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("make_collider", params, ("prim_path", "approximation", "dry_run"))
+    author = getattr(bridge, "make_collider", None)
+    if not callable(author):
+        return _bridge_lacks("make_collider", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    result = author(_path(params, "prim_path"), approximation=_word(params, "approximation"), dry_run=dry_run)
+    return _with_warning(result, warning)
+
+
+def _remove_physics(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("remove_physics", params, ("prim_path", "include_descendants", "dry_run"))
+    author = getattr(bridge, "remove_physics", None)
+    if not callable(author):
+        return _bridge_lacks("remove_physics", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    result = author(
+        _path(params, "prim_path"),
+        include_descendants=_flag(params, "include_descendants", default=False),
+        dry_run=dry_run,
+    )
+    return _with_warning(result, warning)
+
+
+def _capture_viewport(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("capture_viewport", params, ("output_dir", "width", "height"))
+    capture = getattr(bridge, "capture_viewport", None)
+    if not callable(capture):
+        return _bridge_lacks("capture_viewport", bridge)
+    return capture(
+        _file_path(params, "output_dir", required=False),
+        width=_whole(params, "width", 1, _MAX_CAPTURE_SIDE),
+        height=_whole(params, "height", 1, _MAX_CAPTURE_SIDE),
+    )
+
+
+def _capture_status(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("capture_status", params, ("path",))
+    status = getattr(bridge, "capture_status", None)
+    if not callable(status):
+        return _bridge_lacks("capture_status", bridge)
+    return status(_file_path(params, "path"))
+
+
+def _simulation(method: str) -> Handler:
+    """A handler for one parameterless simulation method (status, play, pause or stop)."""
+
+    def handler(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+        _check_params(method, params, ())
+        call = getattr(bridge, method, None)  # method is one of the fixed table names below, never caller input
+        if not callable(call):
+            return _bridge_lacks(method, bridge)
+        return call()
+
+    handler.__name__ = handler.__qualname__ = f"_{method}"
+    return handler
+
+
+def _simulation_step(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("simulation_step", params, ("frames",))
+    step = getattr(bridge, "simulation_step", None)
+    if not callable(step):
+        return _bridge_lacks("simulation_step", bridge)
+    frames = _whole(params, "frames", 1, None)  # the bridge caps it at 600 frames and says so
+    return step(1 if frames is None else frames)
+
+
 # Fixed method table: the only names the extended server adds. Lookups never touch attributes named by callers.
 _HANDLERS: dict[str, Handler] = {
     "capabilities": _capabilities,
@@ -372,6 +656,19 @@ _HANDLERS: dict[str, Handler] = {
     "bind_material": _bind_material,
     "undo_last": _undo_last,
     "undo_history": _undo_history,
+    "add_reference": _add_reference,
+    "physics_report": _physics_report,
+    "add_physics_scene": _add_physics_scene,
+    "make_rigid_body": _make_rigid_body,
+    "make_collider": _make_collider,
+    "remove_physics": _remove_physics,
+    "capture_viewport": _capture_viewport,
+    "capture_status": _capture_status,
+    "simulation_status": _simulation("simulation_status"),
+    "simulation_play": _simulation("simulation_play"),
+    "simulation_pause": _simulation("simulation_pause"),
+    "simulation_stop": _simulation("simulation_stop"),
+    "simulation_step": _simulation_step,
 }
 
 
@@ -390,6 +687,36 @@ def _path(params: dict[str, Any], key: str, required: bool = True) -> str | None
     if len(value) > _MAX_PATH_CHARS:
         raise ValueError(f"'{key}' is longer than {_MAX_PATH_CHARS} characters")
     return value.strip()
+
+
+def _file_path(params: dict[str, Any], key: str, required: bool = True) -> str | None:
+    """A non-empty file or folder path string (at most _MAX_PATH_CHARS, no NUL); the bridge checks that it exists."""
+    value = params.get(key)
+    if value is None and not required:
+        return None
+    if not isinstance(value, str) or not value.strip() or "\0" in value:
+        raise ValueError(f"'{key}' must be a non-empty file path string")
+    if len(value) > _MAX_PATH_CHARS:
+        raise ValueError(f"'{key}' is longer than {_MAX_PATH_CHARS} characters")
+    return value.strip()
+
+
+def _scale(params: dict[str, Any], key: str) -> float | tuple[float, ...] | None:
+    """One number (a uniform scale, or a gravity magnitude) or exactly three numbers."""
+    if isinstance(params.get(key), (list, tuple)):
+        return _vector(params, key, 3)
+    return _number(params, key)
+
+
+def _whole(params: dict[str, Any], key: str, low: int, high: int | None) -> int | None:
+    """A whole number from low to high (no upper bound when high is None); None when absent."""
+    value = params.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < low or (high is not None and value > high):
+        limit = f"from {low} to {high}" if high is not None else f"of at least {low}"
+        raise ValueError(f"'{key}' must be a whole number {limit}")
+    return value
 
 
 def _word(params: dict[str, Any], key: str, required: bool = False) -> str | None:

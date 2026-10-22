@@ -13,6 +13,8 @@ GROUPS = [
     "Scene: change safely",
     "Live insight",
     "Lights/cameras/materials",
+    "Assets & physics",
+    "Simulation & screenshots",
     "Undo",
     "Knowledge & docs",
     "Exam prep",
@@ -84,6 +86,13 @@ def test_catalog_entries_are_well_formed_and_grouped_by_task():
     for group in ("Scene: change safely", "Lights/cameras/materials"):
         for entry in tool_guide.TOOL_CATALOG[group]:
             assert "dry_run=True" in entry["example"], entry["name"]
+    # Physics and asset edits preview by default too, and their examples say so.
+    for entry in tool_guide.TOOL_CATALOG["Assets & physics"]:
+        assert ("dry_run=True" in entry["example"]) is entry["mutates"], entry["name"]
+    for name in ("sim_play", "sim_stop", "sim_step", "scene_capture_viewport", "learning_exam_dashboard"):
+        assert by_name[name]["mutates"] is True, name  # simulation state, a PNG, or dashboard.html
+    for name in ("asset_search", "asset_info", "scene_physics_report", "sim_status", "scene_capture_status"):
+        assert by_name[name]["mutates"] is False, name
 
 
 def test_help_without_a_topic_returns_every_group_and_the_quick_start():
@@ -155,6 +164,8 @@ def test_group_phrases_route_where_their_group_says():
         "Scene: look": RouteTarget.SCENE,
         "Scene: change safely": RouteTarget.SCENE,
         "Lights/cameras/materials": RouteTarget.SCENE,
+        "Assets & physics": RouteTarget.SCENE,
+        "Simulation & screenshots": RouteTarget.SCENE,
         "Undo": RouteTarget.SCENE,
         "Exam prep": RouteTarget.LEARN,
         "Learning": RouteTarget.LEARN,

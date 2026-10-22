@@ -7,15 +7,16 @@ from http.client import HTTPException
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit
-from urllib.request import ProxyHandler, build_opener
+from urllib.request import ProxyHandler, Request, build_opener
 
-from .http_bridge import NoRedirect
+from .http_bridge import NoRedirect, bridge_request_headers
 
 # Loopback only: never route the scene-bridge probe through HTTP(S)_PROXY, and never follow a redirect to another
 # host (a 3xx raises HTTPError, an OSError, so the probe reports the endpoint as not reachable).
 urlopen = build_opener(ProxyHandler({}), NoRedirect()).open
 
 from .exam import daily as exam_daily
+from .exam import dashboard as exam_dashboard
 from .exam.mock import FILE_NAME as MOCK_FILE_NAME
 from .exam.mock import MockExamStore
 from .exam.progress import ENV_DIR as EXAM_PREP_DIR_ENV
@@ -156,7 +157,7 @@ def probe_scene_health(endpoint: str, timeout: float = SCENE_TARGET_PROBE_TIMEOU
     if url is None:
         return {"reachable": False, "probed": False, "error": "only http://127.0.0.1:<port> endpoints are probed"}
     try:
-        with urlopen(f"{url}/health", timeout=timeout) as response:
+        with urlopen(_health_request(url), timeout=timeout) as response:
             data = json.loads(response.read(4096).decode("utf-8"))
     except (OSError, HTTPException, ValueError) as exc:
         return {"reachable": False, "probed": True, "error": _clip(f"{type(exc).__name__}: {exc}")}
@@ -419,10 +420,71 @@ def _exam_hooks(
         def exam_day(day: int | None) -> dict[str, Any]:
             return exam_daily.build_day(day, store=progress_store, knowledge=offline_knowledge)
 
+        def dashboard(write: bool) -> dict[str, Any]:
+            return exam_dashboard_result(progress_store, mock_store, write=write)
+
         hooks["exam_day"] = exam_day
+        hooks["dashboard"] = dashboard
     if mock_store is not None:
         hooks["mock_status"] = mock_store.active
     return hooks
+
+
+def exam_dashboard_result(
+    progress_store: ProgressStore,
+    mock_store: MockExamStore | None = None,
+    *,
+    write: bool = True,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Dashboard data (read-only) plus, with write=True, dashboard.html saved next to progress.json.
+
+    The page goes to the exam-prep folder ($OMNIVERSE_EXAM_PREP_DIR, else <workspace>/exam-prep) or the progress
+    store's own folder, never elsewhere (exam.dashboard.write_dashboard). Under the test switch the real workspace's
+    exam-prep folder is never written: the result says why and nothing is saved. Never raises.
+    """
+    try:
+        data = exam_dashboard.dashboard_data(progress_store, mock_store=mock_store)
+    except Exception as exc:  # noqa: BLE001 - an unreadable store is reported, not raised
+        return {"ok": False, "message": f"Could not build the dashboard: {type(exc).__name__}: {exc}"}
+    page: dict[str, Any] = {"written": False, "path": None}
+    if write is True:
+        refusal = _dashboard_write_refusal(environ)
+        if refusal is not None:
+            page.update(message=refusal, skipped=True)
+        else:
+            try:
+                saved = exam_dashboard.write_dashboard(progress_store, mock_store=mock_store)
+            except Exception as exc:  # noqa: BLE001
+                saved = {"ok": False, "path": None, "message": f"{type(exc).__name__}: {exc}"}
+            page.update(written=bool(saved.get("ok")), path=saved.get("path"), bytes=saved.get("bytes", 0))
+            if saved.get("ok"):
+                page["message"] = (
+                    "Saved a self-contained page (no scripts, fonts or network); open it in a browser. It is rebuilt "
+                    "each time, so it always shows your latest progress."
+                )
+            else:
+                page["message"] = f"The dashboard page was not saved: {saved.get('message') or 'unknown reason'}"
+    else:
+        page["message"] = "write=False: nothing was saved."
+    return {**data, "dashboard": page}
+
+
+def _dashboard_write_refusal(environ: Mapping[str, str] | None = None) -> str | None:
+    """Why the dashboard must not be written now (test mode aimed at the real exam-prep folder), or None."""
+    if not is_test_mode(environ):
+        return None
+    real = (Path(__file__).resolve().parents[3] / "exam-prep").resolve()
+    try:
+        target = exam_dashboard.default_dashboard_path().resolve()
+    except OSError:
+        return "Test mode: the dashboard path could not be resolved, so nothing was saved."
+    if target.parent == real or real in target.parents:
+        return (
+            f"Test mode ({TEST_ENV}): the real exam-prep folder is never written; set {EXAM_PREP_DIR_ENV} to a "
+            "temporary folder to save the page."
+        )
+    return None
 
 
 def build_usd_backend_with_fallback(offline_knowledge: OfflineUSDKnowledge | None = None) -> FallbackKnowledgeBackend:
@@ -478,10 +540,16 @@ def _backend_info(mode: str, bridge: str, reason: str, endpoint: str | None = No
 def _detect_live_scene_endpoint() -> str | None:
     candidate = AUTO_SCENE_ENDPOINT
     try:
-        with urlopen(f"{candidate}/health", timeout=1) as response:
+        with urlopen(_health_request(candidate), timeout=1) as response:
             data = json.loads(response.read().decode("utf-8"))
     except (OSError, HTTPException, ValueError):
         return None
     if isinstance(data, dict) and data.get("ok") is True:
         return candidate
     return None
+
+
+def _health_request(endpoint: str) -> Request:
+    """GET <endpoint>/health with the bridge's request headers (JSON type, the shared token when set, never Origin),
+    so the probes keep working when OMNIVERSE_BRIDGE_TOKEN is set on both sides."""
+    return Request(f"{endpoint}/health", headers=bridge_request_headers(), method="GET")

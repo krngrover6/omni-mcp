@@ -292,9 +292,88 @@ def test_reload_self_test_files_exist_in_the_package():
         return
     with _Sandbox() as sandbox:
         reload = sandbox.script(RELOAD_SCRIPT.name)
-    for name in reload["REQUIRED_SELF_TESTS"]:
+    for name in reload["REQUIRED_SELF_TESTS"] + reload["OPTIONAL_SELF_TESTS"]:
         assert (WORKSPACE / "omniverse_scene_mcp" / "tests" / name).is_file(), name
     assert "test_composer_scripts.py" not in reload["REQUIRED_SELF_TESTS"] + reload["OPTIONAL_SELF_TESTS"]
+    assert {"test_kit_live_extras.py", "test_physics.py"} <= set(reload["OPTIONAL_SELF_TESTS"])
+
+
+class _StubbornStock(LiveSceneControlServer):
+    """A stock server whose stop fails (after it already stopped once elsewhere it would have to be restarted)."""
+
+    async def stop(self) -> None:
+        self.events.append("stop")
+        raise RuntimeError("stop failed (fake)")
+
+
+def test_start_stops_the_unguarded_stock_server_on_9909_after_the_guarded_bridge_runs():
+    if _inside_kit():
+        return
+    stock = LiveSceneControlServer(9909)
+    extension = CreateSetupExtension(stock)
+    other = LiveSceneControlServer(9911)
+    with _Sandbox() as sandbox:
+        start = sandbox.script(START_SCRIPT.name)
+        pool = [extension, stock, other, object()]
+        server = sandbox.run(start["start_bridge"](port_in_use=_no_probe, log=sandbox.log, objects=lambda: pool))
+        assert server._running and server.rpc_version == RPC_VERSION
+        assert stock.events == ["stop"] and not stock._running  # stopped once, through either holder
+        assert other.events == [] and other._running
+        assert extension._live_scene_control is stock  # the extension object is never edited
+        assert any("Stopped Composer's stock scene server on 9909" in message for message in sandbox.messages)
+        # The bridge itself (extended, on 9910) is never treated as a stock server.
+        assert start["find_stock_servers"](9910, lambda: [server]) == []
+
+
+def test_start_keeps_the_stock_server_when_stopping_it_fails_or_the_bridge_is_basic():
+    if _inside_kit():
+        return
+    first = LiveSceneControlServer(9909)
+    stubborn = _StubbornStock(9909)
+    with _Sandbox() as sandbox:
+        start = sandbox.script(START_SCRIPT.name)
+        server = sandbox.run(
+            start["start_bridge"](port_in_use=_no_probe, log=sandbox.log, objects=lambda: [first, stubborn])
+        )
+        assert server._running
+        report = sandbox.run(start["stop_stock_servers"](server, objects=lambda: [], log=sandbox.log))
+        assert report["status"] == "none_found" and report["stopped"] == []
+        # The failed stop restarted the one it had stopped: both keep serving, as before this change.
+        assert first.events == ["stop", "start"] and first._running
+        assert stubborn.events == ["stop"]
+        assert any("keeps running" in message for message in sandbox.messages)
+
+        basic = LiveSceneControlServer(9910)  # the basic bridge (kit_rpc unavailable) is unguarded itself
+        stock = LiveSceneControlServer(9909)
+        kept = sandbox.run(start["stop_stock_servers"](basic, objects=lambda: [stock], log=sandbox.log))
+        assert kept["status"] == "kept" and stock.events == [] and stock._running
+        os.environ["OMNIVERSE_SCENE_CONTROL_PORT"] = "9919"
+        assert start["stock_server_port"](9910) == 9919
+        os.environ["OMNIVERSE_SCENE_CONTROL_PORT"] = "9910"
+        assert start["stock_server_port"](9910) == 9909
+
+
+class _HalfStoppingStock(LiveSceneControlServer):
+    """A stock server whose stop closes it and THEN fails (e.g. its serving thread does not join in time)."""
+
+    async def stop(self) -> None:
+        self.events.append("stop")
+        self._running = False
+        raise RuntimeError("thread join timed out (fake)")
+
+
+def test_start_restarts_a_stock_server_whose_stop_failed_part_way():
+    if _inside_kit():
+        return
+    half = _HalfStoppingStock(9909)
+    with _Sandbox() as sandbox:
+        start = sandbox.script(START_SCRIPT.name)
+        server = sandbox.run(start["start_bridge"](port_in_use=_no_probe, log=sandbox.log, stop_stock=False))
+        report = sandbox.run(start["stop_stock_servers"](server, objects=lambda: [half], log=sandbox.log))
+        # The report says the stock server keeps running, so it must really be running again.
+        assert report["status"] == "kept" and "keeps running" in report["message"]
+        assert half.events == ["stop", "start"] and half._running
+        assert server._running  # the guarded bridge is untouched either way
 
 
 # --- start_composer_bridge.py ---------------------------------------------------------------------------------
@@ -447,10 +526,18 @@ def test_reload_upgrades_the_stock_server_and_leaves_other_ports_alone():
             {"class": "LiveSceneControlServer", "port": 9910, "held_by": ["CreateSetupExtension"], "registered": False}
         ]
         assert report["self_tests"]["passed"] == ["test_kit_bridge_usd.py::test_passes", "test_kit_rpc.py::test_passes"]
-        assert report["self_tests"]["missing"] == ["test_edits.py", "test_undo.py"]
+        assert report["self_tests"]["missing"] == [
+            "test_edits.py", "test_undo.py", "test_kit_live_extras.py", "test_physics.py"
+        ]
         assert written["status"] == "reloaded" and written["stopped"] == report["stopped"]
-        assert stock.events == ["stop"] and moved_stock.events == [] and isaac.events == []
-        assert moved_stock._running and isaac._running
+        # Once the guarded bridge serves 9910, the extension's unguarded stock server (moved to 9909) is stopped too;
+        # Isaac Sim's 9911 bridge is never touched.
+        assert stock.events == ["stop"] and moved_stock.events == ["stop"] and isaac.events == []
+        assert not moved_stock._running and isaac._running
+        assert report["stock_server"]["status"] == "stopped" and report["stock_server"]["port"] == 9909
+        assert report["stock_server"]["stopped"] == [{"class": "LiveSceneControlServer", "port": 9909}]
+        assert written["stock_server"]["status"] == "stopped"
+        assert any("Stopped Composer's stock scene server on 9909" in message for message in sandbox.messages)
         assert new._running and new._port == 9910 and type(new).__name__ == "ExtendedLiveSceneControlServer"
         assert extension._live_scene_control is stock  # the extension object itself is never edited
         # A later restart of the setup extension in this process would put its stock server on 9909, not 9910.
@@ -494,7 +581,7 @@ def test_reload_needs_both_core_self_tests_and_tolerates_missing_optional_ones()
         reload = sandbox.script(RELOAD_SCRIPT.name)
         report = sandbox.run(reload["reload_bridge"](objects=lambda: [stock], port_in_use=_no_probe, log=sandbox.log))
         assert report["status"] == "reloaded", report
-        assert report["self_tests"]["missing"] == ["test_edits.py"]
+        assert report["self_tests"]["missing"] == ["test_edits.py", "test_kit_live_extras.py", "test_physics.py"]
         assert report["self_tests"]["files"]["test_undo.py"]["passed"] == 1
         assert stock.events == ["stop"]
 

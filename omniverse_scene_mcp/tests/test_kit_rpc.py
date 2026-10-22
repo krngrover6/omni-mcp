@@ -6,11 +6,14 @@ server is started and the open stage is never touched: every stage here is tempo
 
 import contextlib
 import importlib.util
+import io
 import json
 import math
 import re
 import tempfile
 import types
+from email.message import Message
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 from omniverse_scene_mcp import kit_bridge, kit_rpc
@@ -140,7 +143,7 @@ def test_extended_class_subclasses_the_given_base():
     cls = kit_rpc.make_extended_server_class(_FakeBaseServer)
     assert issubclass(cls, _FakeBaseServer)
     assert cls.__name__ == "Extended_FakeBaseServer"
-    assert cls.rpc_version == RPC_VERSION == "tier3-1"
+    assert cls.rpc_version == RPC_VERSION == "tier4-1"
     assert set(cls.rpc_methods) == set(BASIC_RPC_METHODS) | set(LIVE_RPC_METHODS)
     _raises(lambda: kit_rpc.make_extended_server_class(object()), "_dispatch", error=TypeError)
     _raises(lambda: kit_rpc.make_extended_server_class(int), "_dispatch", error=TypeError)
@@ -151,7 +154,7 @@ def test_capabilities_reports_version_methods_and_queries():
     response = _call(server, "capabilities")
     assert response["ok"] is True
     result = response["result"]
-    assert result["version"] == "tier3-1"
+    assert result["version"] == "tier4-1"
     assert set(result["methods"]) == set(BASIC_RPC_METHODS) | set(LIVE_RPC_METHODS)
     assert result["insight_queries"] == list(INSIGHT_QUERIES)
     assert result["dry_run_default"] is True
@@ -622,12 +625,12 @@ class _RecordingEditBridge(_RecordingBridge):
 
 
 def test_edit_and_undo_methods_are_published_in_the_tier3_capabilities():
-    assert RPC_VERSION == "tier3-1"
+    assert RPC_VERSION == "tier4-1"
     assert set(EDIT_RPC_METHODS) | set(UNDO_RPC_METHODS) <= set(LIVE_RPC_METHODS)
     assert not (set(EDIT_RPC_METHODS) | set(UNDO_RPC_METHODS)) & set(BASIC_RPC_METHODS)
     assert set(LIVE_RPC_METHODS) <= set(kit_rpc._HANDLERS)
     result = _call(_server(_RecordingEditBridge()), "capabilities")["result"]
-    assert result["version"] == "tier3-1" and result["dry_run_default"] is True
+    assert result["version"] == "tier4-1" and result["dry_run_default"] is True
     assert result["edit_methods"] == list(EDIT_RPC_METHODS) and result["undo_methods"] == list(UNDO_RPC_METHODS)
     assert set(EDIT_RPC_METHODS) | set(UNDO_RPC_METHODS) <= set(result["methods"])
     # Every write is dropped when it waited too long in Kit's queue; undo_history only reads.
@@ -794,3 +797,186 @@ def test_edits_and_undo_round_trip_over_the_rpc_on_a_live_stage():
             assert "not undoable" in undone["note"]
         assert layer.ExportToString() == original
         json.dumps([previews, sized, made, bound, history])
+
+
+# --- localhost CSRF / DNS-rebinding guard, socket-free (fake connections), so it also runs in Kit's self-test --------
+
+
+class _FakeConnection:
+    """Socket stand-in for BaseHTTPRequestHandler: reads one raw request, collects the raw response."""
+
+    def __init__(self, raw: bytes) -> None:
+        self._raw = raw
+        self.sent = bytearray()
+
+    def makefile(self, mode, *_args, **_kwargs):
+        assert "r" in mode, mode
+        return io.BytesIO(self._raw)
+
+    def sendall(self, data) -> None:
+        self.sent.extend(data)
+
+    def settimeout(self, _timeout) -> None:
+        return None
+
+    def setsockopt(self, *_args) -> None:
+        return None
+
+
+class _GuardBaseServer(_FakeBaseServer):
+    """_FakeBaseServer plus a live_scene_control-shaped HTTP handler; _submit records and dispatches synchronously."""
+
+    def __init__(self, bridge) -> None:
+        super().__init__(bridge)
+        self.submitted: list = []
+
+    def _submit(self, payload):
+        self.submitted.append(payload)
+        return self._dispatch(payload)
+
+    def _build_handler(self):
+        parent = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                length = int(self.headers.get("Content-Length", "0"))
+                self._send_json(200, parent._submit(json.loads(self.rfile.read(length).decode("utf-8") or "{}")))
+
+            def do_GET(self) -> None:  # noqa: N802
+                self._send_json(200, {"ok": True, "status": "running"})
+
+            def log_message(self, *_args) -> None:
+                return
+
+            def _send_json(self, status, payload) -> None:
+                data = json.dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        return Handler
+
+
+_GUARD_PORT = 47123  # only a label in the fake server's address: nothing binds or connects to it
+
+
+def _guarded_request(handler_cls, method="POST", path="/rpc", headers=None, body=None):
+    """(status, JSON body) of one raw request run through handler_cls on a fake connection (no socket)."""
+    if body is None and method == "POST":
+        body = b'{"method": "ping", "params": {}}'
+    lines = [f"{method} {path} HTTP/1.1"]
+    lines += [f"{name}: {value}" for name, value in (headers or {}).items()]
+    if body is not None:
+        lines.append(f"Content-Length: {len(body)}")
+    connection = _FakeConnection(("\r\n".join(lines) + "\r\n\r\n").encode("latin-1") + (body or b""))
+    fake_server = types.SimpleNamespace(server_address=("127.0.0.1", _GUARD_PORT))
+    handler_cls(connection, ("127.0.0.1", 50000), fake_server)
+    head, _, payload = bytes(connection.sent).partition(b"\r\n\r\n")
+    return int(head.split(b" ", 2)[1]), json.loads(payload.decode("utf-8") or "{}")
+
+
+@contextlib.contextmanager
+def _guard_env(value):
+    """OMNIVERSE_BRIDGE_TOKEN set to value (None: unset) for the block, always restored."""
+    environ = kit_rpc.os.environ
+    previous = environ.get(kit_rpc.BRIDGE_TOKEN_ENV)
+    if value is None:
+        environ.pop(kit_rpc.BRIDGE_TOKEN_ENV, None)
+    else:
+        environ[kit_rpc.BRIDGE_TOKEN_ENV] = value
+    try:
+        yield
+    finally:
+        if previous is None:
+            environ.pop(kit_rpc.BRIDGE_TOKEN_ENV, None)
+        else:
+            environ[kit_rpc.BRIDGE_TOKEN_ENV] = previous
+
+
+def test_bridge_request_refusal_rules():
+    def refusal(command, port=9911, token=None, **values):
+        message = Message()
+        for name, value in values.items():
+            message[name.replace("_", "-")] = value
+        return kit_rpc.bridge_request_refusal(command, message, port, token)
+
+    good = {"Host": "127.0.0.1:9911", "Content_Type": "application/json"}
+    assert refusal("POST", **good) is None
+    assert refusal("POST", Host="localhost:9911", Content_Type="application/json; charset=utf-8") is None
+    assert refusal("GET", Host="127.0.0.1:9911") is None
+    assert refusal("POST", **good, Origin="https://evil.example")[0] == "origin"
+    assert refusal("GET", Host="127.0.0.1:9911", Origin="null")[0] == "origin"
+    assert refusal("POST", **good, Sec_Fetch_Mode="no-cors")[0] == "browser"
+    assert refusal("POST", **good, Sec_Fetch_Site="cross-site")[0] == "browser"
+    assert refusal("POST", Host="127.0.0.1:9911", Content_Type="text/plain")[0] == "content_type"
+    assert refusal("POST", Host="127.0.0.1:9911")[0] == "content_type"
+    assert refusal("POST", Host="evil.example:9911", Content_Type="application/json")[0] == "host"
+    assert refusal("POST", Host="127.0.0.1:9910", Content_Type="application/json")[0] == "host"
+    assert refusal("POST", Content_Type="application/json")[0] == "host"
+    assert refusal("POST", port=None, **good)[0] == "host"
+    assert refusal("POST", token="t0ken", **good)[0] == "token"
+    assert refusal("POST", token="t0ken", X_Omniverse_Bridge_Token="nope", **good)[0] == "token"
+    assert refusal("POST", token="t0ken", X_Omniverse_Bridge_Token="t0ken", **good) is None
+    assert refusal("GET", token="t0ken", Host="127.0.0.1:9911") is None  # /health stays token-free
+    assert "t0ken" not in refusal("POST", token="t0ken", X_Omniverse_Bridge_Token="nope", **good)[1]
+
+
+def test_guarded_handler_refuses_browser_requests_before_dispatch():
+    server = kit_rpc.make_extended_server_class(_GuardBaseServer)(_PingOnlyBridge())
+    handler = server._build_handler()
+    assert handler._omniverse_bridge_guarded and kit_rpc.guard_handler_class(handler) is handler
+    host = {"Host": f"127.0.0.1:{_GUARD_PORT}"}
+    json_headers = {**host, "Content-Type": "application/json"}
+    with _guard_env(None):
+        assert _guarded_request(handler, headers=json_headers) == (200, {"ok": True, "result": {"status": "ok"}})
+        assert [item["method"] for item in server.submitted] == ["ping"]
+        server.submitted.clear()
+        attack = {**host, "Content-Type": "text/plain", "Origin": "https://evil.example", "Sec-Fetch-Mode": "no-cors"}
+        for request_headers, reason in (
+            (attack, "origin"),
+            ({**json_headers, "Sec-Fetch-Site": "cross-site"}, "browser"),
+            ({**host, "Content-Type": "text/plain"}, "content_type"),
+            ({**json_headers, "Host": f"evil.example:{_GUARD_PORT}"}, "host"),
+        ):
+            status, body = _guarded_request(handler, headers=request_headers)
+            assert status == 403 and body["forbidden"] is True and body["reason"] == reason, (reason, body)
+        assert _guarded_request(handler, "GET", "/health", headers={**host, "Origin": "https://x.example"})[0] == 403
+        assert _guarded_request(handler, "GET", "/health", headers=host)[0] == 200
+    with _guard_env("shared-secret"):
+        assert _guarded_request(handler, headers=json_headers)[1]["reason"] == "token"
+        wrong = {**json_headers, kit_rpc.BRIDGE_TOKEN_HEADER: "guess"}
+        assert _guarded_request(handler, headers=wrong)[1]["reason"] == "token"
+        assert server.submitted == []
+        right = {**json_headers, kit_rpc.BRIDGE_TOKEN_HEADER: "shared-secret"}
+        assert _guarded_request(handler, headers=right)[0] == 200
+        assert len(server.submitted) == 1
+
+
+def test_real_live_scene_control_handler_refuses_browser_requests_inside_kit():
+    """Inside Kit: the real base Handler behind the guard refuses without queueing (no Kit pump is waited on)."""
+    if not _LIVE_SCENE_CONTROL.is_file():
+        return
+    spec = importlib.util.spec_from_file_location("kit_rpc_guard_scene_control", _LIVE_SCENE_CONTROL)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError:
+        return
+    cls = kit_rpc.make_extended_server_class(module.LiveSceneControlServer)
+    server = cls.__new__(cls)  # no __init__: no Kit context, no HTTP server, nothing started
+    server._host, server._port, server._bridge = "127.0.0.1", _GUARD_PORT, _PingOnlyBridge()
+    submitted = []
+    server._submit = submitted.append  # a refused request must never get here
+    handler = server._build_handler()
+    host = {"Host": f"127.0.0.1:{_GUARD_PORT}"}
+    with _guard_env(None):
+        for request_headers in (
+            {**host, "Content-Type": "text/plain", "Origin": "https://evil.example"},
+            {**host, "Content-Type": "text/plain"},
+            {"Host": f"evil.example:{_GUARD_PORT}", "Content-Type": "application/json"},
+        ):
+            assert _guarded_request(handler, headers=request_headers)[0] == 403
+        assert _guarded_request(handler, "GET", "/health", headers=host)[0] == 200
+    assert submitted == []

@@ -9,6 +9,8 @@
    touched, and nothing is stopped while an unknown program holds 9910.
 3. start_composer_bridge.py starts the extended server on 9910. On ANY failure the new server is stopped and the
    stopped server(s) are started again. The open stage is never edited, selected or saved.
+4. Once the extended (guarded) server runs on 9910, the setup extension's stock server on 9909 (no browser/Host
+   guard) is stopped too; the report's stock_server says so. If that fails, the stock server keeps running.
 
 The outcome is written to composer-study/bridge-reload-result.json. The setup extension keeps a reference to its
 stopped stock server; Composer's shutdown stops it again harmlessly.
@@ -33,7 +35,7 @@ from typing import Any, Callable, Iterable
 LOG_PREFIX = "[Composer MCP]"
 RELOAD_TASK_ATTR = "_composer_bridge_reload_task"
 REQUIRED_SELF_TESTS = ("test_kit_bridge_usd.py", "test_kit_rpc.py")
-OPTIONAL_SELF_TESTS = ("test_edits.py", "test_undo.py")
+OPTIONAL_SELF_TESTS = ("test_edits.py", "test_undo.py", "test_kit_live_extras.py", "test_physics.py")
 SERVER_CLASS_NAME = "LiveSceneControlServer"
 EXTENSION_ATTR = "_live_scene_control"
 _MAX_LISTED = 60
@@ -304,7 +306,7 @@ async def _reload(
             report["stopped"].append(_describe(entry))
         setattr(builtins, server_attr, None)
         sys.modules.pop(start["BRIDGE_MODULE"], None)
-        new_server = await start["start_bridge"](workspace, port, port_in_use=port_in_use, log=log)
+        new_server = await start["start_bridge"](workspace, port, port_in_use=port_in_use, log=log, stop_stock=False)
         if new_server is None or not start["is_running"](new_server) or start["server_port"](new_server) != port:
             raise RuntimeError(f"The new bridge is not running on port {port}")
         report["rpc_version"] = getattr(new_server, "rpc_version", None)
@@ -354,6 +356,14 @@ async def _reload(
         elif stopping:
             report["status"] = "restored_old_bridge"
         # else: no bridge was serving the port before and the new one did not start, so the status stays "failed".
+        return
+
+    # 3. The guarded bridge now serves the port: stop the setup extension's unguarded stock server (9909). This never
+    #    undoes the reload; if it fails, the stock server keeps running as before (stop_stock_servers restarts it).
+    try:
+        report["stock_server"] = await start["stop_stock_servers"](new_server, objects=objects, log=log)
+    except Exception as error:  # stop_stock_servers never raises; an older start script without it must not either
+        report["stock_server"] = {"status": "kept", "error": f"{type(error).__name__}: {error}"}
 
 
 def main() -> asyncio.Future | None:

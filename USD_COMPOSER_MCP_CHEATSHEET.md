@@ -382,3 +382,65 @@ These read the installed Isaac Sim 6.1 extension docs and never write them. `kit
 2. Composer: relaunch with `start-composer-study.ps1`, or run `composer-study/reload_composer_bridge.py`.
 3. Restart the router (or use `router_set_scene_target`), then check `scene_capabilities()`:
    `needs_bridge_update` is `false` and `scene_edits` and `undo` are available.
+
+## 11) Assets, physics, screenshots, bridge guard and dashboard
+
+This section updates section 10: the bridge RPC version is now `tier4-1`. The router can find assets in the local
+Isaac Sim 6.1 asset pack, add them by reference, set up UsdPhysics, take viewport screenshots and drive the
+simulation, and the exam dashboard is one call away.
+
+### What to say
+
+```text
+add a franka robot                     # asset search, then a PREVIEW of adding the best match (never applied)
+add a warehouse shelf at 0 0 0         # the same, placed at 0 0 0; "under /World/Props" picks the parent
+find a carter robot                    # search results + candidates + a preview of adding the top hit
+make /World/Box a rigid body           # exact path + dry_run=False applies; "make the box ..." only previews
+add collision to /World/Box with convex hull
+remove physics from /World/Box and its children
+add a physics scene                    # previews /physicsScene (9.81 m/s^2 down the stage up axis)
+physics report                         # read-only
+take a screenshot                      # PNG of the active viewport; then "is my screenshot ready"
+play the simulation / pause the simulation / stop the simulation / step 10 frames
+show my dashboard                      # exam dashboard; also saves exam-prep/dashboard.html
+```
+
+Assets found by search are always previewed: the answer has `candidates` and an `apply_with` call for
+`scene_add_asset`. Simulation phrases run when you say them (send with `dry_run=True` to preview); they change
+simulation state, not authored scene data, and `stop` puts simulated prims back.
+
+### The tools behind them
+
+```text
+asset_search(query="franka", top_k=5)                    # read-only, ranked absolute USD paths
+asset_info(asset_path="Isaac/Props/Blocks/basic_block.usd")
+scene_add_asset(prim_path="/World/Franka", asset_path="C:/.../franka.usd", correct_units=True)  # preview
+scene_add_asset(..., dry_run=False)                      # adds it (not saved; scene_undo_last undoes it)
+scene_physics_report()                                   # live, or the saved file when the bridge cannot
+scene_add_physics_scene() / scene_make_rigid_body(prim_path, mass=2.0) / scene_make_collider(prim_path)
+scene_remove_physics(prim_path, include_descendants=False)   # all four preview unless dry_run=False
+scene_capture_viewport() -> {"status": "pending", "path": ...};  scene_capture_status(path)
+sim_status() / sim_play() / sim_pause() / sim_stop() / sim_step(frames=10)
+learning_exam_dashboard(write=True)
+```
+
+The asset index lives in the router (about 1 s to index the pack once; nothing in it is ever written). Asset
+paths are authored as absolute forward-slash paths, so the scene only resolves them on a machine with the pack in
+the same place. `correct_units=True` fixes a Y-up or centimeter asset on a Z-up meter stage.
+
+### Bridge guard
+
+The upgraded bridge (Isaac 9911, Composer 9910) refuses browser requests (an `Origin` or `Sec-Fetch-*` header), a
+`Host` other than `127.0.0.1:<port>` / `localhost:<port>`, and POSTs that are not `application/json`, with a 403
+and nothing run in Kit. Optional: set `OMNIVERSE_BRIDGE_TOKEN` to the same value in Kit's and the router's
+environment; then every RPC must carry it (the router sends it, also on its `/health` probes). Composer's stock
+server on 9909 has no guard, so `start_composer_bridge.py` and `reload_composer_bridge.py` now STOP it once the
+guarded bridge runs on 9910 (`bridge-reload-result.json` -> `stock_server`); if that fails it keeps running.
+
+### Turning it on (tier4-1)
+
+1. Isaac Sim: run `isaacsim-study/reload_mcp_bridge.py`; it now also self-tests `test_kit_live_extras.py` and
+   `test_physics.py`. The result file should show rpc_version `tier4-1`.
+2. Composer: relaunch with `start-composer-study.ps1`, or run `composer-study/reload_composer_bridge.py`.
+3. Restart the router (or use `router_set_scene_target`), then `scene_capabilities()`: `assets`, `physics`,
+   `viewport_capture` and `simulation` are available and `needs_bridge_update` is `false`.

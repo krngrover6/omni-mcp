@@ -25,7 +25,9 @@ LEGEND = {
 SAFETY = (
     "Preview first: scene edits take dry_run=True to show exactly what would change without changing anything. "
     "Light, camera and material tools preview by default; edits aimed at a prim by name (not path) always preview. "
-    "Router edits can be undone with scene_undo_last (it previews first); saving is not undoable."
+    "Router edits can be undone with scene_undo_last (it previews first); saving is not undoable. Simulation "
+    "controls (sim_play, sim_pause, sim_stop, sim_step) change simulation state, not authored data: use them only "
+    "when asked; sim_stop puts simulated prims back."
 )
 
 
@@ -113,6 +115,41 @@ TOOL_CATALOG: dict[str, list[dict[str, Any]]] = {
               "with dry_run=True.",
               'scene_material(path="/World/Props/Cube", material_path="/World/Looks/Steel", dry_run=True)', True, True),
     ],
+    "Assets & physics": [
+        _tool("asset_search", "Search the local Isaac Sim asset pack (robots, environments, props, sensors) by name.",
+              'asset_search(query="franka", top_k=5)', False, False),
+        _tool("asset_info", "One asset file's path, category, size, thumbnail and header (defaultPrim, upAxis, units).",
+              'asset_info(asset_path="Isaac/Props/Blocks/basic_block.usd")', False, False),
+        _tool("scene_add_asset", "Add an asset file to the open scene as a referencing Xform, placed and unit-checked; "
+              "dry_run=True by default.",
+              'scene_add_asset(prim_path="/World/Franka", asset_path="C:/.../franka.usd", translation=[0, 0, 0], '
+              'dry_run=True)', True, True),
+        _tool("scene_physics_report", "Read-only physics setup: PhysicsScene and gravity, rigid bodies, colliders, "
+              "mass, joints, and common mistakes.", "scene_physics_report()", False, False),
+        _tool("scene_add_physics_scene", "Add a PhysicsScene with gravity in m/s^2 (nothing simulates without one); "
+              "dry_run=True by default.", 'scene_add_physics_scene(path="/physicsScene", dry_run=True)', True, True),
+        _tool("scene_make_rigid_body", "Make a prim a rigid body with optional mass and colliders on its geometry; "
+              "dry_run=True by default.",
+              'scene_make_rigid_body(prim_path="/World/Props/Cube", mass=2.0, dry_run=True)', True, True),
+        _tool("scene_make_collider", "Add collision to a gprim or every gprim below a group, with an optional "
+              "approximation; dry_run=True by default.",
+              'scene_make_collider(prim_path="/World/Props/Cube", dry_run=True)', True, True),
+        _tool("scene_remove_physics", "Remove rigid body, collision and mass APIs from a prim; dry_run=True by default.",
+              'scene_remove_physics(prim_path="/World/Props/Cube", dry_run=True)', True, True),
+    ],
+    "Simulation & screenshots": [
+        _tool("scene_capture_viewport", "Save a PNG screenshot of the live app's active viewport (camera and render "
+              "settings untouched).", "scene_capture_viewport()", True, True),
+        _tool("scene_capture_status", "Check whether a viewport screenshot has been written yet.",
+              'scene_capture_status(path="C:/.../viewport_20261022_101500_000000.png")', False, True),
+        _tool("sim_status", "Is the simulation playing, paused or stopped, and at what time.", "sim_status()", False, True),
+        _tool("sim_play", "Play the simulation: physics moves simulated prims until sim_stop (simulation state only).",
+              "sim_play()", True, True),
+        _tool("sim_pause", "Pause the simulation at the current time.", "sim_pause()", True, True),
+        _tool("sim_stop", "Stop the simulation: the timeline resets and simulated prims go back to their start poses.",
+              "sim_stop()", True, True),
+        _tool("sim_step", "Advance a paused simulation by a number of frames (1-600).", "sim_step(frames=10)", True, True),
+    ],
     "Undo": [
         _tool("scene_undo_last", "Undo the most recent scene change made through the router; dry_run=True (the "
               "default) shows what would be restored.", "scene_undo_last(dry_run=True)", True, True),
@@ -164,6 +201,8 @@ TOOL_CATALOG: dict[str, list[dict[str, Any]]] = {
               'learning_exam_answer(question_id="comp-001", chosen=["B"])', True, False),
         _tool("learning_exam_progress", "Your saved accuracy per domain, weakest objectives, reviews due and streak.",
               "learning_exam_progress()", False, False),
+        _tool("learning_exam_dashboard", "Your progress dashboard (domains, plan, mocks, coverage, what to focus on), "
+              "also saved as exam-prep/dashboard.html.", "learning_exam_dashboard(write=True)", True, False),
         _tool("learning_exam_review", "Spaced-repetition questions due now, most overdue first.",
               "learning_exam_review(limit=10)", False, False),
         _tool("learning_exam_reset", "Clear ALL saved exam progress (only with confirm=True; a backup is kept).",
@@ -236,6 +275,10 @@ GROUP_ABOUT = {
     "Live insight": "Deep read-only USD answers (composition, value resolution, bounds, validation) from the live "
                     "stage or the saved file.",
     "Lights/cameras/materials": "Light, camera and material authoring; previews by default.",
+    "Assets & physics": "Find robots and props in the local asset pack, add them by reference, and set up physics; "
+                        "edits preview by default.",
+    "Simulation & screenshots": "Play, pause, stop and step the live simulation, and save viewport screenshots; these "
+                                "change simulation state or write a PNG, never authored scene data.",
     "Undo": "See and undo the changes the router made.",
     "Knowledge & docs": "Ask questions and search docs; USD, Kit, omni.ui and Isaac Sim answers work offline.",
     "Exam prep": "NCP-OUSD daily lessons, practice questions, timed mock exams and composition puzzles.",
@@ -260,9 +303,17 @@ GROUP_PHRASES = {
         "paint /World/Props/Cube red",
         "bind /World/Looks/Steel to /World/Props/Cube",
     ],
+    "Assets & physics": [
+        "add a franka robot",
+        "find a carter robot",
+        "make /World/Props/Cube a rigid body",
+        "add collision to /World/Props/Cube",
+        "physics report",
+    ],
+    "Simulation & screenshots": ["take a screenshot", "play the simulation", "step 10 frames", "stop the simulation"],
     "Undo": ["undo", "confirm undo", "what did you change"],
     "Knowledge & docs": ["what is a payload in USD?", "how do I subscribe to stage events in Kit?"],
-    "Exam prep": ["start day 1", "next lesson", "mock exam"],
+    "Exam prep": ["start day 1", "next lesson", "mock exam", "show my dashboard"],
     "Learning": ["teach me schemas", "quiz me on prims", "practice transforms with me"],
     "Health & connection": ["help", "status"],
 }
@@ -288,11 +339,16 @@ _GROUP_ALIASES = {
                      "properties", "explain value", "value resolution"),
     "Lights/cameras/materials": ("light", "lights", "lighting", "camera", "cameras", "material", "materials",
                                  "shading", "paint", "color", "colour", "lights cameras materials"),
+    "Assets & physics": ("asset", "assets", "asset library", "asset pack", "robot", "robots", "props", "reference",
+                         "references", "physics", "rigid body", "rigid bodies", "collider", "colliders", "collision",
+                         "gravity"),
+    "Simulation & screenshots": ("simulation", "simulate", "sim", "play", "pause", "step", "screenshot",
+                                 "screenshots", "capture", "viewport"),
     "Undo": ("undo", "undoing", "history", "revert", "rollback"),
     "Knowledge & docs": ("knowledge", "docs", "documentation", "search", "glossary", "ask", "questions", "kit",
                          "omni.ui", "isaac", "bowerbot", "workspace"),
     "Exam prep": ("exam", "exams", "exam prep", "ncp-ousd", "ncp ousd", "certification", "mock", "mock exam",
-                  "daily lesson", "daily lessons", "puzzle", "puzzles", "progress"),
+                  "daily lesson", "daily lessons", "puzzle", "puzzles", "progress", "dashboard"),
     "Learning": ("learn", "learning", "lesson", "lessons", "tutor", "practice", "drill", "quiz", "quizzes", "study",
                  "playground", "cheat sheet", "cheatsheet", "roadmap"),
     "Health & connection": ("health", "connection", "connect", "connected", "status", "bridge", "bridges", "router",

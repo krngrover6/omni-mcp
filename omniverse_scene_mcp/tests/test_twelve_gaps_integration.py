@@ -509,7 +509,7 @@ def test_router_dispatch_reaches_the_new_service_methods_on_the_fake_scene():
         assert blue["payload"]["would_create"]["material"] == "/World/Looks/BlueMaterial"
         assert bridge.get_prim("/World/Looks/BlueMaterial") is None
         guide = dispatch("help")
-        assert guide["ok"] is True and guide["style"] == "help" and len(guide["groups"]) == 9
+        assert guide["ok"] is True and guide["style"] == "help" and len(guide["groups"]) == 11
 
 
 # --------------------------------------------------------------------------- live bridge over the extended RPC
@@ -526,7 +526,7 @@ def test_live_bridge_edits_and_undo_end_to_end_with_byte_identical_dry_runs():
         rpc = kit_rpc.make_extended_server_class(_BasicServer)(bridge)
         with _server(scene=lambda: SceneMCPService(HttpSceneBridge(ISAAC))) as call, _in_process_transport(rpc) as sent:
             capabilities = call("scene_capabilities")
-            assert capabilities["rpc_version"] == RPC_VERSION == "tier3-1" and capabilities["needs_bridge_update"] is False
+            assert capabilities["rpc_version"] == RPC_VERSION == "tier4-1" and capabilities["needs_bridge_update"] is False
             assert capabilities["scene_edits"]["available"] is True and capabilities["undo"]["available"] is True
             assert "how_to_enable" not in capabilities
 
@@ -680,7 +680,7 @@ def test_help_catalog_covers_every_registered_tool_and_router_help_answers():
                      "docs_search", "extension_info"):
             assert by_name[name]["mutates"] is False, name
         guide = call("router_help")
-        assert guide["ok"] is True and len(guide["groups"]) == 9 and len(guide["quick_start"]) == 8
+        assert guide["ok"] is True and len(guide["groups"]) == 11 and len(guide["quick_start"]) == 8
         assert not any(tool.get("planned") for group in guide["groups"] for tool in group["tools"])
         undo = call("router_help", topic="undo")
         assert undo["match"] == "group" and {tool["name"] for tool in undo["tools"]} == {"scene_undo_last", "scene_undo_history"}
@@ -753,7 +753,7 @@ def test_docs_tools_and_knowledge_fallback_answer_offline_from_a_temp_install():
 
 
 def test_new_rpc_methods_line_up_across_the_protocol_the_rpc_and_the_bridges():
-    assert RPC_VERSION == "tier3-1"
+    assert RPC_VERSION == "tier4-1"
     new = set(EDIT_RPC_METHODS) | set(UNDO_RPC_METHODS)
     assert new <= set(LIVE_RPC_METHODS) and new <= set(kit_rpc._HANDLERS)
     for owner in (FakeSceneBridge, HttpSceneBridge, LiveKitSceneBridge, SceneMCPService):

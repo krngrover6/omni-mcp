@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 # Version of the extended live RPC (kit_rpc.make_extended_server_class); bump when its methods change.
-RPC_VERSION = "tier3-1"
+RPC_VERSION = "tier4-1"
 # Methods every LiveSceneControlServer (live_scene_control.py) answers, Composer's 9910 bridge included.
 BASIC_RPC_METHODS: tuple[str, ...] = (
     "ping",
@@ -34,6 +34,30 @@ BASIC_RPC_METHODS: tuple[str, ...] = (
 # Safe attribute/material edits (edits.py) and MCP undo (undo.py, kit_commands.py), added in RPC tier3-1.
 EDIT_RPC_METHODS: tuple[str, ...] = ("set_attribute", "create_material", "bind_material")
 UNDO_RPC_METHODS: tuple[str, ...] = ("undo_last", "undo_history")
+# Added in RPC tier4-1: reference an asset file (asset_library.add_reference), UsdPhysics setup (physics.py), and the
+# Kit-only viewport capture and simulation controls (kit_live_extras.py). The asset index itself stays in the router.
+ASSET_RPC_METHODS: tuple[str, ...] = ("add_reference",)
+PHYSICS_RPC_METHODS: tuple[str, ...] = (
+    "physics_report",
+    "add_physics_scene",
+    "make_rigid_body",
+    "make_collider",
+    "remove_physics",
+)
+CAPTURE_RPC_METHODS: tuple[str, ...] = ("capture_viewport", "capture_status")
+SIMULATION_RPC_METHODS: tuple[str, ...] = (
+    "simulation_status",
+    "simulation_play",
+    "simulation_pause",
+    "simulation_stop",
+    "simulation_step",
+)
+TIER4_RPC_METHODS: tuple[str, ...] = (
+    *ASSET_RPC_METHODS,
+    *PHYSICS_RPC_METHODS,
+    *CAPTURE_RPC_METHODS,
+    *SIMULATION_RPC_METHODS,
+)
 # Methods only an extended bridge answers; an older bridge replies "Unsupported live scene method: <name>".
 LIVE_RPC_METHODS: tuple[str, ...] = (
     "capabilities",
@@ -43,6 +67,7 @@ LIVE_RPC_METHODS: tuple[str, ...] = (
     "aim",
     *EDIT_RPC_METHODS,
     *UNDO_RPC_METHODS,
+    *TIER4_RPC_METHODS,
 )
 # Read-only insight queries a live bridge runs on the open stage (usd_insight / usd_validate functions).
 INSIGHT_QUERIES: tuple[str, ...] = ("stage_info", "composition", "explain_value", "properties", "bounds", "validate")
@@ -229,3 +254,59 @@ class LiveSceneBridge(SceneBridge, Protocol):
     def undo_last(self, dry_run: bool = True) -> dict[str, Any]: ...
 
     def undo_history(self, limit: int = 20) -> dict[str, Any]: ...
+
+    # --- RPC tier4-1: assets, physics, viewport capture and simulation ------------------------------------------
+
+    def add_reference(
+        self,
+        prim_path: str,
+        asset_path: str,
+        *,
+        translation: tuple[float, float, float] | None = None,
+        rotation: tuple[float, float, float] | None = None,
+        scale: float | tuple[float, float, float] | None = None,
+        instanceable: bool | None = None,
+        asset_prim_path: str | None = None,
+        correct_units: bool = False,
+        dry_run: bool = True,
+    ) -> dict[str, Any]: ...
+
+    def physics_report(self, prim_path: str | None = None) -> dict[str, Any]: ...
+
+    def add_physics_scene(
+        self, path: str = "/physicsScene", *, gravity: Any = None, dry_run: bool = True
+    ) -> dict[str, Any]: ...
+
+    def make_rigid_body(
+        self,
+        prim_path: str,
+        *,
+        mass: float | None = None,
+        density: float | None = None,
+        kinematic: bool = False,
+        add_collider: bool = True,
+        approximation: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]: ...
+
+    def make_collider(self, prim_path: str, *, approximation: str | None = None, dry_run: bool = True) -> dict[str, Any]: ...
+
+    def remove_physics(
+        self, prim_path: str, *, include_descendants: bool = False, dry_run: bool = True
+    ) -> dict[str, Any]: ...
+
+    def capture_viewport(
+        self, output_dir: str | None = None, *, width: int | None = None, height: int | None = None
+    ) -> dict[str, Any]: ...
+
+    def capture_status(self, path: str) -> dict[str, Any]: ...
+
+    def simulation_status(self) -> dict[str, Any]: ...
+
+    def simulation_play(self) -> dict[str, Any]: ...
+
+    def simulation_pause(self) -> dict[str, Any]: ...
+
+    def simulation_stop(self) -> dict[str, Any]: ...
+
+    def simulation_step(self, frames: int = 1) -> dict[str, Any]: ...

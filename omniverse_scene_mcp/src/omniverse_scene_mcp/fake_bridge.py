@@ -2,11 +2,23 @@ from __future__ import annotations
 
 from copy import deepcopy
 import math
+import os
 import re
 import time as _time
 from typing import Any
 
-from .bridge import BASIC_RPC_METHODS, EDIT_RPC_METHODS, UNDO_RPC_METHODS, PrimRecord, SceneSnapshot, unsupported_result
+from .bridge import (
+    ASSET_RPC_METHODS,
+    BASIC_RPC_METHODS,
+    CAPTURE_RPC_METHODS,
+    EDIT_RPC_METHODS,
+    PHYSICS_RPC_METHODS,
+    SIMULATION_RPC_METHODS,
+    UNDO_RPC_METHODS,
+    PrimRecord,
+    SceneSnapshot,
+    unsupported_result,
+)
 
 _FAKE_HINT = (
     "connect the router to a live Isaac Sim bridge (9911) for this, or use the saved-file tools "
@@ -20,6 +32,15 @@ FAKE_EDIT_NOTE = (
     "no USD schemas or value types)."
 )
 MAX_UNDO_ENTRIES = 50
+MAX_STEP_FRAMES = 600  # the same cap as kit_live_extras.simulation_step
+_NO_USD_STAGE = "The in-memory fake scene has no USD stage, so it has no UsdPhysics schemas."
+_USD_EXTENSIONS = (".usd", ".usda", ".usdc", ".usdz")
+_PRIM_PATH = re.compile(r"^(?:/[A-Za-z_][A-Za-z0-9_]*)+$")
+FAKE_REFERENCE_NOTE = (
+    "The fake scene only checks that the asset file exists; it does not open it, so its defaultPrim, upAxis and "
+    "metersPerUnit are not checked and nothing is loaded."
+)
+FAKE_SIM_NOTE = "In-memory fake timeline: there is no physics, so nothing moves; only the time changes."
 _ATTRIBUTE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z_][A-Za-z0-9_]*)*$")
 _STRENGTHS = {
     "weakerthandescendants": "weakerThanDescendants",
@@ -54,6 +75,7 @@ class FakeSceneBridge:
             "time_codes_per_second": 24.0,
             "playing": False,
         }
+        self._sim_paused = False
         self._prims: dict[str, PrimRecord] = {
             "/World": PrimRecord(path="/World", type_name="Xform"),
             "/World/Props": PrimRecord(path="/World/Props", type_name="Xform", parent="/World"),
@@ -264,6 +286,7 @@ class FakeSceneBridge:
 
     def stop_timeline(self) -> dict[str, object]:
         self._timeline_state["playing"] = False
+        self._sim_paused = False
         return self.get_timeline_state()
 
     def find_prims(self, query: str, scope_path: str | None = None) -> list[PrimRecord]:
@@ -289,10 +312,16 @@ class FakeSceneBridge:
             "ok": True,
             "bridge": type(self).__name__,
             "version": "fake",
-            "methods": list(BASIC_RPC_METHODS) + list(EDIT_RPC_METHODS) + list(UNDO_RPC_METHODS),
+            "methods": list(BASIC_RPC_METHODS) + list(EDIT_RPC_METHODS) + list(UNDO_RPC_METHODS)
+            + list(ASSET_RPC_METHODS) + list(SIMULATION_RPC_METHODS),
             "insight_queries": [],
             "authoring": {"available": False, "error": "The in-memory fake scene has no USD stage."},
             "edits": {"available": True, "in_memory": True, "methods": list(EDIT_RPC_METHODS), "dry_run_default": True},
+            "assets": {"available": True, "in_memory": True, "methods": list(ASSET_RPC_METHODS), "dry_run_default": True},
+            "physics": {"available": False, "methods": list(PHYSICS_RPC_METHODS), "error": _NO_USD_STAGE},
+            "capture": {"available": False, "methods": list(CAPTURE_RPC_METHODS), "error": "The fake scene has no viewport."},
+            "simulation": {"available": True, "in_memory": True, "methods": list(SIMULATION_RPC_METHODS),
+                           "physics_available": False},
             "undo": {
                 "available": True,
                 "in_memory": True,
@@ -305,7 +334,8 @@ class FakeSceneBridge:
             },
             "dry_run_default": True,
             "fake_scene": True,
-            "message": "In-memory fake scene: basic scene methods, in-memory attribute/material edits and undo only.",
+            "message": "In-memory fake scene: basic scene methods, in-memory attribute/material edits, asset references, "
+            "a timeline without physics, and undo only.",
         }
 
     def insight(self, query: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -319,6 +349,167 @@ class FakeSceneBridge:
 
     def aim(self, path: str, target: Any = None, **_options: Any) -> dict[str, Any]:
         return self._not_supported("aim", "Aiming prims", path=str(path))
+
+    # --- RPC tier4-1 on the fake scene: in-memory asset references and timeline; no physics or viewport ---------
+
+    def add_reference(
+        self,
+        prim_path: str,
+        asset_path: str,
+        *,
+        translation: Any = None,
+        rotation: Any = None,
+        scale: Any = None,
+        instanceable: bool | None = None,
+        asset_prim_path: str | None = None,
+        correct_units: bool = False,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Add (or with dry_run, preview adding) a fake Xform that records a reference to an existing USD file."""
+        dry = dry_run is not False
+        fields: dict[str, Any] = {"path": str(prim_path), "asset_path": str(asset_path)}
+        notes = [FAKE_EDIT_NOTE, FAKE_REFERENCE_NOTE]
+        try:
+            if not isinstance(prim_path, str) or not _PRIM_PATH.match(prim_path):
+                raise ValueError(f"{prim_path!r} is not an absolute prim path such as /World/Robot.")
+            if prim_path in self._prims:
+                raise ValueError(f"A prim already exists at {prim_path} ({self._prims[prim_path].type_name}); choose a new path.")
+            parent_path = self._parent_path(prim_path)
+            if parent_path and parent_path not in self._prims:
+                raise ValueError(f"Parent prim does not exist: {parent_path}. Create it first.")
+            asset = str(asset_path or "").strip()
+            if not asset or not os.path.isfile(asset):
+                raise ValueError(f"Asset file not found: {asset or asset_path!r}. Use asset_search to find a path.")
+            if os.path.splitext(asset)[1].lower() not in _USD_EXTENSIONS:
+                raise ValueError(f"{os.path.basename(asset)} is not a USD file ({', '.join(_USD_EXTENSIONS)}).")
+            moved = _vector_or_none(translation, "translation")
+            turned = _vector_or_none(rotation, "rotation")
+            if isinstance(scale, (int, float)) and not isinstance(scale, bool):
+                scale = (scale, scale, scale)
+            sized = _vector_or_none(scale, "scale")
+            if sized is not None and any(value == 0.0 for value in sized):
+                raise ValueError("scale components must not be 0 (the asset would collapse).")
+            if asset_prim_path is not None and (not isinstance(asset_prim_path, str) or not _PRIM_PATH.match(asset_prim_path)):
+                raise ValueError(f"asset_prim_path {asset_prim_path!r} is not an absolute prim path.")
+        except ValueError as exc:
+            return self._edit_result("add_reference", dry, fields, error=str(exc), notes=notes)
+        if correct_units is True:
+            notes.append("correct_units is ignored on the fake scene: it does not read the asset's units.")
+        plan: dict[str, Any] = {
+            "path": prim_path,
+            "parent": parent_path,
+            "type": "Xform",
+            "reference": {"asset_path": os.path.abspath(asset).replace("\\", "/"), "prim_path": asset_prim_path},
+            "translation": moved,
+            "rotation": turned,
+            "scale": sized,
+            "instanceable": instanceable if isinstance(instanceable, bool) else None,
+        }
+        if dry:
+            return self._edit_result("add_reference", True, fields, notes=notes, would_create=plan)
+        state = self._state()
+        self._add_prim(prim_path, "Xform")
+        record = self._prims[prim_path]
+        if moved is not None:
+            record.translation = tuple(moved)
+        if turned is not None:
+            record.rotation = tuple(turned)
+        if sized is not None:
+            record.scale = tuple(sized)
+        stored = {"references": {"type_name": "references", "default": [dict(plan["reference"])]}}
+        if plan["instanceable"] is not None:
+            stored["instanceable"] = {"type_name": "bool", "default": plan["instanceable"]}
+        self._attributes[prim_path] = stored
+        self._record(f"Add {os.path.basename(asset)} at {prim_path}", [prim_path], state)
+        created = {"path": prim_path, "type": "Xform", "references": [dict(plan["reference"])], "reference_resolved": None}
+        return self._edit_result("add_reference", False, fields, notes=notes, written=True, would_create=plan,
+                                 created=created)
+
+    def physics_report(self, prim_path: str | None = None) -> dict[str, Any]:
+        return self._not_supported("physics_report", "The physics report", prim_path=prim_path)
+
+    def add_physics_scene(self, path: str = "/physicsScene", **_options: Any) -> dict[str, Any]:
+        return self._not_supported("add_physics_scene", "Adding a PhysicsScene", path=str(path))
+
+    def make_rigid_body(self, prim_path: str, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("make_rigid_body", "Making rigid bodies", path=str(prim_path))
+
+    def make_collider(self, prim_path: str, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("make_collider", "Adding colliders", path=str(prim_path))
+
+    def remove_physics(self, prim_path: str, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("remove_physics", "Removing physics", path=str(prim_path))
+
+    def capture_viewport(self, output_dir: Any = None, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("capture_viewport", "Taking viewport screenshots", hint="The fake scene has no viewport.")
+
+    def capture_status(self, path: Any = None) -> dict[str, Any]:
+        return self._not_supported("capture_status", "Checking viewport screenshots", path=str(path))
+
+    def simulation_status(self) -> dict[str, Any]:
+        """The fake timeline's state (read-only); there is never any physics."""
+        return self._sim_status()
+
+    def simulation_play(self) -> dict[str, Any]:
+        """Start the fake timeline (nothing moves: the fake scene has no physics)."""
+        was_playing = bool(self._timeline_state["playing"])
+        self._timeline_state["playing"] = True
+        self._sim_paused = False
+        return self._sim_result("play", "The simulation was already playing." if was_playing else "Playing (fake timeline).")
+
+    def simulation_pause(self) -> dict[str, Any]:
+        """Pause the fake timeline at its current time."""
+        was_paused = self._sim_paused and not self._timeline_state["playing"]
+        self._timeline_state["playing"] = False
+        self._sim_paused = True
+        return self._sim_result("pause", "The simulation was already paused." if was_paused else "Paused at the current time.")
+
+    def simulation_stop(self) -> dict[str, Any]:
+        """Stop the fake timeline and reset it to its start time."""
+        self._timeline_state["playing"] = False
+        self._sim_paused = False
+        self._timeline_state["current_time_code"] = float(self._timeline_state["start_time_code"])
+        return self._sim_result("stop", "Stopped: the timeline was reset to its start time.")
+
+    def simulation_step(self, frames: Any = 1) -> dict[str, Any]:
+        """Advance a paused (or stopped) fake timeline by frames time codes (capped at 600); refused while playing."""
+        if isinstance(frames, bool) or not isinstance(frames, int) or frames < 1:
+            return {"ok": False, "message": "frames must be a whole number from 1 to 600", "mode": "fake", "fake_scene": True}
+        if self._timeline_state["playing"]:
+            return {"ok": False, "message": "The simulation is playing; call simulation_pause first, then step.",
+                    "mode": "fake", "fake_scene": True}
+        count = min(frames, MAX_STEP_FRAMES)
+        self._sim_paused = True
+        self._timeline_state["current_time_code"] = float(self._timeline_state["current_time_code"]) + count
+        result = self._sim_result("step", f"Stepped {count} frame(s) on the fake timeline.")
+        rate = float(self._timeline_state["time_codes_per_second"]) or 24.0
+        result.update(frames=count, requested_frames=frames, capped=frames > count, seconds_per_frame=1.0 / rate,
+                      stepped_seconds=count / rate, via="fake_timeline")
+        return result
+
+    def _sim_status(self) -> dict[str, Any]:
+        state = self._timeline_state
+        rate = float(state["time_codes_per_second"]) or 24.0
+        playing = bool(state["playing"])
+        paused = not playing and self._sim_paused
+        current = float(state["current_time_code"])
+        return {
+            "ok": True,
+            "playing": playing,
+            "paused": paused,
+            "stopped": not playing and not paused,
+            "current_time": current / rate,
+            "current_time_code": current,
+            "start_time": float(state["start_time_code"]) / rate,
+            "end_time": float(state["end_time_code"]) / rate,
+            "time_codes_per_second": rate,
+            "physics_available": False,
+            "mode": "fake",
+            "fake_scene": True,
+        }
+
+    def _sim_result(self, action: str, message: str) -> dict[str, Any]:
+        return {**self._sim_status(), "action": action, "message": message, "note": FAKE_SIM_NOTE}
 
     # --- in-memory attribute / material edits (the fake counterpart of edits.py) --------------------------------
 
@@ -669,6 +860,15 @@ def _finite(value: Any, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
         raise ValueError(f"{label} must be a finite number, got {value!r}")
     return float(value)
+
+
+def _vector_or_none(value: Any, label: str) -> list[float] | None:
+    """None, or exactly three finite numbers as a list."""
+    if value is None:
+        return None
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)) or len(value) != 3:
+        raise ValueError(f"{label} must be three numbers (x, y, z), got {value!r}")
+    return [_finite(item, label) for item in value]
 
 
 def _unit(value: Any, label: str) -> float:

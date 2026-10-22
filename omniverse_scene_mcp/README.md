@@ -103,8 +103,9 @@ duplicating the underlying documentation tools.
 
 ## MCP Tools
 
-The server exposes 82 tools; `router_help()` lists all of them grouped by task.
-The main ones:
+The server exposes 98 tools; `router_help()` lists all of them grouped by task.
+The main ones (Tier 4 below adds the asset, physics, screenshot, simulation and
+dashboard tools):
 
 - `router_dispatch`
 - `router_route`
@@ -121,6 +122,12 @@ The main ones:
 - `router_help`, `router_scene_targets`, `router_set_scene_target`
 - `scene_set_attribute`, `scene_create_material`, `scene_bind_material`
 - `scene_undo_last`, `scene_undo_history`
+- `asset_search`, `asset_info`, `scene_add_asset`
+- `scene_physics_report`, `scene_add_physics_scene`, `scene_make_rigid_body`,
+  `scene_make_collider`, `scene_remove_physics`
+- `scene_capture_viewport`, `scene_capture_status`
+- `sim_status`, `sim_play`, `sim_pause`, `sim_stop`, `sim_step`
+- `learning_exam_dashboard`
 - `docs_search`, `extension_info`
 - `usd_knowledge`
 - `kit_knowledge`
@@ -329,6 +336,72 @@ apply them.
 
 The in-memory fake scene implements the edits and undo in memory too (results
 say `fake_scene: true`), so these flows work offline and in tests.
+
+### Assets, physics, screenshots, simulation and the dashboard (Tier 4, RPC `tier4-1`)
+
+Assets (`asset_library.py`). The index of the local Isaac Sim 6.1 asset pack
+(`isaacsim-assets-6.1.0`, or `$OMNIVERSE_ISAAC_ASSETS_ROOT`) lives in the
+ROUTER process: it is walked once (about 1 s for 13k files) and only read.
+
+- `asset_search(query, top_k=10, category=None)` - ranked absolute USD paths by
+  file and folder name ('franka', 'warehouse shelf', 'carter'), read-only
+- `asset_info(asset_path)` - category, size, thumbnail and the header
+  (defaultPrim, upAxis, metersPerUnit), read-only
+- `scene_add_asset(prim_path, asset_path, translation=None, rotation=None,
+  scale=None, instanceable=None, correct_units=False, asset_prim_path=None,
+  dry_run=True)` - DRY RUN BY DEFAULT: an Xform at `prim_path` that references
+  the asset (resolved to an absolute path by the router); the preview lists the
+  xform ops and any upAxis / metersPerUnit mismatch, `correct_units=True` fills
+  in the suggested rotation/scale. Undoable when applied
+
+Physics (`physics.py`, UsdPhysics; edits DRY RUN BY DEFAULT and undoable):
+
+- `scene_physics_report(prim_path=None, file=None, mode="auto")` - read-only:
+  PhysicsScene and gravity, rigid bodies, colliders, mass, approximations,
+  joints and common mistakes; auto falls back to the saved file
+- `scene_add_physics_scene(path="/physicsScene", gravity=None, dry_run=True)`
+- `scene_make_rigid_body(prim_path, mass=None, density=None, kinematic=False,
+  add_collider=True, approximation=None, dry_run=True)`
+- `scene_make_collider(prim_path, approximation=None, dry_run=True)`
+- `scene_remove_physics(prim_path, include_descendants=False, dry_run=True)`
+
+Screenshots and simulation (`kit_live_extras.py`, Kit only; no authored data):
+
+- `scene_capture_viewport(output_dir=None, width=None, height=None)` - a new
+  PNG of the ACTIVE viewport (camera and render settings untouched), returned
+  as `pending`; `scene_capture_status(path)` says when it is written
+- `sim_status()` (read-only), `sim_play()`, `sim_pause()`, `sim_stop()` (resets
+  the timeline; PhysX restores pre-play poses), `sim_step(frames=1)` (1-600,
+  paused only). These CHANGE SIMULATION STATE: call them only when asked
+
+Exam dashboard (`exam/dashboard.py`):
+
+- `learning_exam_dashboard(write=True)` - domains, weighted accuracy, plan,
+  mocks, coverage and focus; `write=True` also saves a self-contained
+  `dashboard.html` next to `progress.json` (never the real `exam-prep/` under
+  `OMNIVERSE_SCENE_MCP_TEST`)
+
+`router_dispatch` phrases: "add a franka robot", "add a warehouse shelf at 0 0
+0", "find a carter robot" (asset search, then a PREVIEW of adding the best hit
+with `candidates` and an `apply_with` scene_add_asset call; a sentence never
+adds an asset), "make /World/Box a rigid body", "add collision to /World/Box
+with convex hull", "remove physics from /World/Box", "add a physics scene",
+"physics report" (physics edits apply only for an exact path or the selection
+with `dry_run=False`; a prim named by name previews), "take a screenshot", "is
+my screenshot ready", "play / pause / stop the simulation", "step 10 frames"
+(these run when asked; `dry_run=True` previews them), "show my dashboard".
+
+Bridge guard (`kit_rpc.guard_handler_class`): the extended bridge answers 403
+to browser requests (Origin / Sec-Fetch-*), a foreign Host and non-JSON POSTs;
+with `OMNIVERSE_BRIDGE_TOKEN` set in Kit, POSTs need the same token
+(`X-Omniverse-Bridge-Token`), which the router (RPCs and `/health` probes) sends
+when the variable is set in its environment too. A 403 comes back as a
+structured `forbidden` result and nothing runs in Kit.
+
+On a bridge older than `tier4-1` every new tool answers `needs_bridge_update`
+with `how_to_enable` (reload the Isaac or Composer bridge). The in-memory fake
+scene supports asset references and a physics-free timeline in memory; physics
+and screenshots say they are not supported there.
 
 ## Testing
 

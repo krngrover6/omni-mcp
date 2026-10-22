@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from urllib.parse import unquote
 
 from . import help as tool_guide
+from . import nl_tier4
 from .service import OperationResult, SceneMCPService
 
 _LEARNING_PHRASES = (
@@ -268,7 +269,31 @@ _CLAUSE_NUMBERS = {
     "metallic": "metallic", "metalness": "metallic",
 }
 _CLAUSE_FILLER = {"with", "and", "please", "here", "now", "then"}
-_EXTENDED_ACTIONS = {"set_attribute", "create_light", "create_camera", "create_material", "paint", "undo", "undo_history"}
+_EXTENDED_ACTIONS = {"set_attribute", "create_light", "create_camera", "create_material", "paint", "undo", "undo_history",
+                     "rigid_body", "collider", "remove_physics", "physics_scene", "physics_report", "screenshot",
+                     "simulation"}
+# Asset categories the router passes over when it picks the asset to preview from a sentence (whole sample scenes,
+# training copies and alternate-physics variants), unless the request names them.
+_ASSET_VARIANT_CATEGORIES = {"samples", "isaaclab", "robots_multiphysics"}
+_ASSET_TIE = 0.95  # a second hit scoring at least this share of the first makes the pick ambiguous
+_ASSET_PIECE = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+")  # 'SM_RackShelf_01' -> Rack, Shelf, 01
+
+
+def _asset_tokens(path: str) -> set[str]:
+    """Lowercased words of a library path plus their camelCase pieces."""
+    tokens: set[str] = set()
+    for word in re.findall(r"[A-Za-z0-9]+", path):
+        tokens.add(word.lower())
+        tokens.update(piece.lower() for piece in _ASSET_PIECE.findall(word))
+    return tokens
+
+
+def _asset_word_covered(word: str, tokens: set[str]) -> bool:
+    """word (or its singular) is a path word or that word plus s/es; five or more letters may sit inside one."""
+    forms = {word, word[:-1]} if len(word) > 3 and word.endswith("s") else {word}
+    if any(form in tokens or form + "s" in tokens or form + "es" in tokens for form in forms):
+        return True
+    return len(word) >= 5 and any(form in token for form in forms for token in tokens)
 
 _QUIZZES: dict[str, dict[str, list[str]]] = {
     "schemas": {
@@ -505,8 +530,12 @@ class OmniverseRouter:
         bowerbot_backend: KnowledgeBackend | None = None,
         exam_day: Callable[[int | None], dict[str, Any]] | None = None,
         mock_status: Callable[[], dict[str, Any] | None] | None = None,
+        dashboard: Callable[[bool], dict[str, Any]] | None = None,
     ) -> None:
         self._scene = scene_service
+        # dashboard(write) builds the exam dashboard (and saves dashboard.html when write is True).
+        self._dashboard = dashboard
+        self._last_capture: str | None = None  # the newest screenshot path, for 'is my screenshot ready'
         # Optional exam hooks (runtime.build_router wires them to the server's stores): exam_day(day) builds that
         # day's lesson; mock_status() is the open mock's status or None.
         self._exam_day = exam_day
@@ -549,6 +578,12 @@ class OmniverseRouter:
         core = self._strip_politeness(normalized)
         if self._help_request(core) is not None:
             return RoutingDecision(RouteTarget.LEARN, 0.97, "Help request (tool guide)", normalized)
+        if nl_tier4.is_dashboard_request(core):
+            return RoutingDecision(RouteTarget.LEARN, 0.96, "Exam dashboard request", normalized)
+        if nl_tier4.is_tier4_scene_request(core):
+            return RoutingDecision(
+                RouteTarget.SCENE, 0.96, "Asset search, physics, screenshot or simulation request", normalized
+            )
         exam = self._exam_request(normalized)
         if exam is not None:
             if exam[0] == "mock":
@@ -626,6 +661,8 @@ class OmniverseRouter:
             help_request = self._help_request(self._strip_politeness(normalized))
             if help_request is not None:
                 return self.tool_help(help_request["topic"])
+            if nl_tier4.is_dashboard_request(self._strip_politeness(normalized)):
+                return await self._run_dashboard(write=not dry_run)
             exam = self._exam_request(normalized)
             if exam is not None:
                 return await self._dispatch_exam(*exam)
@@ -660,6 +697,9 @@ class OmniverseRouter:
         }
 
     def _dispatch_scene(self, request: str, dry_run: bool) -> dict[str, Any]:
+        asset = self._try_asset_request(request)
+        if asset is not None:
+            return asset
         parsed = self._parse_scene_command(request)
         candidates: list[str] = []
         if parsed is None:
@@ -1278,6 +1318,14 @@ class OmniverseRouter:
             return self._run_light_or_camera(parsed, dry_run=dry_run, named=named)
         if action == "create_material":
             return self._run_create_material(parsed)
+        if action in {"rigid_body", "collider", "remove_physics", "physics_scene"}:
+            return self._run_physics_edit(parsed, dry_run=dry_run, named=named)
+        if action == "physics_report":
+            return self._run_physics_report(parsed)
+        if action == "screenshot":
+            return self._run_screenshot(parsed, dry_run=dry_run)
+        if action == "simulation":
+            return self._run_simulation(parsed, dry_run=dry_run)
         return self._run_paint(parsed, named=named)
 
     def _run_undo(self, confirm: bool, dry_run: bool) -> dict[str, Any]:
@@ -1702,6 +1750,328 @@ class OmniverseRouter:
                 f"Created and then moved {path}: that is two undo steps. The first 'undo' only removes the move "
                 "(the prim goes back to its parent's origin); the second removes the prim."
             )
+
+    # --- tier 4: assets, physics, screenshots, simulation and the exam dashboard (phrases in nl_tier4.py) ---------
+
+    def _parse_tier4(self, text: str, selected_path: str | None) -> dict[str, Any] | None:
+        """Simulation, screenshot and physics phrases -> a parsed action; None for anything else."""
+        simulation = nl_tier4.parse_simulation(text)
+        if simulation is not None:
+            return {"action": "simulation", **simulation}
+        screenshot = nl_tier4.parse_screenshot(text)
+        if screenshot is not None:
+            return {"action": "screenshot", **screenshot}
+        physics = nl_tier4.parse_physics(text)
+        if physics is None:
+            return None
+        kind = physics["kind"]
+        if kind == "physics_scene":
+            path = physics.get("path")
+            if path is not None and not re.fullmatch(r"(?:/[A-Za-z_]\w*)+", path):
+                return _refusal(f"'{path}' is not a valid prim path.", "add a physics scene /physicsScene")
+            return {"action": "physics_scene", "path": path or "/physicsScene", "explicit": path is not None,
+                    "gravity": physics.get("gravity")}
+        examples = {
+            "physics_report": "physics report for /World/Props",
+            "rigid_body": "make /World/Props/Cube a rigid body",
+            "collider": "add collision to /World/Props/Cube",
+            "remove_physics": "remove physics from /World/Props/Cube",
+        }
+        parsed: dict[str, Any] = {"action": kind}
+        if kind == "physics_report" and physics.get("target") is None:
+            parsed["path"] = None
+            return parsed
+        resolved = self._physics_target(physics.get("target") or "", selected_path)
+        if "error" in resolved:
+            refusal = _refusal(resolved["error"], examples[kind])
+            if resolved.get("candidates"):
+                refusal["candidates"] = resolved["candidates"]
+            return refusal
+        parsed["path"] = resolved["path"]
+        if resolved.get("named"):
+            parsed["resolved_from_name"] = resolved["named"]
+        if kind == "rigid_body":
+            parsed.update(kinematic=bool(physics.get("kinematic")), mass=physics.get("mass"))
+        elif kind == "collider":
+            if physics.get("approximation_text") and physics.get("approximation") is None:
+                return _refusal(
+                    f"I do not know the collision approximation '{physics['approximation_text']}'; use convex hull, "
+                    "convex decomposition, bounding box, bounding sphere, mesh simplification or triangle mesh.",
+                    "add collision to /World/Props/Cube with convex hull",
+                )
+            parsed.update(approximation=physics.get("approximation"), approximation_text=physics.get("approximation_text"))
+        elif kind == "remove_physics":
+            parsed["include_descendants"] = bool(physics.get("include_descendants"))
+        return parsed
+
+    def _physics_target(self, fragment: str, selected_path: str | None) -> dict[str, Any]:
+        """{"path"} for a bare path or the selection, {"path", "named"} for a unique prim name, else {"error"}."""
+        path = self._fragment_target(fragment, selected_path)
+        if path is not None:
+            return {"path": path}
+        if "/" in fragment:
+            return {"error": f"'{fragment}' is not exactly one prim path."}
+        words = [word for word in re.findall(r"[\w\-]+", fragment.lower()) if word not in _NAME_ARTICLES]
+        if not words:
+            return {"error": f"I could not tell which prim '{fragment}' is."}
+        found, candidates = self._unique_prim_named(words)
+        if found is None:
+            return {"error": f"I could not find exactly one prim named '{' '.join(words)}'.", "candidates": candidates}
+        return {"path": found, "named": " ".join(words)}
+
+    def _run_physics_edit(self, parsed: dict[str, Any], dry_run: bool, named: str | None) -> dict[str, Any]:
+        """Preview a physics edit; it applies only for an exact path (or the selection) with dry_run=False."""
+        action, path = parsed["action"], parsed["path"]
+        method_name = {
+            "rigid_body": "make_rigid_body",
+            "collider": "make_collider",
+            "remove_physics": "remove_physics",
+            "physics_scene": "add_physics_scene",
+        }[action]
+        method = getattr(self._scene, method_name, None)
+        if not callable(method):
+            return _service_lacks(method_name, action, "set up physics", path=path)
+        options: dict[str, Any] = {}
+        if action == "rigid_body":
+            options = {"kinematic": bool(parsed.get("kinematic")), **({"mass": parsed["mass"]} if parsed.get("mass") else {})}
+        elif action == "collider" and parsed.get("approximation"):
+            options = {"approximation": parsed["approximation"]}
+        elif action == "remove_physics":
+            options = {"include_descendants": bool(parsed.get("include_descendants"))}
+        elif action == "physics_scene" and parsed.get("gravity") is not None:
+            options = {"gravity": parsed["gravity"]}
+        explicit = parsed.get("explicit", True) and named is None
+        preview = dry_run or not explicit
+        command = self._physics_command(parsed)
+        try:
+            result = method(path, dry_run=preview, **options)
+        except (ValueError, TypeError) as exc:
+            return {"ok": False, "target": "scene", "action": action, "path": path, "dry_run": True, "applied": False,
+                    "command": command, "message": f"{exc} Nothing was changed."}
+        payload = self._wrap_result(result)
+        inner = result.payload if isinstance(result, OperationResult) and isinstance(result.payload, dict) else {}
+        for key in ("unsupported", "needs_bridge_update", "fake_scene", "warnings", "notes", "error", "undoable"):
+            if key in inner:
+                payload[key] = inner[key]
+        payload.update(action=action, path=path, command=command)
+        if named is not None:
+            payload["resolved_from_name"] = {"name": named, "path": path}
+        if not payload.get("ok"):
+            payload["applied"] = False
+            detail = inner.get("error") or inner.get("message") or "The scene bridge could not plan this."
+            payload["message"] = f"{detail} Nothing was changed."
+            return payload
+        if payload.get("dry_run") is False:
+            payload["applied"] = True
+            payload["message"] = (
+                f"Applied to the open scene (not saved): '{command}'. Say 'undo' to preview undoing it."
+            )
+            return payload
+        reasons = []
+        if dry_run:
+            reasons.append("you asked for a dry run")
+        if named is not None:
+            reasons.append(f"'{named}' is a name, not an exact prim path")
+        if not parsed.get("explicit", True):
+            reasons.append(f"I chose the path {path} for you")
+        payload.update(applied=False, preview=True)
+        payload["message"] = (
+            f"Preview only: nothing was changed ({'; '.join(reasons) or 'preview'}). "
+            f"Send '{command}' with router_dispatch(dry_run=False) to apply it."
+        )
+        return payload
+
+    @staticmethod
+    def _physics_command(parsed: dict[str, Any]) -> str:
+        """The exact sentence that applies a parsed physics edit; it parses back to the same action."""
+        action, path = parsed["action"], parsed["path"]
+        if action == "rigid_body":
+            text = f"make {path} a {'kinematic ' if parsed.get('kinematic') else ''}rigid body"
+            return text + (f" with mass {_format_number(parsed['mass'])}" if parsed.get("mass") else "")
+        if action == "collider":
+            words = parsed.get("approximation_text")
+            return f"add collision to {path}" + (f" with {words}" if words else "")
+        if action == "remove_physics":
+            return f"remove physics from {path}" + (" and its children" if parsed.get("include_descendants") else "")
+        gravity = parsed.get("gravity")
+        text = f"add a physics scene {path}"
+        if gravity is not None:
+            values = gravity if isinstance(gravity, (list, tuple)) else [gravity]
+            text += " with gravity " + " ".join(_format_number(value) for value in values)
+        return text
+
+    def _run_physics_report(self, parsed: dict[str, Any]) -> dict[str, Any]:
+        reporter = getattr(self._scene, "physics_report", None)
+        if not callable(reporter):
+            return _service_lacks("physics_report", "physics_report", "report the physics setup")
+        payload = self._wrap_result(reporter(parsed.get("path")))
+        payload["action"] = "physics_report"
+        if payload.get("unsupported") or payload.get("needs_bridge_update"):
+            payload["hint"] = "scene_physics_report(mode='saved_file') reads the physics setup of the saved file instead."
+        return payload
+
+    def _run_screenshot(self, parsed: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+        """'take a screenshot' captures the active viewport (no scene change); 'is my screenshot ready' checks it."""
+        if parsed["op"] == "status":
+            if self._last_capture is None:
+                return {"ok": False, "target": "scene", "action": "capture_status",
+                        "message": "No screenshot was taken through the router yet; say 'take a screenshot'."}
+            payload = self._wrap_result(self._scene.capture_status(self._last_capture))
+            payload["action"] = "capture_status"
+            return payload
+        size = {key: parsed[key] for key in ("width", "height") if parsed.get(key)}
+        if dry_run:
+            return {"ok": True, "target": "scene", "action": "capture_viewport", "dry_run": True, "applied": False,
+                    "preview": True, "would": "capture the active viewport to a new PNG", **size,
+                    "message": "Preview only: no screenshot was taken. Send it again with dry_run=False to take it."}
+        capture = getattr(self._scene, "capture_viewport", None)
+        if not callable(capture):
+            return _service_lacks("capture_viewport", "capture_viewport", "take a screenshot")
+        payload = self._wrap_result(capture(None, **size))
+        payload["action"] = "capture_viewport"
+        if payload.get("ok") and isinstance(payload.get("path"), str):
+            self._last_capture = payload["path"]
+            payload["next_step"] = "Say 'is my screenshot ready' (or call scene_capture_status(path)) in a moment."
+        return payload
+
+    def _run_simulation(self, parsed: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+        """Simulation controls run only when explicitly requested ('play the simulation'); a dry run previews them."""
+        op = parsed["op"]
+        method_name = f"simulation_{op}"
+        method = getattr(self._scene, method_name, None)
+        if not callable(method):
+            return _service_lacks(method_name, method_name, f"{op} the simulation")
+        if op != "status" and dry_run:
+            would = f"step the simulation {parsed.get('frames', 1)} frame(s)" if op == "step" else f"{op} the simulation"
+            return {"ok": True, "target": "scene", "action": method_name, "dry_run": True, "applied": False,
+                    "preview": True, "would": would,
+                    "message": f"Preview only: the simulation was not touched. Send it with dry_run=False to {would}."}
+        payload = self._wrap_result(method(parsed["frames"]) if op == "step" else method())
+        payload["action"] = method_name
+        if op != "status":
+            payload["applied"] = bool(payload.get("ok"))
+            payload.setdefault(
+                "note", "Simulation state only: no authored scene data changed and nothing was saved."
+            )
+        return payload
+
+    async def _run_dashboard(self, write: bool) -> dict[str, Any]:
+        base = {"target": "learn", "style": "dashboard", "tool": "learning_exam_dashboard"}
+        self._record_learning_event("exam_dashboard", write=write)
+        if self._dashboard is None:
+            return {"ok": True, **base, "executed": False,
+                    "message": "Call learning_exam_dashboard() for your dashboard; this router has no exam progress "
+                    "store attached."}
+        try:
+            data = await asyncio.to_thread(self._dashboard, write)
+        except Exception as exc:  # noqa: BLE001 - a broken store is reported, not raised
+            return {"ok": False, **base, "executed": True, "message": f"Could not build the dashboard: {exc}"}
+        return {**base, "executed": True, **data}
+
+    def _try_asset_request(self, request: str) -> dict[str, Any] | None:
+        """'find a carter robot' / 'add a franka robot [at x y z]': search the asset pack and PREVIEW adding the top hit.
+
+        Always a preview (the asset is chosen by search, not an exact path); the payload names the scene_add_asset
+        call that applies it. 'add a <word>' with no confident asset match returns None, so the router's plain
+        create runs as before.
+        """
+        text = re.sub(r"\s+", " ", self._strip_politeness(request.strip(), keep_case=True))
+        found = nl_tier4.parse_asset_find(text)
+        added = None if found is not None else nl_tier4.parse_asset_add(text)
+        spec = found or added
+        if spec is None:
+            return None
+        search = getattr(self._scene, "asset_search", None)
+        adder = getattr(self._scene, "add_asset", None)
+        if not callable(search) or not callable(adder):
+            return None if added else _service_lacks("asset_search", "asset_search", "search the asset library")
+        query = spec["query"]
+        result = search(query, top_k=10)
+        hits = [hit for hit in result.get("results") or [] if isinstance(hit, dict) and hit.get("referenceable", True)]
+        confident = [hit for hit in hits if self._asset_covers(query, hit)]
+        if added is not None and not confident:
+            return None
+        base = {"target": "scene", "action": "add_asset" if added else "asset_search", "query": query,
+                "applied": False}
+        if not hits:
+            reason = result.get("message") or result.get("error")
+            return {"ok": False, **base, "results": [],
+                    "message": f"No asset in the local asset pack matches '{query}'"
+                    + (f" ({reason})" if reason else "") + ". Nothing was changed.",
+                    "hint": "Try another word (asset_search(query, category='robots') lists matches)."}
+        ranked = self._rank_assets(confident or hits, query)
+        top = ranked[0]
+        ambiguous = len(ranked) > 1 and float(ranked[1].get("score") or 0) >= _ASSET_TIE * float(top.get("score") or 0)
+        candidates = [
+            {key: hit.get(key) for key in ("path", "relative_path", "name", "category", "score")} for hit in ranked[:5]
+        ]
+        parent = (added or {}).get("parent") or "/World"
+        stem = re.sub(r"\W", "_", os.path.splitext(str(top.get("name") or "Asset"))[0]) or "Asset"
+        name = ("_" + stem if stem[0].isdigit() else stem[0].upper() + stem[1:])
+        prim_path = self._scene.unique_child_path(parent, name)
+        translation = (added or {}).get("translation")
+        options: dict[str, Any] = {"correct_units": True}
+        if translation is not None:
+            options["translation"] = tuple(translation)
+        try:
+            preview = adder(prim_path, top["path"], dry_run=True, **options)
+        except (ValueError, TypeError) as exc:
+            return {"ok": False, **base, "path": prim_path, "asset": top, "candidates": candidates,
+                    "message": f"{exc} Nothing was changed."}
+        payload = self._wrap_result(preview)
+        inner = preview.payload if isinstance(preview, OperationResult) and isinstance(preview.payload, dict) else {}
+        for key in ("unsupported", "needs_bridge_update", "fake_scene", "warnings", "notes", "error"):
+            if key in inner:
+                payload[key] = inner[key]
+        arguments: dict[str, Any] = {"prim_path": prim_path, "asset_path": top["path"], "correct_units": True}
+        if translation is not None:
+            arguments["translation"] = list(translation)
+        payload.update(
+            **base,
+            path=prim_path,
+            asset={key: top.get(key) for key in ("path", "relative_path", "name", "category", "thumbnail", "score")},
+            candidates=candidates,
+            ambiguous=ambiguous,
+            preview=True,
+            apply_with={"tool": "scene_add_asset", "arguments": {**arguments, "dry_run": False}},
+        )
+        if found is not None:
+            payload["results"] = candidates
+        pick = f"{top.get('relative_path') or top.get('name')}"
+        if not payload.get("ok"):
+            detail = inner.get("error") or inner.get("message") or "The scene bridge could not plan this."
+            payload["message"] = f"Found {pick}, but adding it could not be planned: {detail} Nothing was changed."
+            return payload
+        choice = (
+            f"Several assets match '{query}' about equally well (see candidates); this previews the first."
+            if ambiguous
+            else f"The best match for '{query}' is {pick}."
+        )
+        payload["message"] = (
+            f"{choice} Preview only: nothing was changed, because an asset found by search is never added from a "
+            f"sentence. Call scene_add_asset with apply_with's arguments to add it at {prim_path}."
+        )
+        return payload
+
+    @staticmethod
+    def _asset_covers(query: str, hit: dict[str, Any]) -> bool:
+        """Every word of the query is a word of the hit's library path (folder or file name, camelCase split, plain
+        s/es plurals); a word of five or more letters may also sit inside one ('shelf' in 'rackshelf').
+        Short words never match inside other words ('tree' is not 'streetlight', 'sun' not 'countersunk')."""
+        tokens = _asset_tokens(str(hit.get("relative_path") or hit.get("path") or ""))
+        words = [word for word in re.findall(r"[a-z0-9]+", query.lower()) if len(word) > 1]
+        return bool(words) and all(_asset_word_covered(word, tokens) for word in words)
+
+    @staticmethod
+    def _rank_assets(hits: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+        """Library hits with whole sample scenes and training/alternate-physics copies last (unless asked for)."""
+        wanted = query.lower()
+
+        def variant(hit: dict[str, Any]) -> bool:
+            category = str(hit.get("category") or "").lower()
+            return category in _ASSET_VARIANT_CATEGORIES and category.split("_")[0] not in wanted
+
+        return sorted(hits, key=lambda hit: (variant(hit), -float(hit.get("score") or 0.0)))
 
     def _wrap_result(self, result: Any) -> dict[str, Any]:
         """Scene payload for an OperationResult, a plain dict result, or any other value."""
@@ -2818,6 +3188,10 @@ class OmniverseRouter:
         words = re.sub(r"/\S*", " ", lower)
         selected_path = self._single_selected_path()
         target_path = path or (selected_path if _PRONOUN.search(words) else None)
+
+        tier4 = self._parse_tier4(text, selected_path)
+        if tier4 is not None:
+            return tier4
 
         attribute = self._parse_set_attribute(text, selected_path)
         if attribute is not None:

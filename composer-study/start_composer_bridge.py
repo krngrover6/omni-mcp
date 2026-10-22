@@ -3,7 +3,9 @@
 The server is live_scene_control.LiveSceneControlServer, loaded read-only from the setup extension's file (never
 edited), extended by omniverse_scene_mcp.kit_rpc: capabilities, read-only live insight and light/camera authoring
 (dry_run by default). start-composer-study.ps1 moves the extension's own stock server to port 9909, so this one owns
-http://127.0.0.1:9910/rpc. If 9910 already answers (a stock server from another launcher, or another app), nothing
+http://127.0.0.1:9910/rpc. Once the extended (guarded) server runs, the stock server on 9909 is STOPPED: it has no
+browser/Host guard, so a web page could otherwise drive the open scene through it; if stopping it fails it keeps
+running as before. The basic bridge (kit_rpc not importable) leaves it alone. If 9910 already answers (a stock server from another launcher, or another app), nothing
 is started: run composer-study/reload_composer_bridge.py in the Script Editor to swap it safely. If kit_rpc cannot be
 imported, the basic bridge still starts. The open stage is never edited, selected or saved.
 """
@@ -11,15 +13,20 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import gc
 import importlib
 import importlib.util
 import os
 import socket
 import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 LOG_PREFIX = "[Composer MCP]"
+# The setup extension's own (stock, unguarded) server: start-composer-study.ps1 moves it to 9909.
+STOCK_PORT = 9909
+SERVER_CLASS_NAME = "LiveSceneControlServer"
+STOCK_ATTR = "_live_scene_control"
 HOST = "127.0.0.1"
 DEFAULT_PORT = 9910
 # Deliberately not OMNIVERSE_SCENE_CONTROL_PORT: that one moves the extension's stock server (9909 in the study launch).
@@ -136,18 +143,118 @@ async def wait_for_stage(context_name: str = "") -> None:
         await app.next_update_async()
 
 
+def stock_server_port(bridge: int) -> int:
+    """Port of the setup extension's stock server: $OMNIVERSE_SCENE_CONTROL_PORT when it is not the bridge's, else 9909."""
+    raw = os.environ.get("OMNIVERSE_SCENE_CONTROL_PORT", "").strip()
+    try:
+        port = int(raw) if raw else STOCK_PORT
+    except ValueError:
+        port = STOCK_PORT
+    return STOCK_PORT if port == bridge else port
+
+
+def find_stock_servers(port: int, objects: Callable[[], Iterable[Any]] | None = None) -> list[Any]:
+    """Running stock (unextended, unguarded) LiveSceneControlServer objects bound to port, each once.
+
+    Found by class name in the gc scan (objects() replaces it in tests), directly or through an object's
+    _live_scene_control attribute (the setup extension). Extended servers (they have rpc_version) never match.
+    """
+    found: dict[int, Any] = {}
+    for obj in gc.get_objects() if objects is None else objects():
+        candidates = [obj]
+        attrs = _instance_dict(obj)
+        if attrs is not None and STOCK_ATTR in attrs:
+            candidates.append(attrs[STOCK_ATTR])
+        for candidate in candidates:
+            if not any(getattr(klass, "__name__", "") == SERVER_CLASS_NAME for klass in type(candidate).__mro__):
+                continue
+            if getattr(type(candidate), "rpc_version", None) is not None:
+                continue  # an extended (guarded) bridge, never the stock server
+            if server_port(candidate) == port and is_running(candidate):
+                found.setdefault(id(candidate), candidate)
+    return list(found.values())
+
+
+def _instance_dict(obj: Any) -> dict | None:
+    if not getattr(type(obj), "__dictoffset__", 0):
+        return None
+    try:
+        attrs = object.__getattribute__(obj, "__dict__")
+    except Exception:
+        return None
+    return attrs if isinstance(attrs, dict) else None
+
+
+async def stop_stock_servers(
+    bridge: Any,
+    *,
+    objects: Callable[[], Iterable[Any]] | None = None,
+    log: Callable[[str], Any] = print,
+) -> dict[str, Any]:
+    """Stop the setup extension's stock server (unguarded, on 9909) once the guarded bridge runs; never raises.
+
+    Only when bridge is the extended server (its HTTP handler has the localhost guard): a basic bridge leaves the
+    stock server alone. On any failure every stock server stopped here is started again (the old behaviour).
+    """
+    bridge_at = server_port(bridge)
+    port = stock_server_port(bridge_at if bridge_at is not None else DEFAULT_PORT)
+    report: dict[str, Any] = {"port": port, "stopped": [], "status": "none_found"}
+    if getattr(type(bridge), "rpc_version", None) is None or not is_running(bridge):
+        report["status"] = "kept"
+        report["message"] = "The bridge is the basic (unguarded) one, so the stock server was left running."
+        log(f"{LOG_PREFIX} {report['message']}")
+        return report
+    stopped: list[Any] = []
+    try:
+        servers = find_stock_servers(port, objects)
+        for server in servers:
+            stopped.append(server)  # before stop(): a stop that fails part-way may already have closed the socket
+            await server.stop()
+            report["stopped"].append({"class": type(server).__name__, "port": port})
+    except Exception as error:
+        restart_errors = []
+        for server in reversed(stopped):
+            try:
+                if not is_running(server):
+                    await server.start()
+            except Exception as again:
+                restart_errors.append(f"{type(again).__name__}: {again}")
+        report.update(status="kept", stopped=[], error=f"{type(error).__name__}: {error}")
+        if restart_errors:
+            report["restart_errors"] = restart_errors
+            outcome = "restarting it failed too, so it may be stopped (the guarded bridge still serves)"
+        else:
+            outcome = "it keeps running (unguarded)"
+        report["message"] = f"Could not stop the stock scene server on {port} ({report['error']}); {outcome}."
+        log(f"{LOG_PREFIX} {report['message']}")
+        return report
+    if stopped:
+        report["status"] = "stopped"
+        report["message"] = (
+            f"Stopped Composer's stock scene server on {port}: it has no browser/Host guard, and the guarded bridge "
+            f"on {bridge_at} serves every method it had. Restarting the setup extension starts it again."
+        )
+    else:
+        report["message"] = f"No running stock scene server on {port} in this Composer; nothing to stop."
+    log(f"{LOG_PREFIX} {report['message']}")
+    return report
+
+
 async def start_bridge(
     workspace: Path | str | None = None,
     port: Any = None,
     *,
     port_in_use: Callable[[int], bool] | None = None,
     log: Callable[[str], Any] = print,
+    stop_stock: bool = True,
+    objects: Callable[[], Iterable[Any]] | None = None,
 ) -> Any:
     """Start the extended bridge on 127.0.0.1:port once a stage is open and return the running server.
 
     A running bridge registered by an earlier call is returned as is (a second run starts nothing). Raises, without
     starting anything, when the port is reserved or already accepts connections. port_in_use(port) -> bool replaces
-    the loopback probe (tests).
+    the loopback probe (tests). Once the new guarded bridge runs, the setup extension's unguarded stock server (moved
+    to 9909) is stopped (stop_stock=False skips that; objects() replaces the gc scan in tests).
     """
     workspace = Path(workspace) if workspace is not None else workspace_root()
     port = bridge_port(port)
@@ -178,6 +285,8 @@ async def start_bridge(
     stock = os.environ.get("OMNIVERSE_SCENE_CONTROL_PORT", "").strip() or "9910"
     note = f"; the setup extension's stock server uses port {stock}" if stock != str(port) else ""
     log(f"{LOG_PREFIX} Live Composer scene bridge ready: {server_endpoint(server)} (RPC {version}){note}")
+    if stop_stock:
+        await stop_stock_servers(server, objects=objects, log=log)
     return server
 
 

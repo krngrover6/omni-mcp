@@ -12,8 +12,17 @@ from typing import Any, Callable, Iterable, Sequence
 
 from mcp.server.fastmcp import FastMCP
 
-from . import usd_insight, usd_validate
-from .bridge import EDIT_RPC_METHODS, LIVE_RPC_METHODS, RPC_VERSION, UNDO_RPC_METHODS
+from . import physics, usd_insight, usd_validate
+from .bridge import (
+    ASSET_RPC_METHODS,
+    CAPTURE_RPC_METHODS,
+    EDIT_RPC_METHODS,
+    LIVE_RPC_METHODS,
+    PHYSICS_RPC_METHODS,
+    RPC_VERSION,
+    SIMULATION_RPC_METHODS,
+    UNDO_RPC_METHODS,
+)
 from .exam import bank as exam_bank
 from .exam import blueprint as exam_blueprint
 from .exam import daily as exam_daily
@@ -31,6 +40,7 @@ from .runtime import (
     build_mock_store,
     build_progress_store,
     build_router,
+    exam_dashboard_result,
     scene_targets,
     switch_scene_target,
 )
@@ -316,6 +326,59 @@ def _authoring_payload(router: OmniverseRouter, result: Any) -> dict:
         recorded = inner.get("undoable") is True or bool(inner.get("fake_scene"))
         payload["message"] = _AUTHORING_APPLIED + (_APPLIED_UNDOABLE if recorded else _APPLIED_NOT_RECORDED)
     return payload
+
+
+def _scale_arg(value: Any, label: str = "scale") -> float | tuple[float, ...] | None:
+    """One number (a uniform scale or a gravity magnitude) or [x, y, z]."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if not math.isfinite(float(value)):
+            raise ValueError(f"{label} must be a finite number or a list of 3 numbers")
+        return float(value)
+    return _numbers(value, 3, label)
+
+
+def _live_payload(result: dict) -> dict:
+    """Scene envelope for a capture/simulation result; an outdated bridge also gets how_to_enable."""
+    payload: dict[str, Any] = {"target": "scene", **result}
+    if result.get("needs_bridge_update") and not result.get("fallback"):
+        payload["how_to_enable"] = list(LIVE_ENABLE_STEPS)
+    return payload
+
+
+def _physics_report_mode(router: OmniverseRouter, prim_path: Any, file: Any, mode: Any) -> dict:
+    """The physics report from the live stage or the saved file (read-only), like _insight_mode."""
+    wanted = mode.strip().lower() if isinstance(mode, str) and mode.strip() else "auto"
+    target = prim_path.strip() if isinstance(prim_path, str) and prim_path.strip() else None
+    base = {"action": "physics_report", "mode_requested": wanted}
+    if wanted not in INSIGHT_MODES:
+        return _error(f"mode must be one of {list(INSIGHT_MODES)}, not {mode!r}", **base)
+    has_file = isinstance(file, str) and bool(file.strip())
+
+    def report(stage: Any) -> dict:
+        return physics.physics_report(stage, target)
+
+    if wanted == "saved_file" or (wanted == "auto" and has_file):
+        return {**_file_mode(router, file, report), **base}
+    if has_file:
+        return _error("file=... names a saved file, but mode='live' reads the open stage; drop file or use "
+                      "mode='saved_file'.", mode="live", **base)
+    result = router._scene.physics_report(target)
+    unavailable = bool(result.get("unsupported") or result.get("needs_bridge_update"))
+    if not unavailable or wanted == "live":
+        payload = {**result, "mode": "live", **base}
+        if result.get("needs_bridge_update"):
+            payload["how_to_enable"] = list(LIVE_ENABLE_STEPS)
+        return payload
+    reason = str(result.get("message") or "the live bridge cannot report physics").rstrip(". ")
+    fallback = _file_mode(router, None, report)
+    return {
+        **fallback,
+        **base,
+        "live_fallback": {"reason": reason, "needs_bridge_update": bool(result.get("needs_bridge_update"))},
+        "fallback_note": f"The live physics report is not available ({reason}), so this read the SAVED file instead.",
+    }
 
 
 def _color_arg(value: Any, label: str) -> tuple[float, ...] | str | None:
@@ -1283,12 +1346,24 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         authoring["dry_run_default"] = True
         edits = _feature_support(capabilities, insight, "edits", EDIT_RPC_METHODS, "attribute/material edits")
         undo = _feature_support(capabilities, insight, "undo", UNDO_RPC_METHODS, "undo")
+        tier4 = {
+            "assets": _feature_support(capabilities, insight, "assets", ASSET_RPC_METHODS, "adding assets by reference"),
+            "physics": _feature_support(capabilities, insight, "physics", PHYSICS_RPC_METHODS, "physics setup"),
+            "viewport_capture": _feature_support(capabilities, insight, "capture", CAPTURE_RPC_METHODS, "viewport capture"),
+            "simulation": _feature_support(capabilities, insight, "simulation", SIMULATION_RPC_METHODS,
+                                           "simulation controls"),
+        }
+        tier4["viewport_capture"]["dry_run_default"] = tier4["simulation"]["dry_run_default"] = None
         missing = sorted(set(LIVE_RPC_METHODS) - methods) if capabilities.get("ok") else list(LIVE_RPC_METHODS)
         needs_update = bool(capabilities.get("needs_bridge_update")) or (
             bool(capabilities.get("ok")) and not capabilities.get("fake_scene") and bool(missing)
         )
-        if insight["available"] and authoring["available"] and edits["available"] and undo["available"]:
-            message = "Live insight, light/camera authoring, attribute/material edits and undo are available on the open stage."
+        everything = all(feature["available"] for feature in tier4.values())
+        if insight["available"] and authoring["available"] and edits["available"] and undo["available"] and everything:
+            message = (
+                "Live insight, light/camera authoring, attribute/material edits, undo, assets, physics, viewport "
+                "capture and simulation controls are available on the open stage."
+            )
         elif needs_update:
             message = (
                 "The live bridge needs a reload before every live feature works (missing: "
@@ -1296,8 +1371,8 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
             )
         elif capabilities.get("fake_scene"):
             message = (
-                "In-memory fake scene: attribute/material edits and undo work in memory only; live insight and "
-                "light/camera authoring need a live bridge."
+                "In-memory fake scene: attribute/material edits, asset references, a physics-free timeline and undo "
+                "work in memory only; live insight, light/camera authoring, physics and screenshots need a live bridge."
             )
         else:
             message = f"Live features are unavailable: {insight['reason'] or authoring['reason']}."
@@ -1310,6 +1385,7 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
             "live_authoring": authoring,
             "scene_edits": edits,
             "undo": undo,
+            **tier4,
             "missing_live_methods": missing,
             "needs_bridge_update": needs_update,
             "message": message,
@@ -1510,6 +1586,213 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         if result.get("needs_bridge_update"):
             payload["how_to_enable"] = list(LIVE_ENABLE_STEPS)
         return payload
+
+    # --- assets (router-side library) and add_reference (dry run by default) --------------------------------------
+
+    @app.tool(name="asset_search")
+    def asset_search(query: str, top_k: int = 10, category: str | None = None) -> dict:
+        """Read-only: search the local Isaac Sim 6.1 asset pack (robots, environments, props, sensors, materials,
+        people) by file and folder name, e.g. 'franka', 'warehouse shelf', 'carter' or 'cube'. Returns ranked absolute
+        USD file paths with category, size and thumbnail; category narrows it ('robots', 'props', ...). Nothing in the
+        open scene or the asset pack changes; scene_add_asset previews adding one."""
+        if isinstance(top_k, bool) or not isinstance(top_k, int):
+            return _error("top_k must be a whole number from 1 to 200", target="assets", query=query)
+        return {"target": "assets", **router._scene.asset_search(query, top_k=top_k, category=category)}
+
+    @app.tool(name="asset_info")
+    def asset_info(asset_path: str) -> dict:
+        """Read-only: one asset file's absolute path, category, size, thumbnail and (cheaply, from its header) its
+        defaultPrim, upAxis and metersPerUnit. asset_path is absolute or relative to the asset pack. Nothing changes."""
+        return {"target": "assets", **router._scene.asset_info(asset_path)}
+
+    @app.tool(name="scene_add_asset")
+    def scene_add_asset(
+        prim_path: str,
+        asset_path: str,
+        translation: list[float] | None = None,
+        rotation: list[float] | None = None,
+        scale: float | list[float] | None = None,
+        instanceable: bool | None = None,
+        correct_units: bool = False,
+        asset_prim_path: str | None = None,
+        dry_run: bool = True,
+    ) -> dict:
+        """DRY RUN BY DEFAULT: plan adding an asset file (find one with asset_search) to the open scene as a new Xform
+        at prim_path that references it, and show the preview to the user first: it lists the reference, the
+        translate/rotateXYZ/scale ops and any upAxis or metersPerUnit mismatch with the stage. dry_run=False changes
+        the user's open scene (not saved; scene_undo_last can undo it). correct_units=True fills an unspecified
+        rotation/scale with the suggested up-axis and unit correction; asset_prim_path picks a prim in an asset
+        without a defaultPrim. The asset file itself is only read, never changed."""
+        try:
+            result = router._scene.add_asset(
+                prim_path,
+                asset_path,
+                translation=_numbers(translation, 3, "translation"),
+                rotation=_numbers(rotation, 3, "rotation"),
+                scale=_scale_arg(scale),
+                instanceable=instanceable if isinstance(instanceable, bool) else None,
+                asset_prim_path=asset_prim_path.strip() if isinstance(asset_prim_path, str) and asset_prim_path.strip() else None,
+                correct_units=correct_units is True,
+                dry_run=dry_run,
+            )
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
+        payload = _authoring_payload(router, result)
+        inner = result.payload if isinstance(result.payload, dict) else {}
+        for key in ("suggestions", "asset_path"):
+            if key in inner:
+                payload[key] = inner[key]
+        return payload
+
+    # --- UsdPhysics setup (report read-only; edits dry run by default) ------------------------------------------
+
+    @app.tool(name="scene_physics_report")
+    def scene_physics_report(prim_path: str | None = None, file: str | None = None, mode: str = "auto") -> dict:
+        """Read-only: the physics setup of the open scene (or one subtree): PhysicsScene prims and gravity, rigid
+        bodies, colliders, mass, collision approximations, articulation roots and joints, with warnings about common
+        mistakes (a body without a collider, no PhysicsScene, ...). mode auto/live/saved_file as for the insight
+        tools: auto reads the live stage and falls back to the saved file when the bridge cannot. Nothing changes."""
+        return _physics_report_mode(router, prim_path, file, mode)
+
+    @app.tool(name="scene_add_physics_scene")
+    def scene_add_physics_scene(path: str = "/physicsScene", gravity: float | list[float] | None = None, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan a UsdPhysics PhysicsScene (nothing simulates without one) in the open scene and
+        show the preview to the user first. dry_run=False changes the user's open scene (not saved; scene_undo_last
+        can undo it). gravity is m/s^2: a number pointing down the stage up axis, or [x, y, z] written Z-up (default
+        9.81 down); it is converted to the stage's units."""
+        try:
+            result = router._scene.add_physics_scene(path, gravity=_scale_arg(gravity, "gravity"), dry_run=dry_run)
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=path)
+        return _authoring_payload(router, result)
+
+    @app.tool(name="scene_make_rigid_body")
+    def scene_make_rigid_body(
+        prim_path: str,
+        mass: float | None = None,
+        density: float | None = None,
+        kinematic: bool = False,
+        add_collider: bool = True,
+        approximation: str | None = None,
+        dry_run: bool = True,
+    ) -> dict:
+        """DRY RUN BY DEFAULT: plan making a prim a rigid body (RigidBodyAPI, optional MassAPI with mass in kg or
+        density in kg/m^3, and colliders on its geometry when add_collider=True) in the open scene, and show the
+        preview to the user first. dry_run=False changes the user's open scene (not saved; scene_undo_last can undo
+        it). kinematic=True makes an animated body that pushes others but is not pushed; approximation is
+        convexHull, convexDecomposition, boundingCube, boundingSphere, meshSimplification or none."""
+        try:
+            result = router._scene.make_rigid_body(
+                prim_path,
+                mass=mass,
+                density=density,
+                kinematic=kinematic is True,
+                add_collider=add_collider is not False,
+                approximation=approximation,
+                dry_run=dry_run,
+            )
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
+        return _authoring_payload(router, result)
+
+    @app.tool(name="scene_make_collider")
+    def scene_make_collider(prim_path: str, approximation: str | None = None, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan adding collision (CollisionAPI) to a gprim, or to every gprim below a group prim,
+        in the open scene and show the preview to the user first. dry_run=False changes the user's open scene (not
+        saved; scene_undo_last can undo it). approximation (convexHull, convexDecomposition, boundingCube,
+        boundingSphere, meshSimplification or none) applies to meshes; a collider without a rigid body is static."""
+        try:
+            result = router._scene.make_collider(prim_path, approximation=approximation, dry_run=dry_run)
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
+        return _authoring_payload(router, result)
+
+    @app.tool(name="scene_remove_physics")
+    def scene_remove_physics(prim_path: str, include_descendants: bool = False, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan removing the RigidBody, Collision, MeshCollision and Mass APIs (and their physics
+        attributes) from a prim in the open scene, and show the preview to the user first. dry_run=False changes the
+        user's open scene (not saved; scene_undo_last can undo it). include_descendants=True also clears every prim
+        below; articulation roots and joints are left alone."""
+        try:
+            result = router._scene.remove_physics(
+                prim_path, include_descendants=include_descendants is True, dry_run=dry_run
+            )
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", dry_run=dry_run is not False, applied=False, path=prim_path)
+        return _authoring_payload(router, result)
+
+    # --- viewport screenshots and simulation controls (Kit only) -------------------------------------------------
+
+    @app.tool(name="scene_capture_viewport")
+    def scene_capture_viewport(output_dir: str | None = None, width: int | None = None, height: int | None = None) -> dict:
+        """Screenshot of the live app's ACTIVE viewport, saved as a new PNG (never overwriting one) in output_dir
+        (an absolute folder; default <temp>/omniverse_mcp_captures). It does not change the open scene, the camera or
+        any render setting; it returns at once with status 'pending': call scene_capture_status(path) until ready.
+        width/height make a resized copy once the PNG is written."""
+        problem = None
+        if output_dir is not None and (not isinstance(output_dir, str) or not os.path.isabs(output_dir.strip())):
+            problem = "output_dir must be an absolute folder path (or omitted for the default capture folder)"
+        for label, value in (("width", width), ("height", height)):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 16384):
+                problem = f"{label} must be a whole number of pixels from 1 to 16384"
+        if problem:
+            return _error(problem, target="scene", action="capture_viewport")
+        directory = output_dir.strip() if isinstance(output_dir, str) else None
+        return _live_payload(router._scene.capture_viewport(directory, width=width, height=height))
+
+    @app.tool(name="scene_capture_status")
+    def scene_capture_status(path: str) -> dict:
+        """Read-only: whether a scene_capture_viewport PNG has been written yet (ready, size, and the resized copy when
+        a size was asked for). Never waits; nothing changes."""
+        if not isinstance(path, str) or not path.strip():
+            return _error("path is required: the 'path' scene_capture_viewport returned", target="scene")
+        return _live_payload(router._scene.capture_status(path.strip()))
+
+    @app.tool(name="sim_status")
+    def sim_status() -> dict:
+        """Read-only: whether the live app's simulation (timeline and physics) is playing, paused or stopped, the
+        current time, and whether PhysX is available. Nothing changes."""
+        return _live_payload(router._scene.simulation_status())
+
+    @app.tool(name="sim_play")
+    def sim_play() -> dict:
+        """CHANGES THE SIMULATION STATE (not authored scene data): plays the live app's timeline, so physics simulates
+        and PhysX moves simulated prims on the open stage until sim_stop restores them. Call it only when the user
+        asks to play or run the simulation; nothing is saved."""
+        return _live_payload(router._scene.simulation_play())
+
+    @app.tool(name="sim_pause")
+    def sim_pause() -> dict:
+        """CHANGES THE SIMULATION STATE (not authored scene data): pauses the live app's timeline at the current time;
+        sim_step then advances it frame by frame. Call it only when the user asks to pause."""
+        return _live_payload(router._scene.simulation_pause())
+
+    @app.tool(name="sim_stop")
+    def sim_stop() -> dict:
+        """CHANGES THE SIMULATION STATE (not authored scene data): stops the live app's timeline, RESETS it to the
+        start time and PhysX restores the poses simulated prims had before play. Call it only when the user asks to
+        stop the simulation."""
+        return _live_payload(router._scene.simulation_stop())
+
+    @app.tool(name="sim_step")
+    def sim_step(frames: int = 1) -> dict:
+        """CHANGES THE SIMULATION STATE (not authored scene data): advances a paused (or stopped) simulation by frames
+        (1-600; larger requests are capped), stepping physics each frame when PhysX is available. Refused while
+        playing (sim_pause first). Call it only when the user asks to step."""
+        if isinstance(frames, bool) or not isinstance(frames, int) or frames < 1:
+            return _error("frames must be a whole number from 1 to 600", target="scene", action="simulation_step")
+        return _live_payload(router._scene.simulation_step(frames))
+
+    # --- exam dashboard -------------------------------------------------------------------------------------------
+
+    @app.tool(name="learning_exam_dashboard")
+    def learning_exam_dashboard(write: bool = True) -> dict:
+        """Your NCP-OUSD progress dashboard as data: accuracy and status per weighted domain, weighted accuracy,
+        weakest objectives, reviews due, streak, today's plan, mock-exam history, question-bank coverage and what to
+        focus on next. With write=True (the default) it also saves a self-contained page (no scripts or network) as
+        dashboard.html in the exam-prep folder next to progress.json, replacing the previous dashboard. Your progress
+        itself is only read, never changed."""
+        return exam_dashboard_result(progress_store, mock_store, write=write is True)
 
     # Tool descriptions come from raw docstrings; drop the continuation-line indentation clients would see.
     for tool in app._tool_manager.list_tools():

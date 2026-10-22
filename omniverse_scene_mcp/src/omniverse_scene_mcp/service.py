@@ -49,6 +49,7 @@ class SceneMCPService:
 
     def __init__(self, bridge: SceneBridge, backend_info: dict[str, Any] | None = None) -> None:
         self._bridge = bridge
+        self._asset_library: Any = None  # the router-side AssetLibrary, built on first use
         self._backend_info = (
             dict(backend_info)
             if backend_info
@@ -638,6 +639,252 @@ class SceneMCPService:
             needs_bridge_update=True,
             bridge=name,
         )
+
+    # --- RPC tier4-1: the local asset library (router side) and add_reference (live stage or fake scene) -------
+
+    @property
+    def asset_library(self) -> Any:
+        """The router-side AssetLibrary (built on first use; the asset pack is walked on the first search)."""
+        if self._asset_library is None:
+            from .asset_library import AssetLibrary
+
+            self._asset_library = AssetLibrary()
+        return self._asset_library
+
+    def set_asset_library(self, library: Any) -> None:
+        """Use another AssetLibrary (tests, or a different asset pack); None goes back to the default pack."""
+        self._asset_library = library
+
+    def asset_search(self, query: str, top_k: int = 10, category: str | None = None) -> dict[str, Any]:
+        """Rank local asset-pack files by name and folder for query; read-only and never raises."""
+        try:
+            count = int(top_k)
+        except (TypeError, ValueError):
+            count = 10
+        try:
+            library = self.asset_library
+            result = library.search(str(query or ""), top_k=count, category=category)
+        except Exception as exc:  # noqa: BLE001 - an unreadable pack is reported, not raised
+            return {"ok": False, "query": query, "results": [], "message": _error_text(exc)}
+        result.setdefault("ok", True)
+        result["library_root"] = str(getattr(library, "root", "")).replace("\\", "/") or None
+        if not result.get("ok") and result.get("error"):
+            result.setdefault("message", result["error"])
+        return result
+
+    def asset_info(self, asset_path: str) -> dict[str, Any]:
+        """Path, category, size, thumbnail and (cheaply) the USD header of one asset file; read-only, never raises."""
+        try:
+            result = self.asset_library.info(asset_path)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "asset_path": asset_path, "message": _error_text(exc)}
+        if not result.get("ok") and result.get("error"):
+            result.setdefault("message", result["error"])
+        return result
+
+    def add_asset(
+        self,
+        prim_path: str,
+        asset_path: str,
+        *,
+        translation: tuple[float, float, float] | None = None,
+        rotation: tuple[float, float, float] | None = None,
+        scale: float | tuple[float, float, float] | None = None,
+        instanceable: bool | None = None,
+        asset_prim_path: str | None = None,
+        correct_units: bool = False,
+        dry_run: bool = True,
+    ) -> OperationResult:
+        """Reference an asset file at prim_path in the open scene; dry_run (the default) previews it.
+
+        asset_path is absolute or relative to the asset library; the router resolves it to an absolute file path
+        before the scene bridge sees it. A missing file gives ok=False with suggestions, nothing changed.
+        """
+        dry_run = dry_run is not False  # only an explicit False authors (None, 0 and [] stay a preview)
+        _require_text(prim_path, "Prim path")
+        _require_text(asset_path, "Asset path")
+        try:
+            found = self.asset_library.resolve(asset_path)
+        except Exception as exc:  # noqa: BLE001
+            found, problem = None, _error_text(exc)
+        else:
+            problem = None
+        if found is None:
+            payload: dict[str, Any] = {
+                "ok": False,
+                "action": "add_reference",
+                "path": prim_path,
+                "asset_path": asset_path,
+                "error": problem or f"Asset file not found: {asset_path}",
+            }
+            stem = posixpath.splitext(posixpath.basename(str(asset_path).replace("\\", "/")))[0]
+            if stem:
+                hits = self.asset_search(stem, top_k=5).get("results") or []
+                payload["suggestions"] = [hit.get("path") for hit in hits if isinstance(hit, dict)]
+            return OperationResult(False, dry_run, [], payload)
+        resolved = os.path.abspath(str(found)).replace("\\", "/")
+        options = _without_none(
+            translation=translation,
+            rotation=rotation,
+            scale=scale,
+            instanceable=instanceable,
+            asset_prim_path=asset_prim_path,
+        )
+        if correct_units is True:
+            options["correct_units"] = True
+        result = self._live_authoring(
+            "add_reference",
+            prim_path,
+            f"Add a reference to {posixpath.basename(resolved)} at {prim_path}",
+            {"asset_path": resolved, **options},
+            lambda author: author(prim_path, resolved, dry_run=dry_run, **options),
+            dry_run,
+        )
+        if isinstance(result.payload, dict):
+            result.payload.setdefault("asset_path", resolved)
+        return result
+
+    # --- RPC tier4-1: UsdPhysics setup on the live stage (dry_run=True by default) ------------------------------
+
+    def physics_report(self, prim_path: str | None = None) -> dict[str, Any]:
+        """Read-only UsdPhysics summary of the LIVE stage (or one subtree); never raises."""
+        target = prim_path.strip() if isinstance(prim_path, str) and prim_path.strip() else None
+        return self._call_live("physics_report", lambda report: report(target))
+
+    def add_physics_scene(
+        self, path: str = "/physicsScene", gravity: Any = None, dry_run: bool = True
+    ) -> OperationResult:
+        """Plan (default) or author a PhysicsScene; gravity is m/s^2: a number (down the up axis) or [x, y, z]."""
+        dry_run = dry_run is not False
+        path = path if isinstance(path, str) and path.strip() else "/physicsScene"
+        options = _without_none(gravity=gravity)
+        return self._live_authoring(
+            "add_physics_scene",
+            path,
+            f"Add a PhysicsScene at {path}",
+            dict(options),
+            lambda author: author(path, dry_run=dry_run, **options),
+            dry_run,
+        )
+
+    def make_rigid_body(
+        self,
+        prim_path: str,
+        mass: float | None = None,
+        density: float | None = None,
+        kinematic: bool = False,
+        add_collider: bool = True,
+        approximation: str | None = None,
+        dry_run: bool = True,
+    ) -> OperationResult:
+        """Plan (default) or apply RigidBodyAPI (plus optional MassAPI and colliders) to a prim."""
+        dry_run = dry_run is not False
+        _require_text(prim_path, "Prim path")
+        options = _without_none(mass=mass, density=density, approximation=approximation)
+        options["kinematic"] = kinematic is True
+        options["add_collider"] = add_collider is not False
+        return self._live_authoring(
+            "make_rigid_body",
+            prim_path,
+            f"Make {prim_path} a rigid body",
+            dict(options),
+            lambda author: author(prim_path, dry_run=dry_run, **options),
+            dry_run,
+        )
+
+    def make_collider(self, prim_path: str, approximation: str | None = None, dry_run: bool = True) -> OperationResult:
+        """Plan (default) or apply CollisionAPI to a gprim, or to every gprim below a group prim."""
+        dry_run = dry_run is not False
+        _require_text(prim_path, "Prim path")
+        options = _without_none(approximation=approximation)
+        return self._live_authoring(
+            "make_collider",
+            prim_path,
+            f"Add collision to {prim_path}",
+            dict(options),
+            lambda author: author(prim_path, dry_run=dry_run, **options),
+            dry_run,
+        )
+
+    def remove_physics(self, prim_path: str, include_descendants: bool = False, dry_run: bool = True) -> OperationResult:
+        """Plan (default) or remove the RigidBody, Collision, MeshCollision and Mass APIs from a prim."""
+        dry_run = dry_run is not False
+        _require_text(prim_path, "Prim path")
+        options = {"include_descendants": include_descendants is True}
+        return self._live_authoring(
+            "remove_physics",
+            prim_path,
+            f"Remove physics from {prim_path}",
+            dict(options),
+            lambda author: author(prim_path, dry_run=dry_run, **options),
+            dry_run,
+        )
+
+    # --- RPC tier4-1: viewport capture and simulation controls (Kit only; never raise) ---------------------------
+
+    def capture_viewport(self, output_dir: str | None = None, width: int | None = None, height: int | None = None) -> dict[str, Any]:
+        """Schedule a PNG of the live app's ACTIVE viewport (camera and render settings untouched)."""
+        return self._call_live("capture_viewport", lambda capture: capture(output_dir, width=width, height=height))
+
+    def capture_status(self, path: str) -> dict[str, Any]:
+        """Whether a capture_viewport PNG is written yet; never waits."""
+        return self._call_live("capture_status", lambda status: status(path))
+
+    def simulation_status(self) -> dict[str, Any]:
+        """Timeline/physics state (read-only). An older bridge falls back to the basic timeline state."""
+        result = self._call_live("simulation_status", lambda status: status())
+        if not result.get("needs_bridge_update"):
+            return result
+        try:
+            timeline = dict(self._bridge.get_timeline_state())
+        except Exception:  # noqa: BLE001 - keep the needs_bridge_update answer
+            return result
+        playing = bool(timeline.get("playing"))
+        return {
+            "ok": True,
+            "action": "simulation_status",
+            "fallback": "timeline",
+            "playing": playing,
+            "stopped": None,
+            "paused": None,
+            "timeline": timeline,
+            "physics_available": None,
+            "needs_bridge_update": True,
+            "message": "This bridge predates the simulation controls, so this is the basic timeline state only "
+            "(paused/stopped and physics are unknown); reload the bridge for simulation play/pause/stop/step.",
+        }
+
+    def simulation_play(self) -> dict[str, Any]:
+        """Play the timeline: physics simulates and moves simulated prims (simulation state, not authored data)."""
+        return self._call_live("simulation_play", lambda play: play())
+
+    def simulation_pause(self) -> dict[str, Any]:
+        """Pause the timeline at the current time."""
+        return self._call_live("simulation_pause", lambda pause: pause())
+
+    def simulation_stop(self) -> dict[str, Any]:
+        """Stop the timeline: it resets to its start time and PhysX restores pre-play poses."""
+        return self._call_live("simulation_stop", lambda stop: stop())
+
+    def simulation_step(self, frames: int = 1) -> dict[str, Any]:
+        """Advance a paused or stopped simulation by frames (1-600)."""
+        if isinstance(frames, bool) or not isinstance(frames, int) or frames < 1:
+            return {"ok": False, "action": "simulation_step", "message": "frames must be a whole number from 1 to 600"}
+        return self._call_live("simulation_step", lambda step: step(frames))
+
+    def _call_live(self, method: str, call: Callable[[Callable[..., Any]], Any]) -> dict[str, Any]:
+        """Call one fixed-name tier4-1 bridge method; a missing method or an error becomes a structured result."""
+        runner = getattr(self._bridge, method, None)  # method is one of this class's fixed names, never user input
+        if not callable(runner):
+            return {"action": method, **self._bridge_lacks(method)}
+        try:
+            result = call(runner)
+        except Exception as exc:  # noqa: BLE001 - a down bridge or a refused call is reported, not raised
+            return {"ok": False, "action": method, "message": _error_text(exc)}
+        payload = dict(result) if isinstance(result, dict) else {"ok": True, "result": result}
+        payload.setdefault("ok", True)
+        payload.setdefault("action", method)
+        return payload
 
     def preview_changes(self, result: OperationResult) -> dict[str, Any]:
         return {

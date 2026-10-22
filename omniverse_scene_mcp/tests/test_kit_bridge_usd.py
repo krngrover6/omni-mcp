@@ -340,7 +340,7 @@ def test_capabilities_lists_live_methods_and_insight_queries():
     stage = Usd.Stage.CreateInMemory()
     with _bridge(stage) as bridge:
         info = bridge.capabilities()
-    assert info["ok"] is True and info["version"] == "tier3-1"
+    assert info["ok"] is True and info["version"] == "tier4-1"
     assert {"capabilities", "insight", "create_light", "create_camera", "aim", "ping", "save"} <= set(info["methods"])
     assert info["insight_queries"] == ["stage_info", "composition", "explain_value", "properties", "bounds", "validate"]
     assert isinstance(info["authoring"]["available"], bool)

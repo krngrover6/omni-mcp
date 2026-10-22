@@ -524,7 +524,7 @@ def test_live_insight_and_authoring_through_the_extended_rpc():
         server = kit_rpc.make_extended_server_class(_BasicServer)(bridge, stage.GetRootLayer().identifier)
         with _server(scene=scene) as (call, root), _in_process_transport(server):
             capabilities = call("scene_capabilities")
-            assert capabilities["needs_bridge_update"] is False and capabilities["rpc_version"] == "tier3-1"
+            assert capabilities["needs_bridge_update"] is False and capabilities["rpc_version"] == "tier4-1"
             assert capabilities["live_insight"]["available"] is True and capabilities["live_authoring"]["available"] is True
             assert "how_to_enable" not in capabilities
 

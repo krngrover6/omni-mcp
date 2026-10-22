@@ -278,7 +278,11 @@ class _Response:
 def test_probe_scene_health_only_targets_loopback_and_parses_health():
     calls: list = []
 
-    def fake_urlopen(url: str, timeout: float):
+    def fake_urlopen(request, timeout: float):
+        # The probe sends a Request with the bridge headers (JSON type, never Origin, the token when set).
+        url = getattr(request, "full_url", request)
+        headers = {key.lower(): value for key, value in getattr(request, "header_items", lambda: [])()}
+        assert "origin" not in headers and headers.get("content-type") == "application/json", headers
         calls.append((url, timeout))
         if not bodies:
             raise URLError("refused")
