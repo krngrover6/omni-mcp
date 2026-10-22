@@ -7,20 +7,30 @@ import json
 import math
 import os
 import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
 from mcp.server.fastmcp import FastMCP
 
-from . import assignments, error_explainer, physics, python_links, python_teacher, usd_insight, usd_validate
+from . import assignments, docker_docs, error_explainer, physics, python_links, python_teacher, usd_insight, usd_validate
+from . import robot_inspector
 from . import scene_tour as scene_tour_module
+from . import asset_health as asset_health_module
+from . import checkpoints, journal_script, layer_manager, project_starter
+from . import kit_logs as kit_log_reader
+from . import project_report as project_report_module
 from .bridge import (
     ASSET_RPC_METHODS,
     CAPTURE_RPC_METHODS,
     EDIT_RPC_METHODS,
+    HEALTH_RPC_METHODS,
     HOMEWORK_RPC_METHODS,
+    LAYER_RPC_METHODS,
+    LAYOUT_RPC_METHODS,
     LIVE_RPC_METHODS,
     PHYSICS_RPC_METHODS,
+    ROBOT_RPC_METHODS,
     RPC_VERSION,
     SIMULATION_RPC_METHODS,
     UNDO_RPC_METHODS,
@@ -28,13 +38,16 @@ from .bridge import (
 from .exam import bank as exam_bank
 from .exam import blueprint as exam_blueprint
 from .exam import daily as exam_daily
+from .exam import drills as exam_drills
 from .exam import puzzles as exam_puzzles
 from .exam import python_practice
+from .exam import reminder as exam_reminder
 from .exam import sandbox as exam_sandbox
 from .class_notes import ClassNotes
 from .exam.mock import MockExamError
 from .file_stage import ReadOnlyViolation, SceneFileError, readonly_stage, resolve_scene_file
 from .health import router_health as check_router_health
+from .journal import build_change_journal, install_journal, target_from_backend
 from .offline_docs_knowledge import ENV_ROOT as DOCS_ENV_ROOT
 from .offline_docs_knowledge import normalize_domain as normalize_docs_domain
 from .offline_knowledge import OFFLINE_NOTE, OfflineUSDKnowledge
@@ -413,10 +426,41 @@ _HOMEWORK_FILE_HINT = (
 )
 _TOUR_MAX_DEPTH = 50
 _TOUR_MAX_PRIMS = 20_000
-_HOMEWORK_LABELS = {"assignment_check": "homework check", "scene_tour": "scene tour"}
+_HOMEWORK_LABELS = {
+    "assignment_check": "homework check",
+    "scene_tour": "scene tour",
+    "robot_inspect": "robot inspector",
+    "layer_stack": "layer stack",
+    "layer_where_is": "layer lookup",
+    "layer_flatten_preview": "flatten preview",
+    "asset_health": "asset health check",
+}
+_LAYER_FILE_HINT = (
+    "Pass scene_file='my_project/root.usda' (a saved scene, relative to the workspace or absolute inside it) to read "
+    "its layers read-only instead."
+)
+_HEALTH_FILE_HINT = (
+    "Pass scene_file='Bag_Assets/bag.usd' (any asset or saved scene, relative to the workspace or absolute inside it) "
+    "to check a file read-only instead."
+)
+_HEALTH_MAX_BUDGET_MS = 10_000
+_FLATTEN_MIN_CHARS = 200
+_FLATTEN_MAX_CHARS = 20_000
+_CHECKPOINT_TIP = (
+    "Tip: scene_checkpoint(note='...', dry_run=False) keeps a restorable copy of the saved scene files; "
+    "scene_diff shows what changed since the last one."
+)
+_LOG_LEVELS = ("verbose", "info", "warning", "error", "fatal")
+_ROBOT_FILE_HINT = (
+    "Pass scene_file='isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/FrankaRobotics/FrankaPanda/franka.usd' "
+    "(any robot asset or saved scene, relative to the workspace or absolute inside it) to inspect a file instead."
+)
+_ROBOT_MAX_PRIMS = 50_000
 
 
-def _homework_live_or_file(router: OmniverseRouter, method: str, live: dict, file_action: Callable[[Any], dict]) -> dict:
+def _homework_live_or_file(
+    router: OmniverseRouter, method: str, live: dict, file_action: Callable[[Any], dict], hint: str = _HOMEWORK_FILE_HINT
+) -> dict:
     """A tier5-1 live result, or (bridge too old / fake scene) the live scene's SAVED file read-only, like physics."""
     if not (live.get("unsupported") or live.get("needs_bridge_update")):
         return {**live, "mode": "live", "action": method}
@@ -429,7 +473,7 @@ def _homework_live_or_file(router: OmniverseRouter, method: str, live: dict, fil
         "action": method,
         "live_fallback": {"reason": reason, "needs_bridge_update": needs_update},
         "needs_bridge_update": needs_update,
-        "suggestion": _HOMEWORK_FILE_HINT,
+        "suggestion": hint,
     }
     if needs_update:
         payload["how_to_enable"] = list(LIVE_ENABLE_STEPS)
@@ -440,7 +484,7 @@ def _homework_live_or_file(router: OmniverseRouter, method: str, live: dict, fil
         payload["message"] = (
             f"The live {label} is not available ({reason}). "
             + ("Reload the bridge (see how_to_enable), or p" if needs_update else "P")
-            + _HOMEWORK_FILE_HINT[1:]
+            + hint[1:]
         )
     return payload
 
@@ -606,6 +650,11 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         port=port or int(os.environ.get("MCP_PORT", "9905")),
         streamable_http_path=os.environ.get("MCP_PATH", "/mcp"),
     )
+    # The change journal records every APPLIED scene edit (never previews) made through the tools registered below
+    # (journal.JOURNALED_TOOLS); memory-only under the test switch, else <workspace>/scene-journal/ or
+    # $OMNIVERSE_SCENE_MCP_JOURNAL. Journal errors never break a tool.
+    change_journal = build_change_journal()
+    install_journal(app, change_journal, target=lambda: target_from_backend(router._scene.backend_info))
 
     @app.tool(name="router_dispatch")
     async def router_dispatch(request: str, dry_run: bool = False, show_python: bool = False) -> dict:
@@ -859,7 +908,10 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
     @app.tool(name="scene_save")
     def scene_save(path: str, dry_run: bool = False) -> dict:
         """Save the current live scene to a USD file; dry_run previews in-place save versus Save As."""
-        return router._scene.save_scene(path, dry_run=dry_run)
+        result = router._scene.save_scene(path, dry_run=dry_run)
+        if isinstance(result, dict) and "tip" not in result:
+            result = {**result, "tip": _CHECKPOINT_TIP}  # a suggestion only; saving itself is unchanged
+        return result
 
     @app.tool(name="learning_tutor")
     def learning_tutor(topic: str = "schemas", style: str = "lesson") -> dict:
@@ -1446,9 +1498,17 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
                                            "simulation controls"),
             "homework": _feature_support(capabilities, insight, "homework", HOMEWORK_RPC_METHODS,
                                          "the live homework check and scene tour"),
+            "layout": _feature_support(capabilities, insight, "layout", LAYOUT_RPC_METHODS,
+                                       "smart layout (snap, stack, distribute, space, align)"),
+            "robots": _feature_support(capabilities, insight, "robots", ROBOT_RPC_METHODS, "the live robot inspector"),
+            "layers": _feature_support(capabilities, insight, "layers", LAYER_RPC_METHODS,
+                                       "the layer manager (layer stack, where is, sublayers, mute, edit target)"),
+            "health": _feature_support(capabilities, insight, "health", HEALTH_RPC_METHODS,
+                                       "the live asset health check"),
         }
         tier4["viewport_capture"]["dry_run_default"] = tier4["simulation"]["dry_run_default"] = None
-        tier4["homework"]["dry_run_default"] = None
+        tier4["homework"]["dry_run_default"] = tier4["robots"]["dry_run_default"] = None
+        tier4["health"]["dry_run_default"] = None
         missing = sorted(set(LIVE_RPC_METHODS) - methods) if capabilities.get("ok") else list(LIVE_RPC_METHODS)
         needs_update = bool(capabilities.get("needs_bridge_update")) or (
             bool(capabilities.get("ok")) and not capabilities.get("fake_scene") and bool(missing)
@@ -1457,7 +1517,8 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         if insight["available"] and authoring["available"] and edits["available"] and undo["available"] and everything:
             message = (
                 "Live insight, light/camera authoring, attribute/material edits, undo, assets, physics, viewport "
-                "capture, simulation controls, the homework check and the scene tour are available on the open stage."
+                "capture, simulation controls, the homework check, the scene tour, smart layout, the robot inspector, "
+                "the layer manager and the asset health check are available on the open stage."
             )
         elif needs_update:
             message = (
@@ -2153,6 +2214,761 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
             payload["message"] = "Nothing in the indexed class sources matched; try other words or class_sessions."
         return payload
 
+    # --- round 7: timed drills, today's plan, the reminder text, the change journal, smart layout, robots, Docker --
+
+    @app.tool(name="learning_drill_focuses")
+    def learning_drill_focuses() -> dict:
+        """Read-only: the kinds of timed NCP-OUSD drill you can start (weak, mistakes, mixed, objective, domain,
+        flash), what each one picks, the default and allowed question count and seconds per question, and how to
+        answer."""
+        return exam_drills.list_drill_focuses()
+
+    @app.tool(name="learning_drill_start")
+    def learning_drill_start(
+        focus: str = "weak",
+        objective: str | None = None,
+        domain: str | None = None,
+        count: int = 10,
+        seconds_per_question: float = 45,
+    ) -> dict:
+        """Start a short TIMED NCP-OUSD drill (default 10 questions, 45 seconds each) and return the questions without
+        their answers. focus: 'weak' (your weak spots and due reviews, the default), 'mistakes' (questions you got
+        wrong), 'mixed' (whole exam), 'objective' (needs objective such as '1.6'), 'domain' (needs domain such as
+        'Composition') or 'flash' (quick true/false and one-word prompts). It only saves the drill session (beside
+        your exam progress); answer everything at once with learning_drill_answer, which grades and saves to
+        progress. Questions of an open mock exam are never used."""
+        return exam_drills.start_drill(
+            progress_store,
+            focus=focus,
+            objective=objective,
+            domain=domain,
+            count=count,
+            seconds_per_question=seconds_per_question,
+            exclude_ids=_open_mock_ids(),
+        )
+
+    @app.tool(name="learning_drill_answer")
+    def learning_drill_answer(drill_id: str, answers: dict[str, Any] | list[Any], elapsed_s: float | None = None) -> dict:
+        """Grade a whole drill in one go and SAVE the answers to your NCP-OUSD exam progress (flash prompts are not
+        saved). answers: a dict {question number or id: your answer} or a list in question order; an answer is a
+        letter ('B'), true/false or one word, as each question says. elapsed_s is how long you took (else measured
+        from the start). An unreadable answer leaves the drill open so you can send it again."""
+        return exam_drills.answer_drill(drill_id, answers, elapsed_s=elapsed_s, store=progress_store)
+
+    @app.tool(name="learning_drill_status")
+    def learning_drill_status(drill_id: str) -> dict:
+        """Read-only: time left and the questions again for an open drill, or the saved result of an answered one."""
+        return exam_drills.drill_status(drill_id, store=progress_store)
+
+    def _brief_store() -> Any:
+        """The exam progress, read without ever writing: the memory store itself, or a read-only copy of the file."""
+        if getattr(progress_store, "memory_only", False) or getattr(progress_store, "path", None) is None:
+            return progress_store
+        return exam_reminder.read_only_store(progress_store.path)
+
+    @app.tool(name="learning_today")
+    def learning_today(minutes: int = 60) -> dict:
+        """Read-only: 'what should I do today?' A short study brief from your saved NCP-OUSD progress: today's plan
+        day, days to the exam, a time-boxed plan for `minutes` (10-480) of study (lesson, due reviews, a drill on weak
+        areas, Python practice), your streak and a catch-up hint. Nothing is written."""
+        return exam_reminder.today_brief(_brief_store(), minutes=minutes)
+
+    @app.tool(name="learning_reminder_setup")
+    def learning_reminder_setup(at: str = "19:00") -> dict:
+        """Read-only, creates NOTHING: returns the PowerShell commands YOU can copy to create (and later remove) a daily
+        Windows reminder at `at` (24-hour 'HH:MM') that pops up today's study brief. No task is registered and no
+        file is written by this tool; it only shows the text."""
+        result = exam_reminder.scheduled_task_commands(at)
+        if not isinstance(result, dict):
+            result = {"ok": False, "message": "Could not build the reminder commands."}
+        return {
+            **result,
+            "created": False,
+            "message": result.get("message") or (
+                "Nothing was created: no scheduled task, no file. Copy create_command into PowerShell yourself if you "
+                "want the reminder; remove_command deletes it later."
+            ),
+        }
+
+    def _journal_since(value: Any) -> Any:
+        """'today' / 'yesterday' as dates for ChangeJournal.entries; anything else as given."""
+        if isinstance(value, str) and value.strip().lower() in ("today", "yesterday"):
+            day = datetime.now().astimezone().date()
+            return (day - timedelta(days=1) if value.strip().lower() == "yesterday" else day).isoformat()
+        return value
+
+    @app.tool(name="scene_journal")
+    def scene_journal(
+        limit: int = 20,
+        since: str | None = None,
+        prim: str | None = None,
+        tool: str | None = None,
+        target: str | None = None,
+    ) -> dict:
+        """Read-only: the change journal, newest first: every scene edit the router actually APPLIED (previews are
+        never recorded), each with its time, app (isaac / composer / fake), tool, prims, before/after values and undo
+        id, plus one plain sentence per change. Filters: limit (1-500), since ('today', 'yesterday', '2026-10-22' or
+        '2026-10-22T14:00'), prim (that prim and everything below it), tool ('scene_move' or 'move') and target."""
+        try:
+            count = _whole_arg(limit, "limit", 1, 500)
+            entries = change_journal.entries(since=_journal_since(since), limit=count, prim=prim, tool=tool, target=target)
+        except ValueError as exc:
+            return _error(str(exc), entries=[])
+        return {
+            "ok": True,
+            "count": len(entries),
+            "entries": entries,
+            "sentences": change_journal.explain(entries),
+            "journal": change_journal.status(),
+            "note": "Only applied edits, saves and undos are recorded; dry runs are not. scene_journal_summary tells "
+                    "the story of one day.",
+        }
+
+    @app.tool(name="scene_journal_explain")
+    def scene_journal_explain(
+        limit: int = 10,
+        since: str | None = None,
+        prim: str | None = None,
+        tool: str | None = None,
+        target: str | None = None,
+    ) -> dict:
+        """Read-only: 'what did you change?' in plain sentences, newest first, such as '14:02 - You moved /World/Cube
+        from (0, 0, 0) to (1, 2, 3) in Composer. Undo with scene_undo_last (id 7).' Same filters as scene_journal."""
+        try:
+            count = _whole_arg(limit, "limit", 1, 500)
+            sentences = change_journal.explain(
+                since=_journal_since(since), limit=count, prim=prim, tool=tool, target=target
+            )
+        except ValueError as exc:
+            return _error(str(exc), sentences=[])
+        return {"ok": True, "count": len(sentences), "sentences": sentences}
+
+    @app.tool(name="scene_journal_summary")
+    def scene_journal_summary(day: str | None = None) -> dict:
+        """Read-only: the story of one day of scene changes (default today; 'yesterday' or 'YYYY-MM-DD'): how many
+        edits, undos and failed attempts, counts by tool and prim, and three short sentences."""
+        try:
+            return {"ok": True, **change_journal.summary(day)}
+        except ValueError as exc:
+            return _error(str(exc))
+
+    @app.tool(name="scene_journal_clear")
+    def scene_journal_clear(confirm: bool = False) -> dict:
+        """Empty the change journal (only the journal file; scenes are never touched). Nothing happens unless
+        confirm=True, and the old entries are kept in a timestamped backup file next to the journal."""
+        return change_journal.clear(confirm=confirm is True)
+
+    def _layout_payload(result: Any) -> dict:
+        """Scene-tool envelope for a layout result, with the moves, the plain explanation and the preview table."""
+        payload = _authoring_payload(router, result)
+        inner = result.payload if isinstance(result.payload, dict) else {}
+        for key in ("explanation", "moves"):
+            if key in inner:
+                payload[key] = inner[key]
+        if isinstance(inner.get("preview"), str):
+            payload["preview_table"] = inner["preview"]
+        return payload
+
+    def _layout_call(name: str, paths: Any, dry_run: bool, call: Callable[[], Any]) -> dict:
+        try:
+            result = call()
+        except (ValueError, TypeError) as exc:
+            first = paths[0] if isinstance(paths, list) and paths else paths
+            return _error(str(exc), target="scene", action=name, dry_run=dry_run is not False, applied=False, path=first)
+        return _layout_payload(result)
+
+    @app.tool(name="scene_layout_snap")
+    def scene_layout_snap(paths: list[str], surface: str | float | None = None, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan dropping (or lifting) prims straight down the up axis so the bottom of each one
+        rests on a surface, and show the preview to the user first. surface: None finds the floor automatically,
+        a prim path uses that prim's top, a number is a height. Only each prim's translation changes. dry_run=False
+        changes the user's open scene (not saved; scene_undo_last can undo it)."""
+        return _layout_call("layout_snap", paths, dry_run,
+                            lambda: router._scene.layout_snap(paths, surface=surface, dry_run=dry_run))
+
+    @app.tool(name="scene_layout_stack")
+    def scene_layout_stack(
+        paths: list[str],
+        rows: list[int] | None = None,
+        anchor: str | list[float] | None = None,
+        gap: float = 0.0,
+        facing: str | None = None,
+        dry_run: bool = True,
+    ) -> dict:
+        """DRY RUN BY DEFAULT: plan stacking prims in rows like a pyramid or wall (rows bottom first; default
+        [4, 3, 2, 1] for 10 boxes; the counts must add up to the number of paths), each row resting on the one below,
+        and show the preview to the user first. anchor: an [x, y, z] point (bottom center), a prim path to stand on,
+        or None (where the prims are now); gap: space between neighbors; facing: e.g. '-Y'. dry_run=False changes
+        the user's open scene (not saved; scene_undo_last can undo it)."""
+        return _layout_call(
+            "layout_stack", paths, dry_run,
+            lambda: router._scene.layout_stack(
+                paths, rows=rows, anchor=_target_arg(anchor, "anchor"), gap=gap, facing=facing, dry_run=dry_run
+            ),
+        )
+
+    @app.tool(name="scene_layout_distribute")
+    def scene_layout_distribute(paths: list[str], surface_path: str, margin: float | None = None, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan spreading prims evenly along the long side of a shelf or table top (surface_path),
+        all resting on it and centered across its depth, with `margin` free at both ends (default 5 cm), and show the
+        preview to the user first. dry_run=False changes the user's open scene (not saved; scene_undo_last can undo
+        it)."""
+        return _layout_call(
+            "layout_distribute", paths, dry_run,
+            lambda: router._scene.layout_distribute(paths, surface_path, margin=margin, dry_run=dry_run),
+        )
+
+    @app.tool(name="scene_layout_space")
+    def scene_layout_space(paths: list[str], axis: str = "x", spacing: float | None = None, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan making the gaps between prims equal along one world axis ('x', 'y' or 'z'), and
+        show the preview to the user first. spacing=None keeps the first and last prim in place; a number sets the
+        edge-to-edge gap in stage units. dry_run=False changes the user's open scene (not saved; scene_undo_last can
+        undo it)."""
+        return _layout_call(
+            "layout_space", paths, dry_run,
+            lambda: router._scene.layout_space(paths, axis=axis, spacing=spacing, dry_run=dry_run),
+        )
+
+    @app.tool(name="scene_layout_align")
+    def scene_layout_align(paths: list[str], axis: str = "x", mode: str = "min", dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan lining prims up along one world axis by their bounding-box min sides ('min'),
+        centers ('center') or max sides ('max'), and show the preview to the user first. dry_run=False changes the
+        user's open scene (not saved; scene_undo_last can undo it)."""
+        return _layout_call(
+            "layout_align", paths, dry_run,
+            lambda: router._scene.layout_align(paths, axis=axis, mode=mode, dry_run=dry_run),
+        )
+
+    @app.tool(name="robot_inspect")
+    def robot_inspect(root_path: str | None = None, scene_file: str | None = None, max_prims: int = 5000) -> dict:
+        """Read-only: explain a robot for a beginner: every articulation (robot) with its links (rigid parts, mass,
+        colliders), its joints in plain words (hinge, slider, fixed) with axis, limits and motor (drive) settings,
+        the chain from the base, degrees of freedom, whether the base is fixed, and setup problems with how to fix
+        them. Without scene_file it reads the LIVE open stage (root_path limits it to one robot); scene_file reads a
+        saved scene or a robot asset (e.g. under isaacsim-assets-6.1.0) read-only. Nothing is changed."""
+        root = root_path.strip() if isinstance(root_path, str) and root_path.strip() else None
+        try:
+            limit = _whole_arg(max_prims, "max_prims", 1, _ROBOT_MAX_PRIMS)
+        except ValueError as exc:
+            return _error(str(exc), action="robot_inspect")
+
+        def inspect_file(stage: Any) -> dict:
+            budget = usd_insight.TimeBudget(10_000)  # file mode: stop a huge asset after 10 s with partial results
+            return robot_inspector.inspect_robot(stage, root, deadline=budget, max_prims=limit)
+
+        if isinstance(scene_file, str) and scene_file.strip():
+            return {**_file_mode(router, scene_file, inspect_file), "action": "robot_inspect"}
+        live = router._scene.robot_inspect(root, max_prims=limit)
+        return {**_homework_live_or_file(router, "robot_inspect", live, inspect_file, hint=_ROBOT_FILE_HINT),
+                "action": "robot_inspect"}
+
+    @app.tool(name="docs_docker_status")
+    async def docs_docker_status(service: str = "usd", check_endpoint: bool = False) -> dict:
+        """Read-only: is Docker installed and running, are the NVIDIA docs MCP images built and is the container up
+        (service 'usd', 'kit', 'omniui' or 'isaac'). Runs only read-only Docker queries (version, image ls, ps);
+        never pulls, builds, starts or stops anything. check_endpoint=True also tries a TCP connect to the local
+        docs port. API keys are only reported as set or not set, never shown."""
+        try:
+            return await asyncio.to_thread(docker_docs.docker_status, service, check_endpoint is True)
+        except ValueError as exc:
+            return _error(str(exc), service=service)
+
+    @app.tool(name="docs_docker_setup_plan")
+    def docs_docker_setup_plan(service: str = "usd") -> dict:
+        """Read-only, runs nothing: the ordered steps and exact commands YOU would run to set up the Docker docs MCP
+        for service ('usd', 'kit', 'omniui' or 'isaac'), each marked when it needs your approval (downloads, keys)."""
+        try:
+            return docker_docs.setup_plan(service)
+        except ValueError as exc:
+            return _error(str(exc), service=service)
+
+    @app.tool(name="docs_docker_explain")
+    def docs_docker_explain() -> dict:
+        """Read-only: is Docker worth it? Plain-English pros and cons of the Docker docs MCP versus the router's
+        offline docs (which already answer USD, Kit and Isaac Sim questions without Docker)."""
+        return docker_docs.explain_choice(None)
+
+    # --- round 8: project starter, layer manager, checkpoints, Kit logs, asset health, journal script, report ------
+
+    @app.tool(name="project_templates")
+    def project_templates() -> dict:
+        """Read-only: the project templates you can start from (blank, warehouse, digital_twin, configurator,
+        robot_cell, synthetic_data), each with its app, units, up axis, default prim and layer stack (strongest
+        first). Nothing is written; project_plan previews a project and project_create makes it."""
+        return project_starter.list_templates()
+
+    @app.tool(name="project_plan")
+    def project_plan(
+        name: str, template: str = "blank", goal: str = "", units: str | float | None = None, up_axis: str | None = None
+    ) -> dict:
+        """Read-only, writes NOTHING: the folder a new project would get inside the workspace (root.usda with one
+        sublayer per concern, assets/ layers/ scenes/ renders/ scripts/ docs/, PROJECT_CONTEXT.md, README.md and a
+        .gitignore), its units, up axis, layer stack and starter prims. name: letters, digits, '_' and '-' only.
+        units: 'm', 'cm' or 'mm' (default: the template's); up_axis: 'Y' or 'Z'."""
+        return project_starter.plan_project(name, template, goal=goal or "", units=units, up_axis=up_axis)
+
+    @app.tool(name="project_create")
+    def project_create(
+        name: str,
+        template: str = "blank",
+        goal: str = "",
+        units: str | float | None = None,
+        up_axis: str | None = None,
+        dry_run: bool = True,
+    ) -> dict:
+        """DRY RUN BY DEFAULT: plan a NEW project folder <workspace>/<name> from a template and show the preview to
+        the user first. dry_run=False writes ONLY that new folder (files only; it never touches the open scene in
+        Isaac Sim or Composer), refuses a folder that already exists and removes everything it wrote if a step
+        fails. Then open root.usda in the app and fill in PROJECT_CONTEXT.md."""
+        result = project_starter.create_project(
+            name, template, goal=goal or "", units=units, up_axis=up_axis, dry_run=dry_run is not False
+        )
+        return {**result, "action": "create_project"}
+
+    @app.tool(name="project_list")
+    def project_list() -> dict:
+        """Read-only: the project folders directly inside the workspace (those with a PROJECT_CONTEXT.md), each with
+        its goal, scene entry file and last change."""
+        return project_starter.list_projects()
+
+    def _layer_read(method: str, scene_file: Any, file_action: Callable[[Any], dict], live: Callable[[], dict]) -> dict:
+        """A read-only layer answer: scene_file read-only, else the live stage, else the live scene's saved file."""
+        if isinstance(scene_file, str) and scene_file.strip():
+            return {**_file_mode(router, scene_file, file_action), "action": method}
+        try:
+            result = live()
+        except ValueError as exc:
+            return _error(str(exc), action=method)
+        return {**_homework_live_or_file(router, method, result, file_action, hint=_LAYER_FILE_HINT), "action": method}
+
+    @app.tool(name="scene_layers")
+    def scene_layers(scene_file: str | None = None) -> dict:
+        """Read-only: the layer stack, strongest first (session layer, root layer, then its sublayers depth-first),
+        with each layer's strength rank, the edit target, muted and missing layers, unsaved edits and the layers
+        that references and payloads bring in, explained for a beginner (the 'L' in LIVRPS). Without scene_file it
+        reads the LIVE open stage, else the live scene's SAVED file when the bridge cannot; scene_file reads a saved
+        file read-only. Nothing is changed."""
+        return _layer_read("layer_stack", scene_file, layer_manager.layer_stack, lambda: router._scene.layer_stack())
+
+    @app.tool(name="scene_where_is")
+    def scene_where_is(prim_path: str, attribute: str | None = None, scene_file: str | None = None) -> dict:
+        """Read-only: every layer that holds an opinion on a prim (or one attribute: attribute='size', or
+        prim_path='/World/Cube.size'), strongest first, and which opinion wins and why. Without scene_file it reads
+        the LIVE open stage, else the live scene's SAVED file when the bridge cannot; scene_file reads a saved file
+        read-only. Nothing is changed."""
+        name = attribute.strip() if isinstance(attribute, str) and attribute.strip() else None
+        return _layer_read(
+            "layer_where_is", scene_file,
+            lambda stage: layer_manager.where_is(stage, prim_path, name),
+            lambda: router._scene.layer_where_is(prim_path, name),
+        )
+
+    @app.tool(name="scene_flatten_preview")
+    def scene_flatten_preview(prim_path: str, max_chars: int = 4000, scene_file: str | None = None) -> dict:
+        """Read-only: what ONE prim looks like with every layer and composition arc baked into a single layer, as
+        .usda text (max_chars 200-20000). Nothing is flattened, saved or changed. Without scene_file it reads the
+        LIVE open stage, else the live scene's SAVED file when the bridge cannot; scene_file reads a saved file
+        read-only."""
+        try:
+            limit = _whole_arg(max_chars, "max_chars", _FLATTEN_MIN_CHARS, _FLATTEN_MAX_CHARS)
+        except ValueError as exc:
+            return _error(str(exc), action="layer_flatten_preview")
+        if not isinstance(prim_path, str) or not prim_path.strip().startswith("/") or prim_path.strip() == "/":
+            return _error("prim_path must name one prim, such as '/World/Cube'.", action="layer_flatten_preview")
+        path = prim_path.strip()
+        return _layer_read(
+            "layer_flatten_preview", scene_file,
+            lambda stage: layer_manager.flatten_preview(stage, path, max_chars=limit),
+            lambda: router._scene.layer_flatten_preview(path, max_chars=limit),
+        )
+
+    def _layer_write(method: str, dry_run: Any, call: Callable[[], dict]) -> dict:
+        """Scene envelope for a writing layer call: preview / applied / refused, with how to put it back."""
+        try:
+            result = call()
+        except (ValueError, TypeError) as exc:
+            return _error(str(exc), target="scene", action=method, dry_run=dry_run is not False, applied=False)
+        payload: dict[str, Any] = {"target": "scene", **result}
+        payload.setdefault("action", method)
+        if payload.get("needs_bridge_update"):
+            payload["how_to_enable"] = list(LIVE_ENABLE_STEPS)
+        restore = payload.get("restore_with") or payload.get("undo")
+        if payload.get("ok") is not True:
+            detail = payload.get("error") or payload.get("message") or "The layer change did not go through."
+            payload["applied"] = False
+            payload["message"] = f"{detail} Nothing was changed."
+        elif payload.get("applied"):
+            payload["message"] = (
+                "Applied to the open stage (not saved: save the changed layer to keep it). "
+                + (f"Put it back with {restore}." if isinstance(restore, dict) else "")
+            ).strip()
+        elif payload.get("dry_run") is not False:
+            payload["preview"] = True
+            payload["message"] = (
+                "Preview only: nothing was changed. Show this to the user, then call again with dry_run=False to "
+                "apply it."
+            )
+        else:
+            payload["message"] = payload.get("explanation") or "Nothing to change."
+        return payload
+
+    @app.tool(name="scene_add_sublayer")
+    def scene_add_sublayer(
+        layer_path: str,
+        position: str | int = "strongest",
+        create_if_missing: bool = False,
+        relative: bool = True,
+        allow_outside: bool = False,
+        offset: float = 0.0,
+        scale: float = 1.0,
+        dry_run: bool = True,
+    ) -> dict:
+        """DRY RUN BY DEFAULT: plan inserting a sublayer (a .usd/.usda/.usdc file, relative to the root layer's
+        folder) into the root layer's sublayer list and show the preview to the user first. position 'strongest'
+        (first, wins over the others), 'weakest' or an index; create_if_missing writes a new empty layer file;
+        offset/scale only shift time. Refuses duplicates, cycles and files outside the root layer's folder (unless
+        allow_outside). dry_run=False changes the user's open scene (not saved); the result's restore_with is the
+        call that takes it out again."""
+        return _layer_write("layer_add_sublayer", dry_run, lambda: router._scene.layer_add_sublayer(
+            layer_path, position=position, create_if_missing=create_if_missing, relative=relative,
+            allow_outside=allow_outside, offset=offset, scale=scale, dry_run=dry_run,
+        ))
+
+    @app.tool(name="scene_remove_sublayer")
+    def scene_remove_sublayer(layer: str, discard_unsaved_edits: bool = False, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan taking a sublayer (by file name, path or identifier) out of its parent's sublayer
+        list and show the preview to the user first; the file on disk is never deleted. Refuses the root and session
+        layers, the edit target, and a layer with unsaved edits unless discard_unsaved_edits=True. dry_run=False
+        changes the user's open scene (not saved); restore_with puts it back."""
+        return _layer_write("layer_remove_sublayer", dry_run, lambda: router._scene.layer_remove_sublayer(
+            layer, discard_unsaved_edits=discard_unsaved_edits, dry_run=dry_run,
+        ))
+
+    @app.tool(name="scene_set_edit_target")
+    def scene_set_edit_target(layer: str, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan making one layer of the layer stack the edit target (where new edits are
+        written) and show the preview to the user first. dry_run=False changes the user's open scene (stage state;
+        no layer is edited); restore_with sets the old target back."""
+        return _layer_write("layer_set_edit_target", dry_run,
+                            lambda: router._scene.layer_set_edit_target(layer, dry_run=dry_run))
+
+    @app.tool(name="scene_mute_layer")
+    def scene_mute_layer(layer: str, discard_unsaved_edits: bool = False, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan muting a layer so the stage ignores its opinions (and its sublayers') and show the
+        preview to the user first. Refuses the root and session layers, the edit target, and a layer with unsaved
+        edits unless discard_unsaved_edits=True. dry_run=False changes the user's open scene (stage state, nothing is
+        saved); scene_unmute_layer brings it back."""
+        return _layer_write("layer_mute", dry_run, lambda: router._scene.layer_mute(
+            layer, discard_unsaved_edits=discard_unsaved_edits, dry_run=dry_run,
+        ))
+
+    @app.tool(name="scene_unmute_layer")
+    def scene_unmute_layer(layer: str, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan unmuting a muted layer so its opinions count again and show the preview to the
+        user first. dry_run=False changes the user's open scene (stage state, nothing is saved)."""
+        return _layer_write("layer_unmute", dry_run, lambda: router._scene.layer_unmute(layer, dry_run=dry_run))
+
+    @app.tool(name="scene_move_opinions")
+    def scene_move_opinions(
+        prim_path: str,
+        src_layer: str,
+        dst_layer: str,
+        include_children: bool = True,
+        properties: list[str] | None = None,
+        allow_changes: bool = False,
+        dry_run: bool = True,
+    ) -> dict:
+        """DRY RUN BY DEFAULT: plan moving a prim's opinions (its whole spec, or only properties=[...]) from one
+        layer of the layer stack to another and show the preview to the user first. The move is simulated on copies
+        and every composed value it would change is listed; dry_run=False refuses such a move unless
+        allow_changes=True. dry_run=False changes the user's open scene (not saved; scene_undo_last can undo it)."""
+        return _layer_write("layer_move_opinions", dry_run, lambda: router._scene.layer_move_opinions(
+            prim_path, src_layer, dst_layer, include_children=include_children, properties=properties,
+            allow_changes=allow_changes, dry_run=dry_run,
+        ))
+
+    def _checkpoint_call(action: str, scene_file: Any, run: Callable[[str], dict], mutating: Any = None) -> dict:
+        """Run one checkpoints.py call on scene_file, or on the live scene's saved file; errors become ok False."""
+        extra = {} if mutating is None else {"dry_run": mutating is not False, "applied": False}
+        try:
+            scene = scene_file.strip() if isinstance(scene_file, str) and scene_file.strip() else _live_scene_file(router)
+            result = run(scene)
+        except (checkpoints.CheckpointError, SceneFileError, ValueError, ImportError) as exc:
+            return _error(str(exc), action=action, scene_file=scene_file, **extra)
+        except OSError as exc:
+            return _error(f"{type(exc).__name__}: {exc}", action=action, scene_file=scene_file, **extra)
+        return {**result, "action": action}
+
+    @app.tool(name="scene_checkpoint")
+    def scene_checkpoint(scene_file: str | None = None, note: str = "", dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan a checkpoint (a restorable copy of the SAVED scene file and the local layers it
+        uses, inside its project folder) and show the preview to the user first. scene_file defaults to the live
+        scene's saved file. dry_run=False copies the files into <project>/.checkpoints/ (a folder git ignores); the
+        open scene is never changed, and unsaved changes in the app are not included: save first."""
+        return _checkpoint_call(
+            "checkpoint", scene_file,
+            lambda scene: checkpoints.create_checkpoint(scene, note or "", dry_run=dry_run is not False),
+            mutating=dry_run,
+        )
+
+    @app.tool(name="scene_checkpoints")
+    def scene_checkpoints(scene_file: str | None = None) -> dict:
+        """Read-only: the checkpoints of a scene (default: the live scene's saved file), oldest first, with their
+        number, time, note and size."""
+        return _checkpoint_call("checkpoints", scene_file, checkpoints.list_checkpoints)
+
+    @app.tool(name="scene_diff")
+    def scene_diff(scene_file: str | None = None, a: str | int | None = None, b: str | int = "current") -> dict:
+        """Read-only: what changed between two versions of a scene's saved files, in plain English (prims added,
+        removed, values changed) and as per-file diffs. a defaults to the latest checkpoint and b to 'current' (the
+        files on disk now); each side is 'current', a checkpoint number or id, 'latest' or 'previous'."""
+        return _checkpoint_call("diff", scene_file, lambda scene: checkpoints.diff(scene, a, b))
+
+    @app.tool(name="scene_restore_checkpoint")
+    def scene_restore_checkpoint(checkpoint: str | int, scene_file: str | None = None, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan putting a checkpoint's files back over the saved scene files and show the preview
+        to the user first. dry_run=False first takes a safety checkpoint of the current files, then rewrites only the
+        files the checkpoint lists, inside the project folder. IMPORTANT: if the scene is open in Isaac Sim or
+        Composer, reload it there afterwards (File > Reload); unsaved changes in the app are lost and saving from the
+        app would overwrite the restored files."""
+        result = _checkpoint_call(
+            "restore_checkpoint", scene_file,
+            lambda scene: checkpoints.restore_checkpoint(scene, checkpoint, dry_run=dry_run is not False),
+            mutating=dry_run,
+        )
+        warning = checkpoints.APP_RELOAD_WARNING
+        warnings = [item for item in (result.get("warnings") or []) if item != warning]
+        message = result.get("message") or result.get("error") or ""
+        return {**result, "important": warning, "app_reload_warning": warning, "warnings": [warning, *warnings],
+                "message": f"IMPORTANT: {warning} {message}".strip()}
+
+    @app.tool(name="scene_prune_checkpoints")
+    def scene_prune_checkpoints(scene_file: str | None = None, keep: int = 20, dry_run: bool = True) -> dict:
+        """DRY RUN BY DEFAULT: plan deleting all but the newest `keep` checkpoints of a scene (keep >= 1, so the
+        newest is never deleted) and show the preview to the user first. dry_run=False deletes only those checkpoint
+        folders; scene files are never touched."""
+        return _checkpoint_call(
+            "prune_checkpoints", scene_file,
+            lambda scene: checkpoints.prune(scene, keep, dry_run=dry_run is not False),
+            mutating=dry_run,
+        )
+
+    def _log_app(app_name: Any) -> tuple[str, list[str]]:
+        """'isaac' / 'composer' for a kit_* tool's app argument; 'current' follows the router's scene target."""
+        wanted = app_name.strip().lower() if isinstance(app_name, str) and app_name.strip() else "current"
+        if wanted in ("current", "auto", "active"):
+            target = target_from_backend(router._scene.backend_info)
+            if target in ("isaac", "composer"):
+                return target, []
+            return "isaac", [f"The router's scene target is {target or 'unknown'} (not Isaac Sim or Composer), so this "
+                             "reads the Isaac Sim log; pass app='composer' for USD Composer."]
+        if wanted in ("isaac", "isaacsim", "isaac sim", "isaac-sim", "isaac_sim"):
+            return "isaac", []
+        if wanted in ("composer", "usd composer", "usd_composer", "usd-composer"):
+            return "composer", []
+        raise kit_log_reader.KitLogError("app must be 'current', 'isaac' or 'composer'.")
+
+    def _log_error(exc: Exception, app_name: Any, **extra: Any) -> dict:
+        return _error(str(exc), app=app_name, read_only=True, log_dirs=kit_log_reader.log_dirs(), **extra)
+
+    @app.tool(name="kit_logs")
+    def kit_logs(app: str = "current", lines: int = 100, level: str = "warning") -> dict:
+        """Read-only: the newest entries of the Isaac Sim or USD Composer log file (app 'current' follows the scene
+        target, or 'isaac' / 'composer'), keeping `level` and worse ('verbose', 'info', 'warning', 'error',
+        'fatal'); lines 1-2000. A traceback is one entry. Only Kit .log files are read; tokens, keys and your home
+        folder are hidden. Nothing is changed."""
+        try:
+            name, notes = _log_app(app)
+            count = _whole_arg(lines, "lines", 1, 2000)
+            wanted = level.strip().lower() if isinstance(level, str) and level.strip() else None
+            if wanted is not None and wanted not in _LOG_LEVELS:
+                raise ValueError(f"level must be one of {list(_LOG_LEVELS)}")
+            entries = kit_log_reader.tail(name, count, level=wanted)
+            newest = (kit_log_reader.find_logs(name) or [None])[0]
+        except (kit_log_reader.KitLogError, ValueError, OSError) as exc:
+            return _log_error(exc, app)
+        return {"ok": True, "app": name, "level": wanted, "count": len(entries), "entries": entries, "log": newest,
+                "notes": notes, "read_only": True}
+
+    @app.tool(name="kit_log_errors")
+    def kit_log_errors(app: str = "current", cursor: str | None = None) -> dict:
+        """Read-only: errors written to the app's log since `cursor`; call again with the returned cursor to keep
+        watching (the first call, without a cursor, only starts watching from now). app 'current', 'isaac' or
+        'composer'."""
+        try:
+            name, notes = _log_app(app)
+            result = kit_log_reader.new_errors(name, cursor=cursor)
+        except (kit_log_reader.KitLogError, ValueError, OSError) as exc:
+            return _log_error(exc, app)
+        return {**result, "notes": [*notes, *(result.get("notes") or [])], "read_only": True}
+
+    def _explain_recent(app_name: Any, limit: Any) -> dict:
+        try:
+            name, notes = _log_app(app_name)
+            count = _whole_arg(limit, "limit", 1, 20)
+            result = kit_log_reader.explain_recent(name, limit=count, knowledge=_error_knowledge())
+        except (kit_log_reader.KitLogError, ValueError, OSError) as exc:
+            return _log_error(exc, app_name)
+        return {**result, "notes": notes, "read_only": True}
+
+    @app.tool(name="kit_explain_recent_errors")
+    async def kit_explain_recent_errors(app: str = "current", limit: int = 5) -> dict:
+        """Read-only: the latest distinct errors of the app's current log (limit 1-20), repeats grouped with a count,
+        each explained in plain English (what happened, likely causes, fix steps, related offline docs) by the same
+        explainer as explain_error; known harmless Kit messages are listed as noise. Nothing is run or changed."""
+        return await asyncio.to_thread(_explain_recent, app, limit)
+
+    @app.tool(name="kit_log_summary")
+    def kit_log_summary(app: str = "current") -> dict:
+        """Read-only: counts for the app's current log session: entries by level, by extension and by source, plus
+        known noise, so you can see at a glance whether anything is wrong. app 'current', 'isaac' or 'composer'."""
+        try:
+            name, notes = _log_app(app)
+            result = kit_log_reader.summary(name)
+        except (kit_log_reader.KitLogError, ValueError, OSError) as exc:
+            return _log_error(exc, app)
+        return {**result, "notes": notes, "read_only": True}
+
+    @app.tool(name="usd_asset_health")
+    def usd_asset_health(scene_file: str | None = None, root_path: str | None = None, budget_ms: float = 8000) -> dict:
+        """Read-only: is this asset OK to use? A 0-100 health score and grade with plain-language checks (missing or
+        absolute file paths, units and up axis, heavy meshes, textures, materials, instancing, names, physics), each
+        with why it matters and beginner fix steps, plus its file dependencies and stats. Without scene_file it
+        checks the LIVE open stage (root_path limits it to one prim and below), else the live scene's SAVED file when
+        the bridge cannot; scene_file checks a saved scene or asset read-only. budget_ms (100-10000) stops a huge
+        asset with partial results. Nothing is fixed or saved."""
+        if isinstance(budget_ms, bool) or not isinstance(budget_ms, (int, float)) or not math.isfinite(float(budget_ms)) \
+                or not 100 <= float(budget_ms) <= _HEALTH_MAX_BUDGET_MS:
+            return _error(f"budget_ms must be a number from 100 to {_HEALTH_MAX_BUDGET_MS}", action="asset_health")
+        budget = float(budget_ms)
+        root = root_path.strip() if isinstance(root_path, str) and root_path.strip() else None
+
+        def check(stage: Any) -> dict:
+            return asset_health_module.asset_health(stage, root_path=root, budget_ms=budget)
+
+        if isinstance(scene_file, str) and scene_file.strip():
+            return {**_file_mode(router, scene_file, check), "action": "asset_health"}
+        live = router._scene.asset_health(root, budget_ms=budget)
+        return {**_homework_live_or_file(router, "asset_health", live, check, hint=_HEALTH_FILE_HINT),
+                "action": "asset_health"}
+
+    @app.tool(name="usd_health_checks")
+    def usd_health_checks() -> dict:
+        """Read-only: every check usd_asset_health runs, with its title, the matching NVIDIA Asset Validator rule in
+        Kit and how many points a warning or failure costs."""
+        checks = asset_health_module.health_checks()
+        return {"ok": True, "count": len(checks), "checks": checks}
+
+    @app.tool(name="scene_journal_to_script")
+    def scene_journal_to_script(
+        context: str = "script_editor", since: str | None = None, limit: int = 50, title: str | None = None
+    ) -> dict:
+        """Read-only: turn what you did into ONE commented OpenUSD Python script that replays the edits the change
+        journal recorded (oldest first; previews, failed edits, saves and undone edits are left out, each with the
+        reason). context 'script_editor' (Isaac Sim / Composer Script Editor) or 'standalone' (usd-core); since
+        'today', 'yesterday' or a date; limit 1-500 journal entries. The script is only shown: nothing runs, and
+        running it later edits the scene again (try it on a copy)."""
+        try:
+            count = _whole_arg(limit, "limit", 1, 500)
+            entries = change_journal.entries(since=_journal_since(since), limit=count)
+        except ValueError as exc:
+            return _error(str(exc), code=None, read_only=True)
+        result = journal_script.script_from_journal(entries, context=context, title=title)
+        return {**result, "journal_entries_read": len(entries), "read_only": True}
+
+    def _project_folder(project_dir: Any) -> Path | None:
+        """The project folder for a report: project_dir inside the workspace, else the live scene's project."""
+        root = _workspace_root().resolve()
+        if isinstance(project_dir, str) and project_dir.strip():
+            candidate = Path(project_dir.strip())
+            folder = (candidate if candidate.is_absolute() else root / candidate).resolve()
+            if not folder.is_dir():
+                raise ValueError(f"project_dir is not an existing folder: {folder}")
+            if folder != root and root not in folder.parents:
+                raise ValueError(f"project_dir must be inside the workspace {root}: {folder}")
+            return folder
+        try:
+            scene = Path(_live_scene_file(router)).resolve()
+        except (SceneFileError, ValueError):
+            return None
+        for folder in scene.parents:
+            if folder == root or root not in folder.parents:
+                break
+            if (folder / project_report_module.CONTEXT_FILE).is_file():
+                return folder
+        return None
+
+    @app.tool(name="project_report")
+    def project_report(
+        project_dir: str | None = None,
+        title: str | None = None,
+        include_tour: bool = True,
+        include_health: bool = True,
+        include_assignment: bool = False,
+        write: bool = False,
+        overwrite: bool = False,
+    ) -> dict:
+        """A portfolio report (Markdown and self-contained HTML) of a project: goal and next steps from its
+        PROJECT_CONTEXT.md, the scene tour, the asset health score, today's change journal and optionally the
+        homework check, gathered read-only. project_dir: a folder inside the workspace (default: the live scene's
+        project). PREVIEW BY DEFAULT: nothing is written unless write=True, which saves report.md and report.html
+        into <project_dir>/docs only (existing files are replaced only with overwrite=True)."""
+        try:
+            folder = _project_folder(project_dir)
+        except ValueError as exc:
+            return _error(str(exc), action="project_report", written=[])
+        entry = folder / project_starter.ROOT_LAYER if folder is not None else None
+        fallback = str(entry) if entry is not None and entry.is_file() else None
+        gathered: dict[str, Any] = {}
+
+        def gather(key: str, enabled: Any, run: Callable[[str | None], dict]) -> Any:
+            if enabled is not True:
+                gathered[key] = "skipped"
+                return None
+            result = run(None)
+            if not result.get("ok") and fallback:
+                result = run(fallback)
+            gathered[key] = "ok" if result.get("ok") else f"not available: {result.get('message') or result.get('error')}"
+            return result if result.get("ok") else None
+
+        tour = gather("tour", include_tour, lambda file: scene_explain(scene_file=file))
+        health = gather("health", include_health, lambda file: usd_asset_health(scene_file=file))
+        assignment = gather("assignment", include_assignment, lambda file: assignment_check(scene_file=file))
+        try:
+            journal_summary = change_journal.summary(None)
+            gathered["journal"] = "ok"
+        except ValueError as exc:
+            journal_summary = None
+            gathered["journal"] = f"not available: {exc}"
+        report = project_report_module.build_report(
+            project_dir=folder, tour=tour, health=health, assignment=assignment, journal_summary=journal_summary,
+            title=title,
+        )
+        payload: dict[str, Any] = {**report, "action": "project_report", "project_dir": str(folder) if folder else None,
+                                   "gathered": gathered, "written": []}
+        if not report.get("ok"):
+            return payload
+        if write is not True:
+            payload["dry_run"] = True
+            payload["message"] = ("Preview only: nothing was written. Call project_report(..., write=True) to save "
+                                  "report.md and report.html into the project's docs folder.")
+            return payload
+        if folder is None:
+            payload.update(ok=False, error="write=True needs project_dir (a project folder inside the workspace).")
+            return payload
+        docs = folder / "docs"
+        if docs.is_symlink() or (docs.exists() and not docs.is_dir()):
+            payload.update(ok=False, error=f"{docs} is not a plain folder, so nothing was written.")
+            return payload
+        if not docs.exists():
+            docs.mkdir()
+        written = project_report_module.write_report(docs, report, dry_run=False, overwrite=overwrite is True)
+        payload.update(dry_run=False, write_result=written, written=written.get("written", []),
+                       message=written.get("message") or written.get("error"))
+        if not written.get("ok"):
+            payload.update(ok=False, error=written.get("error"))
+        return payload
+
     # The router's learning-helper sentences ("show me the python for ...", "check my homework", "explain my scene",
     # "what did the teacher say about ...") run these same tools.
     router.attach_learning_helpers(
@@ -2167,6 +2983,45 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
             "scene_explain": lambda focus_path=None: scene_explain(focus_path=focus_path),
             "class_ask": lambda question, session=None: _class_notes().ask(question, session=session),
             "class_sessions": lambda: {"ok": True, "sessions": _class_notes().sessions()},
+            # Round 7 sentences (nl_tier6.py): drills, today's plan, the reminder text, the journal, robots, Docker.
+            "drill_start": lambda focus="weak", objective=None, domain=None, count=10: learning_drill_start(
+                focus=focus, objective=objective, domain=domain, count=count
+            ),
+            "drill_focuses": learning_drill_focuses,
+            "today": lambda minutes=60: learning_today(minutes=minutes),
+            "reminder_setup": lambda at="19:00": learning_reminder_setup(at=at),
+            "journal": lambda prim=None, since=None: scene_journal(prim=prim, since=since),
+            "journal_summary": lambda day="today": scene_journal_summary(day=day),
+            "robot_inspect": lambda root_path=None, scene_file=None: robot_inspect(root_path=root_path, scene_file=scene_file),
+            "docker_status": lambda service="usd": docker_docs.docker_status(service, False),
+            "docker_setup_plan": lambda service="usd": docs_docker_setup_plan(service=service),
+            "docker_explain": docs_docker_explain,
+            # Round 8 sentences (nl_tier7.py), keyed by tool name; write-ish ones always arrive as previews.
+            "project_templates": project_templates,
+            "project_list": project_list,
+            "project_create": lambda name, template="blank", dry_run=True: project_create(
+                name=name, template=template, dry_run=True
+            ),
+            "scene_layers": scene_layers,
+            "scene_where_is": lambda prim_path, attribute=None: scene_where_is(prim_path=prim_path, attribute=attribute),
+            "scene_add_sublayer": lambda layer_path, position="strongest", create_if_missing=False, dry_run=True:
+                scene_add_sublayer(layer_path=layer_path, position=position, create_if_missing=create_if_missing,
+                                   dry_run=True),
+            "scene_mute_layer": lambda layer, dry_run=True: scene_mute_layer(layer=layer, dry_run=True),
+            "scene_unmute_layer": lambda layer, dry_run=True: scene_unmute_layer(layer=layer, dry_run=True),
+            "scene_checkpoint": lambda note="", dry_run=True: scene_checkpoint(note=note, dry_run=True),
+            "scene_checkpoints": scene_checkpoints,
+            "scene_diff": lambda a="latest", b="current": scene_diff(a=a, b=b),
+            "scene_restore_checkpoint": lambda checkpoint="latest", dry_run=True: scene_restore_checkpoint(
+                checkpoint=checkpoint, dry_run=True
+            ),
+            "kit_logs": lambda app="current", level="warning": kit_logs(app=app, level=level, lines=50),
+            "kit_explain_recent_errors": lambda app="current": _explain_recent(app, 5),
+            "usd_asset_health": lambda scene_file=None, root_path=None: usd_asset_health(
+                scene_file=scene_file, root_path=root_path
+            ),
+            "scene_journal_to_script": scene_journal_to_script,
+            "project_report": lambda project_dir=None, write=False: project_report(project_dir=project_dir, write=False),
         }
     )
 

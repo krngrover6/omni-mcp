@@ -436,6 +436,58 @@ class FakeSceneBridge:
     def scene_tour(self, focus_path: str | None = None, **_options: Any) -> dict[str, Any]:
         return self._not_supported("scene_tour", "The scene tour", focus_path=focus_path)
 
+    # --- RPC tier6-1: smart layout measures real bounding boxes and the robot inspector reads UsdPhysics ---------
+
+    def layout_snap(self, paths: Any = (), **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layout_snap", "Snapping prims onto a surface", paths=_listed(paths))
+
+    def layout_stack(self, paths: Any = (), **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layout_stack", "Stacking prims in rows", paths=_listed(paths))
+
+    def layout_distribute(self, paths: Any = (), surface_path: str | None = None, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layout_distribute", "Spreading prims on a surface", paths=_listed(paths))
+
+    def layout_space(self, paths: Any = (), **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layout_space", "Spacing prims evenly", paths=_listed(paths))
+
+    def layout_align(self, paths: Any = (), **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layout_align", "Aligning prims", paths=_listed(paths))
+
+    def robot_inspect(self, root_path: str | None = None, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("robot_inspect", "The robot inspector", root_path=root_path)
+
+    # --- RPC tier7-1: the layer manager reads real USD layers and the asset health check a real stage -----------
+
+    def layer_stack(self, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layer_stack", "The layer stack")
+
+    def layer_where_is(self, prim_path: str = "", attribute: str | None = None, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layer_where_is", "Finding which layer sets a value", prim_path=str(prim_path)[:300])
+
+    def layer_flatten_preview(self, prim_path: str = "", **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layer_flatten_preview", "The flatten preview", prim_path=str(prim_path)[:300])
+
+    def layer_add_sublayer(self, layer_path: str = "", **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layer_add_sublayer", "Adding a sublayer", layer=str(layer_path)[:300])
+
+    def layer_remove_sublayer(self, layer: str = "", **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layer_remove_sublayer", "Removing a sublayer", layer=str(layer)[:300])
+
+    def layer_set_edit_target(self, layer: str = "", **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layer_set_edit_target", "Changing the edit target", layer=str(layer)[:300])
+
+    def layer_mute(self, layer: str = "", **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layer_mute", "Muting a layer", layer=str(layer)[:300])
+
+    def layer_unmute(self, layer: str = "", **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layer_unmute", "Unmuting a layer", layer=str(layer)[:300])
+
+    def layer_move_opinions(self, prim_path: str = "", *_layers: Any, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("layer_move_opinions", "Moving opinions between layers", prim_path=str(prim_path)[:300])
+
+    def asset_health(self, root_path: str | None = None, **_options: Any) -> dict[str, Any]:
+        return self._not_supported("asset_health", "The asset health check", root_path=root_path)
+
     def add_physics_scene(self, path: str = "/physicsScene", **_options: Any) -> dict[str, Any]:
         return self._not_supported("add_physics_scene", "Adding a PhysicsScene", path=str(path))
 
@@ -853,6 +905,12 @@ class FakeSceneBridge:
             return None
         parent = path.rsplit("/", 1)[0]
         return parent if parent else "/"
+
+
+def _listed(paths: Any) -> list[str]:
+    """The prim paths a layout call named (at most 20 of them, as text), for the not-supported answer."""
+    items = [paths] if isinstance(paths, str) else list(paths) if isinstance(paths, (list, tuple)) else []
+    return [str(item)[:300] for item in items[:20]]
 
 
 def _plain(value: Any) -> Any:

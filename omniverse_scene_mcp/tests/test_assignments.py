@@ -326,19 +326,31 @@ def test_smoke_real_session02_scene_on_a_temp_copy():
 def test_many_scattered_boxes_check_quickly_with_the_same_stack():
     # The cube-stack clustering compared every pair of boxes: 4000 props took ~9 s (minutes for a big referenced
     # warehouse), all on Kit's main thread in the live check.
+    # Timing is checked relative to the same check on a quarter of the props, so a busy machine (parallel test runs)
+    # slows both runs alike: a linear check grows ~4x from 1000 to 4000 props, the old pairwise one ~16x.
     import random
     import time
 
-    stage = _build("Z")
-    UsdGeom.Xform.Define(stage, "/World/Props")
-    rng = random.Random(7)
-    for index in range(4000):
-        prop = UsdGeom.Cube.Define(stage, f"/World/Props/Crate_{index}")
-        prop.CreateSizeAttr(0.2)
-        prop.AddTranslateOp().Set(Gf.Vec3d(rng.uniform(-200, -20), rng.uniform(-200, -20), rng.uniform(0.1, 5)))
-    started = time.perf_counter()
-    report = assignments.check_assignment(stage)
-    assert time.perf_counter() - started < 5.0
+    def props_stage(count):
+        stage = _build("Z")
+        UsdGeom.Xform.Define(stage, "/World/Props")
+        rng = random.Random(7)
+        for index in range(count):
+            prop = UsdGeom.Cube.Define(stage, f"/World/Props/Crate_{index}")
+            prop.CreateSizeAttr(0.2)
+            prop.AddTranslateOp().Set(Gf.Vec3d(rng.uniform(-200, -20), rng.uniform(-200, -20), rng.uniform(0.1, 5)))
+        return stage
+
+    def timed_check(stage):
+        started = time.perf_counter()
+        report = assignments.check_assignment(stage)
+        return report, time.perf_counter() - started
+
+    _small_report, small = timed_check(props_stage(1000))
+    report, large = timed_check(props_stage(4000))
+    # Fast enough outright (5 s, the old budget), or growing clearly slower than quadratic; never minutes.
+    assert large < 60.0, large
+    assert large < 5.0 or large < 8.0 * small, (large, small)
     stack = next(item for item in report["results"] if item["rule"] == "ten_cube_stack")
     assert stack["status"] == "pass" and stack["evidence"]["cube_count"] == 10, stack
 

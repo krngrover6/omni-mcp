@@ -80,6 +80,12 @@ RETURNS_EARLY_WHEN_ABSENT: dict[str, str] = {
     "test_isaac_reload_script::test_reload_without_an_open_stage_keeps_the_old_bridge_and_reports_it": (
         "isaacsim-study/reload_mcp_bridge.py (tracked, so it normally runs)"
     ),
+    "test_robot_inspector::test_real_franka_from_the_isaac_asset_pack_read_only": (
+        "isaacsim-assets-6.1.0 (untracked Isaac Sim asset pack)"
+    ),
+    "test_round7_integration::test_robot_inspect_reads_a_real_isaac_robot_asset_read_only": (
+        "isaacsim-assets-6.1.0 (untracked Isaac Sim asset pack)"
+    ),
 }
 
 

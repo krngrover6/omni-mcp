@@ -884,6 +884,181 @@ class SceneMCPService:
         focus = focus_path.strip() if isinstance(focus_path, str) and focus_path.strip() else None
         return self._call_live("scene_tour", lambda tour: tour(focus, depth=depth, max_prims=max_prims))
 
+    # --- RPC tier6-1: smart layout on the live stage (dry_run=True by default) and the read-only robot inspector -
+
+    def layout_snap(self, paths: list[str], surface: Any = None, dry_run: bool = True) -> OperationResult:
+        """Plan (default) or apply dropping prims onto the floor, a surface prim or a height along the up axis."""
+        dry_run = dry_run is not False
+        listed = _layout_paths(paths)
+        options = _without_none(surface=surface)
+        return self._live_authoring(
+            "layout_snap", listed[0], f"Snap {len(listed)} prim(s) onto a surface", {"paths": listed, **options},
+            lambda author: author(listed, dry_run=dry_run, **options), dry_run,
+        )
+
+    def layout_stack(
+        self,
+        paths: list[str],
+        rows: list[int] | None = None,
+        anchor: Any = None,
+        gap: float | None = None,
+        facing: str | None = None,
+        dry_run: bool = True,
+    ) -> OperationResult:
+        """Plan (default) or apply stacking prims in rows, bottom row first (default 4 3 2 1)."""
+        dry_run = dry_run is not False
+        listed = _layout_paths(paths)
+        options = _without_none(rows=list(rows) if rows is not None else None, anchor=anchor, gap=gap, facing=facing)
+        return self._live_authoring(
+            "layout_stack", listed[0], f"Stack {len(listed)} prim(s) in rows", {"paths": listed, **options},
+            lambda author: author(listed, dry_run=dry_run, **options), dry_run,
+        )
+
+    def layout_distribute(
+        self, paths: list[str], surface_path: str, margin: float | None = None, dry_run: bool = True
+    ) -> OperationResult:
+        """Plan (default) or apply spreading prims evenly along a shelf or table top."""
+        dry_run = dry_run is not False
+        listed = _layout_paths(paths)
+        _require_text(surface_path, "Surface path")
+        options = _without_none(margin=margin)
+        return self._live_authoring(
+            "layout_distribute", listed[0], f"Spread {len(listed)} prim(s) on {surface_path}",
+            {"paths": listed, "surface_path": surface_path, **options},
+            lambda author: author(listed, surface_path, dry_run=dry_run, **options), dry_run,
+        )
+
+    def layout_space(
+        self, paths: list[str], axis: str = "x", spacing: float | None = None, dry_run: bool = True
+    ) -> OperationResult:
+        """Plan (default) or apply equal gaps between prims along one world axis."""
+        dry_run = dry_run is not False
+        listed = _layout_paths(paths)
+        options = _without_none(axis=axis or "x", spacing=spacing)
+        return self._live_authoring(
+            "layout_space", listed[0], f"Space {len(listed)} prim(s) evenly", {"paths": listed, **options},
+            lambda author: author(listed, dry_run=dry_run, **options), dry_run,
+        )
+
+    def layout_align(self, paths: list[str], axis: str = "x", mode: str = "min", dry_run: bool = True) -> OperationResult:
+        """Plan (default) or apply lining prims up along one world axis (min sides, centers or max sides)."""
+        dry_run = dry_run is not False
+        listed = _layout_paths(paths)
+        options = {"axis": axis or "x", "mode": mode or "min"}
+        return self._live_authoring(
+            "layout_align", listed[0], f"Align {len(listed)} prim(s)", {"paths": listed, **options},
+            lambda author: author(listed, dry_run=dry_run, **options), dry_run,
+        )
+
+    def robot_inspect(self, root_path: str | None = None, max_prims: int = 5000) -> dict[str, Any]:
+        """Describe the robots (articulations) on the LIVE stage, or under root_path (read-only)."""
+        root = root_path.strip() if isinstance(root_path, str) and root_path.strip() else None
+        return self._call_live("robot_inspect", lambda inspect: inspect(root, max_prims=max_prims))
+
+    # --- RPC tier7-1: the layer manager on the live stage (writers: dry_run=True by default) and asset health ---
+
+    def layer_stack(self) -> dict[str, Any]:
+        """Every layer of the LIVE stage's layer stack, strongest first, plus referenced layers (read-only)."""
+        return self._call_live("layer_stack", lambda run: run())
+
+    def layer_where_is(self, prim_path: str, attribute: str | None = None, time: Any = None) -> dict[str, Any]:
+        """Which layers of the LIVE stage hold opinions on a prim or attribute, and which wins (read-only)."""
+        _require_text(prim_path, "Prim path")
+        name = attribute.strip() if isinstance(attribute, str) and attribute.strip() else None
+        return self._call_live("layer_where_is", lambda run: run(prim_path.strip(), name, time=time))
+
+    def layer_flatten_preview(self, prim_path: str, max_chars: int = 4000) -> dict[str, Any]:
+        """One prim of the LIVE stage flattened into capped .usda text (read-only; prim_path is required)."""
+        _require_text(prim_path, "Prim path")
+        return self._call_live("layer_flatten_preview", lambda run: run(prim_path.strip(), max_chars=max_chars))
+
+    def layer_add_sublayer(
+        self,
+        layer_path: str,
+        position: Any = "strongest",
+        create_if_missing: bool = False,
+        relative: bool = True,
+        allow_outside: bool = False,
+        offset: float = 0.0,
+        scale: float = 1.0,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Plan (default) or insert a sublayer into the LIVE stage's root layer."""
+        dry_run = dry_run is not False
+        _require_text(layer_path, "Layer path")
+        return self._live_layer_write(
+            "layer_add_sublayer", dry_run,
+            lambda run: run(layer_path.strip(), position=position, create_if_missing=create_if_missing is True,
+                            relative=relative is not False, allow_outside=allow_outside is True, offset=offset,
+                            scale=scale, dry_run=dry_run),
+        )
+
+    def layer_remove_sublayer(self, layer: str, discard_unsaved_edits: bool = False, dry_run: bool = True) -> dict[str, Any]:
+        """Plan (default) or take a sublayer out of its parent's list (the file is never deleted)."""
+        dry_run = dry_run is not False
+        _require_text(layer, "Layer")
+        return self._live_layer_write(
+            "layer_remove_sublayer", dry_run,
+            lambda run: run(layer.strip(), discard_unsaved_edits=discard_unsaved_edits is True, dry_run=dry_run),
+        )
+
+    def layer_set_edit_target(self, layer: str, dry_run: bool = True) -> dict[str, Any]:
+        """Plan (default) or make one layer of the LIVE stage the edit target."""
+        dry_run = dry_run is not False
+        _require_text(layer, "Layer")
+        return self._live_layer_write("layer_set_edit_target", dry_run, lambda run: run(layer.strip(), dry_run=dry_run))
+
+    def layer_mute(self, layer: str, discard_unsaved_edits: bool = False, dry_run: bool = True) -> dict[str, Any]:
+        """Plan (default) or mute a layer of the LIVE stage."""
+        dry_run = dry_run is not False
+        _require_text(layer, "Layer")
+        return self._live_layer_write(
+            "layer_mute", dry_run,
+            lambda run: run(layer.strip(), discard_unsaved_edits=discard_unsaved_edits is True, dry_run=dry_run),
+        )
+
+    def layer_unmute(self, layer: str, dry_run: bool = True) -> dict[str, Any]:
+        """Plan (default) or unmute a muted layer of the LIVE stage."""
+        dry_run = dry_run is not False
+        _require_text(layer, "Layer")
+        return self._live_layer_write("layer_unmute", dry_run, lambda run: run(layer.strip(), dry_run=dry_run))
+
+    def layer_move_opinions(
+        self,
+        prim_path: str,
+        src_layer: str,
+        dst_layer: str,
+        include_children: bool = True,
+        properties: list[str] | None = None,
+        allow_changes: bool = False,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Plan (default) or move a prim's opinions from one local layer to another (undoable with undo_last)."""
+        dry_run = dry_run is not False
+        _require_text(prim_path, "Prim path")
+        _require_text(src_layer, "src_layer")
+        _require_text(dst_layer, "dst_layer")
+        names = [properties] if isinstance(properties, str) else list(properties) if properties is not None else None
+        return self._live_layer_write(
+            "layer_move_opinions", dry_run,
+            lambda run: run(prim_path.strip(), src_layer.strip(), dst_layer.strip(),
+                            include_children=include_children is not False, properties=names,
+                            allow_changes=allow_changes is True, dry_run=dry_run),
+        )
+
+    def asset_health(self, root_path: str | None = None, max_prims: int = 50_000, budget_ms: float | None = None) -> dict[str, Any]:
+        """Health-check the LIVE stage, or the subtree at root_path, for asset problems (read-only)."""
+        root = root_path.strip() if isinstance(root_path, str) and root_path.strip() else None
+        options = _without_none(budget_ms=budget_ms)
+        return self._call_live("asset_health", lambda run: run(root, max_prims=max_prims, **options))
+
+    def _live_layer_write(self, method: str, dry_run: bool, call: Callable[[Callable[..., Any]], Any]) -> dict[str, Any]:
+        """A writing layer call; every answer says whether it was a dry run and whether anything was applied."""
+        payload = self._call_live(method, call)
+        payload.setdefault("dry_run", dry_run)
+        payload.setdefault("applied", False)
+        return payload
+
     def _call_live(self, method: str, call: Callable[[Callable[..., Any]], Any]) -> dict[str, Any]:
         """Call one fixed-name tier4-1 bridge method; a missing method or an error becomes a structured result."""
         runner = getattr(self._bridge, method, None)  # method is one of this class's fixed names, never user input
@@ -958,6 +1133,24 @@ def _require_text(value: Any, label: str) -> None:
 
 def _without_none(**values: Any) -> dict[str, Any]:
     return {key: value for key, value in values.items() if value is not None}
+
+
+_LAYOUT_MAX_PATHS = 500
+
+
+def _layout_paths(paths: Any) -> list[str]:
+    """1 to 500 prim path strings for a layout call (one string is one prim); raises ValueError otherwise."""
+    listed = [paths] if isinstance(paths, str) else list(paths) if isinstance(paths, (list, tuple)) else None
+    if not listed:
+        raise ValueError("paths must list one or more prim paths, for example ['/World/Box_01', '/World/Box_02']")
+    if len(listed) > _LAYOUT_MAX_PATHS:
+        raise ValueError(f"paths may list at most {_LAYOUT_MAX_PATHS} prims, got {len(listed)}")
+    cleaned = []
+    for item in listed:
+        if not isinstance(item, str) or not item.strip().startswith("/"):
+            raise ValueError(f"every entry in paths must be a prim path starting with '/', got {_short(item)}")
+        cleaned.append(item.strip())
+    return cleaned
 
 
 def _short(value: Any, limit: int = 80) -> str:

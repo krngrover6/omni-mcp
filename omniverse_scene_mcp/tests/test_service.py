@@ -363,7 +363,7 @@ def test_service_forwards_live_authoring_through_the_http_client_with_dry_run_de
         camera = service.create_camera("/World/Cam", clipping_range=(0.1, 500.0), dry_run=False)
         aimed = service.aim("/World/Cam", "/World/Key", up_axis="Z")
 
-    assert capabilities["version"] == "tier5-1" and capabilities["endpoint"] == "http://127.0.0.1:9911"
+    assert capabilities["version"] == "tier7-1" and capabilities["endpoint"] == "http://127.0.0.1:9911"
     assert insight == {"ok": True, "mode": "live", "query": "explain_value", "value": 1.5}
     assert bridge.calls[0] == ("insight", "explain_value", {"prim_path": "/World/Box", "attribute": "size", "time": 24})
     assert preview.ok is True and preview.dry_run is True

@@ -10,7 +10,7 @@ from typing import Any, Protocol
 from urllib.parse import unquote
 
 from . import help as tool_guide
-from . import nl_tier4, nl_tier5
+from . import nl_tier4, nl_tier5, nl_tier6, nl_tier7
 from .service import OperationResult, SceneMCPService
 
 _LEARNING_PHRASES = (
@@ -588,6 +588,12 @@ class OmniverseRouter:
         if helper is not None:  # Python snippets, exercises, error explanations, homework, scene tour, class notes
             return RoutingDecision(RouteTarget.LEARN, 0.96, f"Learning helper request ({helper['kind']}, read-only)",
                                    normalized)
+        round7 = nl_tier6.parse(request)
+        if round7 is not None:  # drills, today's plan, reminder, change journal, layout previews, robots, Docker docs
+            return _round7_decision(round7, normalized)
+        round8 = nl_tier7.parse(request)
+        if round8 is not None:  # projects, layers, checkpoints, Kit logs, asset health, journal script, report
+            return _round8_decision(round8, normalized)
         if self._help_request(core) is not None:
             return RoutingDecision(RouteTarget.LEARN, 0.97, "Help request (tool guide)", normalized)
         if nl_tier4.is_dashboard_request(core):
@@ -664,6 +670,13 @@ class OmniverseRouter:
 
     async def _dispatch(self, decision: RoutingDecision, request: str, dry_run: bool) -> dict[str, Any]:
         if decision.target is RouteTarget.SCENE:
+            round7 = nl_tier6.parse(request)
+            if round7 is not None and round7["kind"] in nl_tier6.SCENE_KINDS:
+                return await self._run_round7(round7, dry_run=dry_run)
+            if round7 is None:
+                round8 = nl_tier7.parse(request)
+                if round8 is not None and round8["kind"] in nl_tier7.SCENE_KINDS:
+                    return await self._run_round8(round8)
             return self._dispatch_scene(request, dry_run=dry_run)
 
         if decision.target is RouteTarget.LEARN:
@@ -673,6 +686,13 @@ class OmniverseRouter:
             helper = nl_tier5.parse(request)
             if helper is not None:
                 return await self._run_learning_helper(helper)
+            round7 = nl_tier6.parse(request)
+            if round7 is not None and round7["kind"] not in nl_tier6.SCENE_KINDS:
+                return await self._run_round7(round7, dry_run=dry_run)
+            if round7 is None:
+                round8 = nl_tier7.parse(request)
+                if round8 is not None and round8["kind"] not in nl_tier7.SCENE_KINDS:
+                    return await self._run_round8(round8)
             help_request = self._help_request(self._strip_politeness(normalized))
             if help_request is not None:
                 return self.tool_help(help_request["topic"])
@@ -1995,6 +2015,247 @@ class OmniverseRouter:
         if spec.get("next_step_only") and isinstance(result.get("next_step"), (str, dict)):
             payload["answer"] = result["next_step"]
         return payload
+
+    # --- round 7: drills, today's plan, reminder, change journal, layout previews, robots, Docker (nl_tier6.py) ----
+
+    async def _run_round7(self, spec: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
+        """Run one nl_tier6 request. Layout sentences only ever preview; a dry run never starts a drill."""
+        kind = spec["kind"]
+        if kind == "layout":
+            return await asyncio.to_thread(self._run_layout_request, spec)
+        tool, arguments = _round7_call(spec)
+        scene = kind in nl_tier6.SCENE_KINDS
+        base: dict[str, Any] = {
+            "target": "scene" if scene else "learn",
+            "style": kind,
+            "tool": tool,
+            "arguments": arguments,
+            "read_only": kind != "drill_start",
+        }
+        if not scene:
+            self._record_learning_event(f"round7_{kind}")
+        if kind == "drill_start" and dry_run:
+            call = ", ".join(f"{key}={value!r}" for key, value in arguments.items())
+            return {"ok": True, **base, "executed": False, "dry_run": True,
+                    "message": f"Dry run: no drill was started. Send it without dry_run (or call {tool}({call})) to start it."}
+        helper = self._learning_helpers.get(kind)
+        try:
+            if helper is not None:
+                result = await asyncio.to_thread(helper, **arguments)
+            else:
+                result = await asyncio.to_thread(self._pure_round7, kind, arguments)
+        except Exception as exc:  # noqa: BLE001 - a broken helper is reported, never raised into the client
+            return {"ok": False, **base, "executed": True, "message": f"{tool} failed: {type(exc).__name__}: {exc}"}
+        if result is None:
+            call = ", ".join(f"{key}={value!r}" for key, value in arguments.items())
+            return {"ok": True, **base, "executed": False,
+                    "message": f"Call {tool}({call}) for this; this router has no {tool} helper attached."}
+        if not isinstance(result, dict):
+            result = {"result": result}
+        # The tool's own answer, under the router's keys; a tool's own 'executed' (the reminder's "no command was run")
+        # is kept as commands_run so 'executed' always means "the router called the tool".
+        payload = {**base, **{key: value for key, value in result.items() if key not in base and key != "executed"}}
+        if "executed" in result:
+            payload["commands_run"] = result["executed"]
+        payload["executed"] = True
+        payload.setdefault("ok", True)
+        return payload
+
+    def _pure_round7(self, kind: str, arguments: dict[str, Any]) -> dict[str, Any] | None:
+        """The round-7 answers that need no server state (no progress store, journal or Docker CLI); None otherwise."""
+        if kind == "drill_focuses":
+            from .exam.drills import list_drill_focuses
+
+            return list_drill_focuses()
+        if kind == "reminder_setup":
+            from .exam.reminder import scheduled_task_commands
+
+            return {**scheduled_task_commands(arguments.get("at") or "19:00"), "created": False}
+        if kind == "docker_setup_plan":
+            from .docker_docs import setup_plan
+
+            return setup_plan(arguments.get("service") or "usd")
+        if kind == "docker_explain":
+            from .docker_docs import explain_choice
+
+            return explain_choice(None)
+        if kind == "robot_inspect" and arguments.get("scene_file") is None:
+            inspect = getattr(self._scene, "robot_inspect", None)
+            return inspect(arguments.get("root_path")) if callable(inspect) else None
+        return None
+
+    def _run_layout_request(self, spec: dict[str, Any]) -> dict[str, Any]:
+        """A layout sentence: find the prims it names and PREVIEW the layout (dry run); it never writes anything."""
+        op = spec["op"]
+        tool = f"scene_layout_{op}"
+        options = dict(spec.get("options") or {})
+        base: dict[str, Any] = {"ok": False, "target": "scene", "action": f"layout_{op}", "tool": tool,
+                                "dry_run": True, "applied": False, "preview": True}
+        paths, source, notes = self._layout_targets(spec)
+        if not paths:
+            return {**base, "notes": notes, "message": (
+                "I could not tell which prims to arrange. Name them by path (for example 'stack /World/Box_01 "
+                "/World/Box_02 /World/Box_03 in rows 2 1'), or select them in the app and say 'these'. "
+                "Nothing was changed.")}
+        method = getattr(self._scene, f"layout_{op}", None)
+        if not callable(method):
+            return {**_service_lacks(f"layout_{op}", f"layout_{op}", "arrange prims"), "tool": tool}
+        positional: list[Any] = [paths]
+        if op == "distribute":
+            positional.append(options.pop("surface_path"))
+        try:
+            result = method(*positional, dry_run=True, **options)
+        except (ValueError, TypeError) as exc:
+            return {**base, "paths": paths, "message": f"{exc} Nothing was changed."}
+        payload = self._wrap_result(result)
+        inner = result.payload if isinstance(result, OperationResult) and isinstance(result.payload, dict) else {}
+        for key in ("unsupported", "needs_bridge_update", "fake_scene", "warnings", "error", "explanation", "moves",
+                    "summary"):
+            if key in inner:
+                payload[key] = inner[key]
+        if isinstance(inner.get("preview"), str):
+            payload["preview_table"] = inner["preview"]
+        apply_arguments: dict[str, Any] = {"paths": paths}
+        if op == "distribute":
+            apply_arguments["surface_path"] = positional[1]
+        apply_arguments.update(options)
+        apply_arguments["dry_run"] = False
+        shown = ", ".join(f"{key}={value!r}" for key, value in apply_arguments.items())
+        payload.update(action=f"layout_{op}", tool=tool, arguments=apply_arguments, applied=False, preview=True,
+                       dry_run=True, targets_from=source, paths=paths)
+        if notes:
+            payload["notes"] = notes
+        if payload.get("ok"):
+            payload["message"] = (
+                f"Preview only: nothing was moved ({len(paths)} prim(s), found by {source}). Sentences always preview a "
+                f"layout; check the moves above, then apply it with {tool}({_clip_text(shown, 400)})."
+            )
+        else:
+            detail = inner.get("error") or inner.get("message") or "The scene bridge could not plan this layout."
+            payload["message"] = f"{detail} Nothing was changed."
+        return payload
+
+    def _layout_targets(self, spec: dict[str, Any]) -> tuple[list[str], str, list[str]]:
+        """(prim paths, how they were found, notes) for a layout sentence; only reads the scene."""
+        notes: list[str] = []
+        exclude = {value for value in (spec.get("options") or {}).values() if isinstance(value, str) and value.startswith("/")}
+        if spec.get("paths"):
+            return list(spec["paths"])[:_LAYOUT_MAX_PATHS], "the paths you named", notes
+        if spec.get("selection"):
+            try:
+                selected = [path for path in self._scene.current_selection() if path not in exclude]
+            except Exception as exc:  # noqa: BLE001 - reading the selection is a convenience
+                selected = []
+                notes.append(f"Could not read the selection: {type(exc).__name__}: {exc}")
+            if selected:
+                if spec.get("count") and len(selected) != spec["count"]:
+                    notes.append(f"You said {spec['count']}, but {len(selected)} prim(s) are selected; using the selection.")
+                return selected[:_LAYOUT_MAX_PATHS], "the current selection", notes
+            if not spec.get("name"):
+                notes.append("Nothing is selected. Select the prims in the app first, or name them by path.")
+                return [], "the current selection", notes
+        name = str(spec.get("name") or "")
+        if not name:
+            return [], "nothing", notes
+        word = re.sub(r"(?:es|s)$", "", name.lower()) if name.lower().endswith(("xes", "ses", "ches", "shes")) else name.lower().rstrip("s")
+        try:
+            prims = self._scene.find_prims(word, scope_path=spec.get("scope"))["prims"]
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"Could not search the scene for '{name}': {type(exc).__name__}: {exc}")
+            return [], f"the name '{name}'", notes
+        found: list[str] = []
+        for prim in prims:
+            path = prim.get("path") if isinstance(prim, dict) else None
+            if not isinstance(path, str) or path in exclude or any(path.startswith(other + "/") for other in exclude):
+                continue
+            leaf = path.rsplit("/", 1)[-1].lower()
+            if word not in leaf and str(prim.get("type_name") or prim.get("type") or "").lower() != word:
+                continue
+            if any(path.startswith(kept + "/") for kept in found):
+                continue  # keep the top-most match: moving a group moves its children
+            found.append(path)
+        if not found:
+            notes.append(f"No prim named like '{name}' was found" + (f" under {spec['scope']}" if spec.get("scope") else "")
+                         + ". Name the prims by path instead.")
+        elif spec.get("count") and len(found) != spec["count"]:
+            notes.append(f"You said {spec['count']}, but {len(found)} prim(s) match '{name}'; the preview uses all of them.")
+        return found[:_LAYOUT_MAX_PATHS], f"the name '{name}'", notes
+
+    # --- round 8: projects, layers, checkpoints, Kit logs, asset health, journal script, report (nl_tier7.py) ----
+
+    async def _run_round8(self, spec: dict[str, Any]) -> dict[str, Any]:
+        """Run one nl_tier7 request. Anything that would write (a project, a layer change, a checkpoint, a restore, a
+        report file) ONLY previews from a sentence, whatever dry_run it was sent with; the payload names the call that
+        applies it."""
+        kind = spec["kind"]
+        tool, arguments = _round8_call(spec)
+        scene = kind in nl_tier7.SCENE_KINDS
+        preview = kind in nl_tier7.PREVIEW_KINDS
+        base: dict[str, Any] = {
+            "target": "scene" if scene else "learn",
+            "style": kind,
+            "tool": tool,
+            "arguments": arguments,
+            "read_only": not preview,
+        }
+        if preview:
+            apply_arguments = {**arguments, **({"write": True} if "write" in arguments else {"dry_run": False})}
+            shown = ", ".join(f"{key}={value!r}" for key, value in apply_arguments.items())
+            base.update(preview=True, applied=False, dry_run=True, apply_with=f"{tool}({_clip_text(shown, 400)})")
+        if not scene:
+            self._record_learning_event(f"round8_{kind}")
+        helper = self._learning_helpers.get(tool)
+        try:
+            if helper is not None:
+                result = await asyncio.to_thread(helper, **arguments)
+            else:
+                result = await asyncio.to_thread(self._pure_round8, kind, arguments)
+        except Exception as exc:  # noqa: BLE001 - a broken helper is reported, never raised into the client
+            return {"ok": False, **base, "executed": True, "message": f"{tool} failed: {type(exc).__name__}: {exc}"}
+        if result is None:
+            call = ", ".join(f"{key}={value!r}" for key, value in arguments.items())
+            return {"ok": True, **base, "executed": False,
+                    "message": f"Call {tool}({call}) for this; this router has no {tool} helper attached."}
+        if not isinstance(result, dict):
+            result = {"result": result}
+        payload = {**base, **{key: value for key, value in result.items() if key not in base and key != "executed"}}
+        payload["executed"] = True
+        payload.setdefault("ok", True)
+        if preview:
+            detail = result.get("message") or result.get("error") or result.get("explanation")
+            payload["message"] = (
+                f"Preview only: nothing was written or changed. Sentences always preview this; check it, then apply "
+                f"it with {base['apply_with']}." + (f" {detail}" if isinstance(detail, str) and detail else "")
+            )
+        return payload
+
+    def _pure_round8(self, kind: str, arguments: dict[str, Any]) -> dict[str, Any] | None:
+        """The round-8 answers that need no server state (no journal, logs or file fallbacks); None otherwise."""
+        if kind == "project_templates":
+            from .project_starter import list_templates
+
+            return list_templates()
+        if kind == "project_list":
+            from .project_starter import list_projects
+
+            return list_projects()
+        if kind == "project_create":
+            from .project_starter import plan_project
+
+            return plan_project(arguments["name"], arguments.get("template") or "blank")
+        live = {
+            "layer_stack": ("layer_stack", lambda run: run()),
+            "where_is": ("layer_where_is", lambda run: run(arguments["prim_path"], arguments.get("attribute"))),
+            "add_sublayer": ("layer_add_sublayer", lambda run: run(
+                arguments["layer_path"], position=arguments.get("position") or "strongest",
+                create_if_missing=bool(arguments.get("create_if_missing")), dry_run=True)),
+            "mute_layer": ("layer_mute", lambda run: run(arguments["layer"], dry_run=True)),
+            "unmute_layer": ("layer_unmute", lambda run: run(arguments["layer"], dry_run=True)),
+        }.get(kind)
+        if live is None:
+            return None
+        method = getattr(self._scene, live[0], None)
+        return live[1](method) if callable(method) else None
 
     async def _run_dashboard(self, write: bool) -> dict[str, Any]:
         base = {"target": "learn", "style": "dashboard", "tool": "learning_exam_dashboard"}
@@ -3799,3 +4060,148 @@ def _pure_learning_helper(kind: str, arguments: dict[str, Any]) -> dict[str, Any
         assignments = list_assignments()
         return {"ok": True, "count": len(assignments), "assignments": assignments}
     return None
+
+
+# --- round 7 (nl_tier6.py): which tool a sentence maps to, and its routing decision --------------------------------
+
+_LAYOUT_MAX_PATHS = 500
+_ROUND7_TOOLS = {
+    "drill_start": "learning_drill_start",
+    "drill_focuses": "learning_drill_focuses",
+    "today": "learning_today",
+    "reminder_setup": "learning_reminder_setup",
+    "journal": "scene_journal",
+    "journal_summary": "scene_journal_summary",
+    "robot_inspect": "robot_inspect",
+    "docker_status": "docs_docker_status",
+    "docker_setup_plan": "docs_docker_setup_plan",
+    "docker_explain": "docs_docker_explain",
+}
+_ROUND7_REASONS = {
+    "drill_start": "Timed exam drill request",
+    "drill_focuses": "Drill focuses request (read-only)",
+    "today": "Today's study plan request (read-only)",
+    "reminder_setup": "Daily reminder request (returns commands only; nothing is created)",
+    "journal": "Change journal request (read-only)",
+    "journal_summary": "Change journal summary request (read-only)",
+    "layout": "Layout request (preview only)",
+    "robot_inspect": "Robot inspector request (read-only)",
+    "docker_status": "Docker docs status request (read-only)",
+    "docker_setup_plan": "Docker docs setup plan request (read-only; nothing is run)",
+    "docker_explain": "Docker docs explanation request (read-only)",
+}
+
+
+def _round7_decision(spec: dict[str, Any], normalized: str) -> RoutingDecision:
+    kind = spec["kind"]
+    target = RouteTarget.SCENE if kind in nl_tier6.SCENE_KINDS else RouteTarget.LEARN
+    reason = _ROUND7_REASONS.get(kind, "Round 7 request")
+    if kind == "layout":
+        reason = f"{reason}: {spec['op']}"
+    return RoutingDecision(target, 0.96, reason, normalized)
+
+
+def _round7_call(spec: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """(tool name, keyword arguments) for one nl_tier6 spec; these are the arguments the helper callbacks take."""
+    kind = spec["kind"]
+    tool = _ROUND7_TOOLS[kind]
+    if kind == "drill_start":
+        arguments = {"focus": spec.get("focus") or "weak"}
+        for key in ("objective", "domain", "count"):
+            if spec.get(key) is not None:
+                arguments[key] = spec[key]
+        return tool, arguments
+    if kind == "today":
+        return tool, {"minutes": spec.get("minutes") or 60}
+    if kind == "reminder_setup":
+        return tool, {"at": spec.get("at") or "19:00"}
+    if kind == "journal":
+        return tool, {"prim": spec.get("prim"), "since": spec.get("since")}
+    if kind == "journal_summary":
+        return tool, {"day": spec.get("day") or "today"}
+    if kind == "robot_inspect":
+        return tool, {"root_path": spec.get("root_path"), "scene_file": spec.get("scene_file")}
+    if kind in ("docker_status", "docker_setup_plan"):
+        return tool, {"service": spec.get("service") or "usd"}
+    return tool, {}
+
+
+def _clip_text(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+# --- round 8 (nl_tier7.py): which tool a sentence maps to, and its routing decision --------------------------------
+
+_ROUND8_TOOLS = {
+    "project_templates": "project_templates",
+    "project_list": "project_list",
+    "project_create": "project_create",
+    "layer_stack": "scene_layers",
+    "where_is": "scene_where_is",
+    "add_sublayer": "scene_add_sublayer",
+    "mute_layer": "scene_mute_layer",
+    "unmute_layer": "scene_unmute_layer",
+    "checkpoint": "scene_checkpoint",
+    "checkpoints": "scene_checkpoints",
+    "diff": "scene_diff",
+    "restore": "scene_restore_checkpoint",
+    "kit_logs": "kit_logs",
+    "explain_errors": "kit_explain_recent_errors",
+    "asset_health": "usd_asset_health",
+    "journal_script": "scene_journal_to_script",
+    "project_report": "project_report",
+}
+_ROUND8_REASONS = {
+    "project_templates": "Project templates request (read-only)",
+    "project_list": "Project list request (read-only)",
+    "project_create": "New project request (preview only)",
+    "layer_stack": "Layer stack request (read-only)",
+    "where_is": "Which-layer-sets-it request (read-only)",
+    "add_sublayer": "Add sublayer request (preview only)",
+    "mute_layer": "Mute layer request (preview only)",
+    "unmute_layer": "Unmute layer request (preview only)",
+    "checkpoint": "Scene checkpoint request (preview only)",
+    "checkpoints": "Checkpoint list request (read-only)",
+    "diff": "Changes since a checkpoint request (read-only)",
+    "restore": "Restore checkpoint request (always a preview)",
+    "kit_logs": "Kit log request (read-only)",
+    "explain_errors": "Explain recent Kit errors request (read-only)",
+    "asset_health": "Asset health request (read-only)",
+    "journal_script": "Journal to script request (read-only)",
+    "project_report": "Project report request (preview only)",
+}
+
+
+def _round8_decision(spec: dict[str, Any], normalized: str) -> RoutingDecision:
+    target = RouteTarget.SCENE if spec["kind"] in nl_tier7.SCENE_KINDS else RouteTarget.LEARN
+    return RoutingDecision(target, 0.96, _ROUND8_REASONS.get(spec["kind"], "Round 8 request"), normalized)
+
+
+def _round8_call(spec: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """(tool name, keyword arguments) for one nl_tier7 spec; write-ish kinds always carry the preview flag."""
+    kind = spec["kind"]
+    tool = _ROUND8_TOOLS[kind]
+    if kind == "project_create":
+        return tool, {"name": spec["name"], "template": spec.get("template") or "blank", "dry_run": True}
+    if kind == "where_is":
+        return tool, {"prim_path": spec["prim_path"], "attribute": spec.get("attribute")}
+    if kind == "add_sublayer":
+        return tool, {"layer_path": spec["layer_path"], "position": spec.get("position") or "strongest",
+                      "create_if_missing": bool(spec.get("create_if_missing")), "dry_run": True}
+    if kind in ("mute_layer", "unmute_layer"):
+        return tool, {"layer": spec["layer"], "dry_run": True}
+    if kind == "checkpoint":
+        return tool, {"note": spec.get("note") or "", "dry_run": True}
+    if kind == "diff":
+        return tool, {"a": spec.get("a", "latest"), "b": spec.get("b") or "current"}
+    if kind == "restore":
+        return tool, {"checkpoint": spec.get("checkpoint", "latest"), "dry_run": True}
+    if kind == "kit_logs":
+        return tool, {"app": spec.get("app") or "current", "level": spec.get("level") or "warning"}
+    if kind == "explain_errors":
+        return tool, {"app": spec.get("app") or "current"}
+    if kind == "asset_health":
+        return tool, {"scene_file": spec.get("scene_file"), "root_path": spec.get("root_path")}
+    if kind == "project_report":
+        return tool, {"project_dir": spec.get("project_dir"), "write": False}
+    return tool, {}

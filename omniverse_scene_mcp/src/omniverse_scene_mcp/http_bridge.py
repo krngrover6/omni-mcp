@@ -399,6 +399,136 @@ class HttpSceneBridge:
         params = _without_none(focus_path=focus_path, depth=depth, max_prims=max_prims)
         return self._rpc_optional("scene_tour", params, timeout=LIVE_TIMEOUT)
 
+    # --- RPC tier6-1: smart layout (dry run unless dry_run=False) and the read-only robot inspector -------------
+
+    def layout_snap(self, paths: list[str], *, surface: str | float | None = None, dry_run: bool = True) -> dict[str, Any]:
+        params = _without_none(paths=list(paths), surface=surface, dry_run=dry_run is not False)
+        return self._rpc_optional("layout_snap", params, timeout=LIVE_TIMEOUT)
+
+    def layout_stack(
+        self,
+        paths: list[str],
+        *,
+        rows: list[int] | None = None,
+        anchor: Any = None,
+        gap: float = 0.0,
+        facing: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        params = _without_none(
+            paths=list(paths),
+            rows=list(rows) if rows is not None else None,
+            anchor=list(anchor) if isinstance(anchor, (list, tuple)) else anchor,
+            gap=gap,
+            facing=facing,
+            dry_run=dry_run is not False,
+        )
+        return self._rpc_optional("layout_stack", params, timeout=LIVE_TIMEOUT)
+
+    def layout_distribute(
+        self, paths: list[str], surface_path: str, *, margin: float | None = None, dry_run: bool = True
+    ) -> dict[str, Any]:
+        params = _without_none(paths=list(paths), surface_path=surface_path, margin=margin, dry_run=dry_run is not False)
+        return self._rpc_optional("layout_distribute", params, timeout=LIVE_TIMEOUT)
+
+    def layout_space(
+        self, paths: list[str], *, axis: str = "x", spacing: float | None = None, dry_run: bool = True
+    ) -> dict[str, Any]:
+        params = _without_none(paths=list(paths), axis=axis, spacing=spacing, dry_run=dry_run is not False)
+        return self._rpc_optional("layout_space", params, timeout=LIVE_TIMEOUT)
+
+    def layout_align(self, paths: list[str], *, axis: str = "x", mode: str = "min", dry_run: bool = True) -> dict[str, Any]:
+        params = _without_none(paths=list(paths), axis=axis, mode=mode, dry_run=dry_run is not False)
+        return self._rpc_optional("layout_align", params, timeout=LIVE_TIMEOUT)
+
+    def robot_inspect(self, root_path: str | None = None, *, max_prims: int = 5000) -> dict[str, Any]:
+        """Describe the robots on the open stage, or under root_path (read-only)."""
+        params = _without_none(root_path=root_path, max_prims=max_prims)
+        return self._rpc_optional("robot_inspect", params, timeout=LIVE_TIMEOUT)
+
+    # --- RPC tier7-1: the layer manager (writers: dry run unless dry_run=False) and the asset health check -------
+
+    def layer_stack(self) -> dict[str, Any]:
+        """Every layer of the open stage's layer stack, strongest first (read-only)."""
+        return self._rpc_optional("layer_stack", {}, timeout=LIVE_TIMEOUT)
+
+    def layer_where_is(self, prim_path: str, attribute: str | None = None, *, time: Any = None) -> dict[str, Any]:
+        """Which layers hold opinions on a prim or attribute, and which wins (read-only)."""
+        params = _without_none(prim_path=prim_path, attribute=attribute, time=time)
+        return self._rpc_optional("layer_where_is", params, timeout=LIVE_TIMEOUT)
+
+    def layer_flatten_preview(self, prim_path: str, *, max_chars: int = 4000) -> dict[str, Any]:
+        """One prim with every layer and arc baked in, as capped .usda text (read-only)."""
+        params = _without_none(prim_path=prim_path, max_chars=max_chars)
+        return self._rpc_optional("layer_flatten_preview", params, timeout=LIVE_TIMEOUT)
+
+    def layer_add_sublayer(
+        self,
+        layer_path: str,
+        *,
+        position: str | int = "strongest",
+        create_if_missing: bool = False,
+        relative: bool = True,
+        allow_outside: bool = False,
+        offset: float = 0.0,
+        scale: float = 1.0,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        params = _without_none(
+            layer_path=layer_path,
+            position=position,
+            create_if_missing=create_if_missing is True,
+            relative=relative is not False,
+            allow_outside=allow_outside is True,
+            offset=offset,
+            scale=scale,
+            dry_run=dry_run is not False,
+        )
+        return self._rpc_optional("layer_add_sublayer", params, timeout=LIVE_TIMEOUT)
+
+    def layer_remove_sublayer(self, layer: str, *, discard_unsaved_edits: bool = False, dry_run: bool = True) -> dict[str, Any]:
+        params = {"layer": layer, "discard_unsaved_edits": discard_unsaved_edits is True, "dry_run": dry_run is not False}
+        return self._rpc_optional("layer_remove_sublayer", params, timeout=LIVE_TIMEOUT)
+
+    def layer_set_edit_target(self, layer: str, *, dry_run: bool = True) -> dict[str, Any]:
+        params = {"layer": layer, "dry_run": dry_run is not False}
+        return self._rpc_optional("layer_set_edit_target", params, timeout=LIVE_TIMEOUT)
+
+    def layer_mute(self, layer: str, *, discard_unsaved_edits: bool = False, dry_run: bool = True) -> dict[str, Any]:
+        params = {"layer": layer, "discard_unsaved_edits": discard_unsaved_edits is True, "dry_run": dry_run is not False}
+        return self._rpc_optional("layer_mute", params, timeout=LIVE_TIMEOUT)
+
+    def layer_unmute(self, layer: str, *, dry_run: bool = True) -> dict[str, Any]:
+        params = {"layer": layer, "dry_run": dry_run is not False}
+        return self._rpc_optional("layer_unmute", params, timeout=LIVE_TIMEOUT)
+
+    def layer_move_opinions(
+        self,
+        prim_path: str,
+        src_layer: str,
+        dst_layer: str,
+        *,
+        include_children: bool = True,
+        properties: list[str] | None = None,
+        allow_changes: bool = False,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        params = _without_none(
+            prim_path=prim_path,
+            src_layer=src_layer,
+            dst_layer=dst_layer,
+            include_children=include_children is not False,
+            properties=list(properties) if properties is not None else None,
+            allow_changes=allow_changes is True,
+            dry_run=dry_run is not False,
+        )
+        return self._rpc_optional("layer_move_opinions", params, timeout=LIVE_TIMEOUT)
+
+    def asset_health(self, root_path: str | None = None, *, max_prims: int = 50_000, budget_ms: float | None = None) -> dict[str, Any]:
+        """Health-check the open stage, or one subtree (read-only)."""
+        params = _without_none(root_path=root_path, max_prims=max_prims, budget_ms=budget_ms)
+        return self._rpc_optional("asset_health", params, timeout=LIVE_TIMEOUT)
+
     def _rpc_optional(
         self, method: str, params: dict[str, Any] | None = None, timeout: float = DEFAULT_TIMEOUT
     ) -> dict[str, Any]:

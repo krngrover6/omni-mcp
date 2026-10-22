@@ -1,0 +1,54 @@
+# OpenAI Codex: connect the Omniverse router.
+# Merge this into %USERPROFILE%\.codex\config.toml (keep your other [mcp_servers.*] tables), or run:
+#   codex mcp add omniverse_router --url http://127.0.0.1:9905/mcp
+# No secrets are needed: the router only listens on 127.0.0.1.
+
+# ---------------------------------------------------------------------------------------------------------------
+# Option A (recommended): the shared HTTP router started by start-omniverse.ps1 or start-isaac-mcp.ps1.
+# Codex filters the tool list on ITS side with enabled_tools, so the model only pays for these schemas
+# (this list is the "starter" profile; see docs/USING_WITH_CODEX_AND_CLAUDE_PRO.md for the others).
+# router_dispatch still reaches every router feature through plain English.
+# ---------------------------------------------------------------------------------------------------------------
+[mcp_servers.omniverse_router]
+url = "http://127.0.0.1:9905/mcp"
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+enabled_tools = [
+  "router_dispatch",
+  "router_route",
+  "router_help",
+  "router_status",
+  "router_health",
+  "router_set_scene_target",
+  "scene_capabilities",
+  "scene_summary",
+  "scene_inspect",
+  "scene_children",
+  "scene_find",
+  "scene_explain",
+  "explain_error",
+  "python_show",
+  "learning_today",
+  "scene_undo_last",
+  "usd_knowledge",
+  "workspace_context",
+]
+
+# ---------------------------------------------------------------------------------------------------------------
+# Option B: stdio. Codex starts its own router process, so OMNIVERSE_MCP_PROFILE applies on the server side
+# (once server.py applies profiles). Use it INSTEAD of option A (same tools twice would cost twice).
+# To use it: delete option A above, then remove the "#B " prefix from every line below.
+# Scene target: with OMNIVERSE_SCENE_HTTP_ENDPOINT unset the router auto-detects Composer on 9910;
+# switch to Isaac Sim with router_set_scene_target(target="isaac").
+# ---------------------------------------------------------------------------------------------------------------
+#B [mcp_servers.omniverse_router_stdio]
+#B command = "C:/Program Files/Python312/python.exe"
+#B args = ["-m", "omniverse_scene_mcp", "serve", "--transport", "stdio"]
+#B startup_timeout_sec = 40
+#B tool_timeout_sec = 120
+#B
+#B [mcp_servers.omniverse_router_stdio.env]
+#B PYTHONPATH = "C:/Users/krngr/Omniverse/omniverse_scene_mcp/src;C:/Users/krngr/Omniverse/bowerbot-venv/Lib/site-packages;C:/Users/krngr/Omniverse/bowerbot-venv/Lib/site-packages/win32;C:/Users/krngr/Omniverse/bowerbot-venv/Lib/site-packages/win32/lib;C:/Users/krngr/Omniverse/bowerbot-venv/Lib/site-packages/pywin32_system32"
+#B OMNIVERSE_ROOT = "C:/Users/krngr/Omniverse"
+#B OMNIVERSE_MCP_PROFILE = "starter,study"
+#B OMNIVERSE_MCP_COMPACT = "1"

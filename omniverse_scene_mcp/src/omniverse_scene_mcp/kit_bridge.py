@@ -14,10 +14,14 @@ from .bridge import (
     BASIC_RPC_METHODS,
     CAPTURE_RPC_METHODS,
     EDIT_RPC_METHODS,
+    HEALTH_RPC_METHODS,
     HOMEWORK_RPC_METHODS,
     INSIGHT_QUERIES,
+    LAYER_RPC_METHODS,
+    LAYOUT_RPC_METHODS,
     LIVE_RPC_METHODS,
     PHYSICS_RPC_METHODS,
+    ROBOT_RPC_METHODS,
     RPC_VERSION,
     SIMULATION_RPC_METHODS,
     PrimRecord,
@@ -56,6 +60,11 @@ else:
 
 # Live insight runs on Kit's main thread and the RPC server stops waiting after 15 s, so keep it bounded.
 LIVE_NOTE = "Read from the LIVE stage in Kit, including unsaved edits; nothing was changed, selected or saved."
+_KIT_LAYER_NOTE = (
+    "This layer change was made with raw USD calls, outside Kit's own layer commands: Kit's Layer window may not show "
+    "it until it refreshes (or the stage is reopened), and Kit's Ctrl+Z does not undo it. Use restore_with (or "
+    "scene_undo_last for a move of opinions) to put it back."
+)
 LIVE_MAX_RESULT_BYTES = 1_000_000
 LIVE_SLOW_MS = 5_000
 LIVE_DEFAULT_MAX_PRIMS = 20_000
@@ -449,6 +458,10 @@ class LiveKitSceneBridge:
             "capture": _module_info("kit_live_extras", CAPTURE_RPC_METHODS),
             "simulation": _module_info("kit_live_extras", SIMULATION_RPC_METHODS),
             "homework": _homework_info(),
+            "layout": _module_info("layout", LAYOUT_RPC_METHODS, dry_run_default=True),
+            "robots": _module_info("robot_inspector", ROBOT_RPC_METHODS),
+            "layers": _module_info("layer_manager", LAYER_RPC_METHODS, dry_run_default=True),
+            "health": _module_info("asset_health", HEALTH_RPC_METHODS),
             "dry_run_default": True,
             "stage_open": self._stage() is not None,
         }
@@ -892,6 +905,221 @@ class LiveKitSceneBridge:
         except Exception as exc:  # noqa: BLE001
             return _module_unavailable("scene_tour", "scene_tour", exc)
         return self._read_only("scene_tour", lambda stage: tour(stage, focus_path=focus_path, depth=depth, max_prims=max_prims))
+
+    # --- RPC tier6-1: smart layout (layout.py; dry run by default, one undoable edit) and the robot inspector ----
+
+    def layout_snap(self, paths: list[str], *, surface: Any = None, dry_run: bool = True) -> dict[str, Any]:
+        """Drop (or lift) prims along the up axis onto the floor, a surface prim or a height; dry run by default."""
+        return self._layout(
+            "layout_snap", ("Snap", " onto a surface"), paths, dry_run,
+            lambda layout, stage: layout.snap_to_surface(stage, paths, surface=surface, dry_run=dry_run),
+        )
+
+    def layout_stack(
+        self,
+        paths: list[str],
+        *,
+        rows: Any = None,
+        anchor: Any = None,
+        gap: float = 0.0,
+        facing: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Stack prims in rows (bottom row first, default 4 3 2 1); dry run by default."""
+        wanted_rows = (4, 3, 2, 1) if rows is None else rows
+        return self._layout(
+            "layout_stack", ("Stack", " in rows"), paths, dry_run,
+            lambda layout, stage: layout.stack_rows(
+                stage, paths, rows=wanted_rows, anchor=anchor, gap=gap, facing=facing, dry_run=dry_run
+            ),
+        )
+
+    def layout_distribute(
+        self, paths: list[str], surface_path: str, *, margin: float | None = None, dry_run: bool = True
+    ) -> dict[str, Any]:
+        """Spread prims evenly along a shelf or table top, resting on it; dry run by default."""
+        return self._layout(
+            "layout_distribute", ("Spread", f" on {surface_path}"), paths, dry_run,
+            lambda layout, stage: layout.distribute_on(stage, paths, surface_path, margin=margin, dry_run=dry_run),
+        )
+
+    def layout_space(
+        self, paths: list[str], *, axis: str = "x", spacing: float | None = None, dry_run: bool = True
+    ) -> dict[str, Any]:
+        """Make the gaps between prims equal along one axis; dry run by default."""
+        return self._layout(
+            "layout_space", ("Space", f" evenly along {axis}"), paths, dry_run,
+            lambda layout, stage: layout.space_evenly(stage, paths, axis=axis, spacing=spacing, dry_run=dry_run),
+        )
+
+    def layout_align(self, paths: list[str], *, axis: str = "x", mode: str = "min", dry_run: bool = True) -> dict[str, Any]:
+        """Line prims up along one axis (min sides, centers or max sides); dry run by default."""
+        return self._layout(
+            "layout_align", ("Align", f" along {axis} ({mode})"), paths, dry_run,
+            lambda layout, stage: layout.align(stage, paths, axis=axis, mode=mode, dry_run=dry_run),
+        )
+
+    def robot_inspect(self, root_path: str | None = None, *, max_prims: int = 5000) -> dict[str, Any]:
+        """Describe the robots (articulations) on the LIVE stage, or under root_path; reads only, never writes."""
+        try:
+            from .robot_inspector import inspect_robot
+        except Exception as exc:  # noqa: BLE001
+            return _module_unavailable("robot_inspect", "robot_inspector", exc)
+        return self._read_only("robot_inspect", lambda stage: inspect_robot(stage, root_path, max_prims=max_prims))
+
+    # --- RPC tier7-1: the layer manager (layer_manager.py) and the read-only asset health check ----------------
+
+    def layer_stack(self) -> dict[str, Any]:
+        """Every layer of the LIVE stage's layer stack, strongest first, plus referenced layers; reads only."""
+        return self._layer_read("layer_stack", lambda manager, stage: manager.layer_stack(stage))
+
+    def layer_where_is(self, prim_path: str, attribute: str | None = None, *, time: Any = None) -> dict[str, Any]:
+        """Which layers of the LIVE stage hold opinions on a prim (or attribute) and which one wins; reads only."""
+        return self._layer_read(
+            "layer_where_is", lambda manager, stage: manager.where_is(stage, prim_path, attribute, time=time)
+        )
+
+    def layer_flatten_preview(self, prim_path: str, *, max_chars: int = 4000) -> dict[str, Any]:
+        """One prim of the LIVE stage with every layer and arc baked in, as capped .usda text; reads only."""
+        if not _is_prim_path(prim_path) or str(prim_path).strip() == "/":
+            raise ValueError("layer_flatten_preview needs one prim path such as '/World/Cube'")
+        return self._layer_read(
+            "layer_flatten_preview",
+            lambda manager, stage: manager.flatten_preview(stage, prim_path, max_chars=max_chars),
+        )
+
+    def layer_add_sublayer(
+        self,
+        layer_path: str,
+        *,
+        position: Any = "strongest",
+        create_if_missing: bool = False,
+        relative: bool = True,
+        allow_outside: bool = False,
+        offset: float = 0.0,
+        scale: float = 1.0,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Plan (dry run, the default) or insert a sublayer into the LIVE stage's root layer."""
+        return self._layer_write(
+            "layer_add_sublayer", dry_run,
+            lambda manager, stage: manager.add_sublayer(
+                stage, layer_path, position=position, create_if_missing=create_if_missing, relative=relative,
+                allow_outside=allow_outside, offset=offset, scale=scale, dry_run=dry_run,
+            ),
+        )
+
+    def layer_remove_sublayer(self, layer: str, *, discard_unsaved_edits: bool = False, dry_run: bool = True) -> dict[str, Any]:
+        """Plan (dry run, the default) or take a sublayer out of its parent's list (the file is never deleted)."""
+        return self._layer_write(
+            "layer_remove_sublayer", dry_run,
+            lambda manager, stage: manager.remove_sublayer(
+                stage, layer, discard_unsaved_edits=discard_unsaved_edits, dry_run=dry_run
+            ),
+        )
+
+    def layer_set_edit_target(self, layer: str, *, dry_run: bool = True) -> dict[str, Any]:
+        """Plan (dry run, the default) or make one layer of the LIVE stage the edit target."""
+        return self._layer_write(
+            "layer_set_edit_target", dry_run,
+            lambda manager, stage: manager.set_edit_target(stage, layer, dry_run=dry_run),
+        )
+
+    def layer_mute(self, layer: str, *, discard_unsaved_edits: bool = False, dry_run: bool = True) -> dict[str, Any]:
+        """Plan (dry run, the default) or mute a layer of the LIVE stage (stage state; unmute brings it back)."""
+        return self._layer_write(
+            "layer_mute", dry_run,
+            lambda manager, stage: manager.mute_layer(
+                stage, layer, discard_unsaved_edits=discard_unsaved_edits, dry_run=dry_run
+            ),
+        )
+
+    def layer_unmute(self, layer: str, *, dry_run: bool = True) -> dict[str, Any]:
+        """Plan (dry run, the default) or unmute a muted layer of the LIVE stage."""
+        return self._layer_write(
+            "layer_unmute", dry_run, lambda manager, stage: manager.unmute_layer(stage, layer, dry_run=dry_run)
+        )
+
+    def layer_move_opinions(
+        self,
+        prim_path: str,
+        src_layer: str,
+        dst_layer: str,
+        *,
+        include_children: bool = True,
+        properties: list[str] | None = None,
+        allow_changes: bool = False,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Plan (dry run, the default) or move a prim's opinions between two local layers; the move goes on the
+        bridge's MCP undo stack (scene_undo_last), not on Kit's Ctrl+Z history."""
+        stack = self._undo_stack if _writes(dry_run) else None
+        result = self._layer_write(
+            "layer_move_opinions", dry_run,
+            lambda manager, stage: manager.move_opinions(
+                stage, prim_path, src_layer, dst_layer, include_children=include_children, properties=properties,
+                allow_changes=allow_changes, undo_stack=stack, dry_run=dry_run,
+            ),
+        )
+        undo_info = result.get("undo") if isinstance(result, dict) else None
+        if isinstance(undo_info, dict) and undo_info.get("recorded"):
+            result["undoable"] = True
+        return result
+
+    def asset_health(self, root_path: str | None = None, *, max_prims: int = 50_000) -> dict[str, Any]:
+        """Health-check the LIVE stage (or the subtree at root_path) for asset problems; reads only, never fixes."""
+        try:
+            from .asset_health import asset_health
+        except Exception as exc:  # noqa: BLE001
+            return _module_unavailable("asset_health", "asset_health", exc)
+        return self._read_only("asset_health", lambda stage: asset_health(stage, root_path=root_path, max_prims=max_prims))
+
+    def _layer_read(self, method: str, run: Callable[[Any, Any], Any]) -> dict[str, Any]:
+        try:
+            from . import layer_manager
+        except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
+            return _module_unavailable(method, "layer_manager", exc)
+        return self._read_only(method, lambda stage: run(layer_manager, stage))
+
+    def _layer_write(self, method: str, dry_run: Any, run: Callable[[Any, Any], Any]) -> dict[str, Any]:
+        """Run one writing layer_manager function on the live stage; it plans first and writes only for dry_run=False.
+
+        These are raw USD calls that bypass Kit's own layer commands, so Kit's Layer window may lag behind and Kit's
+        Ctrl+Z does not undo them: results carry restore_with / undo (the inverse call) and a kit_note saying so.
+        """
+        try:
+            from . import layer_manager
+        except Exception as exc:  # noqa: BLE001
+            return _module_unavailable(method, "layer_manager", exc)
+        stage = self._require_stage()
+        result = run(layer_manager, stage)
+        payload: dict[str, Any] = dict(result) if isinstance(result, dict) else {"ok": True, "result": result}
+        payload.setdefault("mode", "live")
+        payload["kit_note"] = _KIT_LAYER_NOTE
+        if payload.get("applied"):
+            warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else []
+            payload["warnings"] = [*warnings, _KIT_LAYER_NOTE]
+        return _fit_json(payload, LIVE_MAX_RESULT_BYTES)
+
+    def _layout(self, method: str, label: tuple[str, str], paths: Any, dry_run: Any, run: Callable[[Any, Any], Any]) -> dict[str, Any]:
+        """Run one layout function: directly for a dry run, as one undoable edit (prim-only snapshots) when it writes."""
+        try:
+            from . import layout
+        except Exception as exc:  # noqa: BLE001 - ImportError, or an API missing in this USD build
+            return _module_unavailable(method, "layout", exc)
+        stage = self._require_stage()
+        listed = [paths] if isinstance(paths, str) else list(paths) if isinstance(paths, (list, tuple)) else []
+        targets = [path for path in listed if _is_prim_path(path)]
+        text = f"{label[0]} {len(listed)} prim(s){label[1]}"
+        if not _writes(dry_run) or kit_commands is None or self._undo_stack is None or not targets:
+            result = run(layout, stage)
+        else:
+            top_before = self._undo_stack.peek()
+            # Only each prim's own translate op (and xformOpOrder) changes, so prim-only snapshots are enough.
+            result = self._undoable(text, stage, [], lambda: run(layout, stage), shallow=targets)
+            if isinstance(result, dict) and result.get("ok") and self._undo_stack.peek() is not top_before:
+                result = {**result, "undoable": True}
+        return self._authoring_result(result, targets[0] if targets else "", dry_run, select=False)
 
     def _read_only(self, method: str, call: Callable[[Any], dict[str, Any]]) -> dict[str, Any]:
         """Run one read-only pxr function on the live stage and report any layer it dirtied (it never should)."""

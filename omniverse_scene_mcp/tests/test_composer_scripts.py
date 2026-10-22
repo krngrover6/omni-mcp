@@ -296,7 +296,9 @@ def test_reload_self_test_files_exist_in_the_package():
         assert (WORKSPACE / "omniverse_scene_mcp" / "tests" / name).is_file(), name
     assert "test_composer_scripts.py" not in reload["REQUIRED_SELF_TESTS"] + reload["OPTIONAL_SELF_TESTS"]
     assert {"test_kit_live_extras.py", "test_physics.py"} <= set(reload["OPTIONAL_SELF_TESTS"])
-    assert {"test_scene_tour.py", "test_assignments.py"} <= set(reload["OPTIONAL_SELF_TESTS"])
+    assert {"test_scene_tour.py", "test_assignments.py", "test_layout.py", "test_robot_inspector.py"} <= set(
+        reload["OPTIONAL_SELF_TESTS"]
+    )
 
 
 class _StubbornStock(LiveSceneControlServer):
@@ -529,7 +531,8 @@ def test_reload_upgrades_the_stock_server_and_leaves_other_ports_alone():
         assert report["self_tests"]["passed"] == ["test_kit_bridge_usd.py::test_passes", "test_kit_rpc.py::test_passes"]
         assert report["self_tests"]["missing"] == [
             "test_edits.py", "test_undo.py", "test_kit_live_extras.py", "test_physics.py", "test_scene_tour.py",
-            "test_assignments.py",
+            "test_assignments.py", "test_layout.py", "test_robot_inspector.py", "test_layer_manager.py",
+            "test_asset_health.py",
         ]
         assert written["status"] == "reloaded" and written["stopped"] == report["stopped"]
         # Once the guarded bridge serves 9910, the extension's unguarded stock server (moved to 9909) is stopped too;
@@ -584,7 +587,8 @@ def test_reload_needs_both_core_self_tests_and_tolerates_missing_optional_ones()
         report = sandbox.run(reload["reload_bridge"](objects=lambda: [stock], port_in_use=_no_probe, log=sandbox.log))
         assert report["status"] == "reloaded", report
         assert report["self_tests"]["missing"] == [
-            "test_edits.py", "test_kit_live_extras.py", "test_physics.py", "test_scene_tour.py", "test_assignments.py"
+            "test_edits.py", "test_kit_live_extras.py", "test_physics.py", "test_scene_tour.py", "test_assignments.py",
+            "test_layout.py", "test_robot_inspector.py", "test_layer_manager.py", "test_asset_health.py",
         ]
         assert report["self_tests"]["files"]["test_undo.py"]["passed"] == 1
         assert stock.events == ["stop"]

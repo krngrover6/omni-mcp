@@ -176,7 +176,7 @@ def test_round5_tools_are_registered_with_dry_run_defaults_and_honest_descriptio
 
 
 def test_tier4_methods_line_up_across_the_protocol_the_rpc_and_every_bridge():
-    assert RPC_VERSION == "tier5-1"
+    assert RPC_VERSION == "tier7-1"
     assert set(TIER4_RPC_METHODS) == set(ASSET_RPC_METHODS + PHYSICS_RPC_METHODS + CAPTURE_RPC_METHODS
                                          + SIMULATION_RPC_METHODS)
     assert set(TIER4_RPC_METHODS) <= set(LIVE_RPC_METHODS) <= set(kit_rpc._HANDLERS)
@@ -252,7 +252,7 @@ def test_extended_rpc_parses_strictly_and_a_missing_or_malformed_dry_run_is_a_dr
     lacking = server._dispatch({"method": "physics_report", "params": {}})["result"]
     assert lacking["needs_bridge_update"] is True and lacking["method"] == "physics_report"
     info = server._dispatch({"method": "capabilities", "params": {}})["result"]
-    assert info["version"] == "tier5-1" and info["physics_methods"] == list(PHYSICS_RPC_METHODS)
+    assert info["version"] == "tier7-1" and info["physics_methods"] == list(PHYSICS_RPC_METHODS)
     assert info["simulation_methods"] == list(SIMULATION_RPC_METHODS)
 
 
@@ -432,7 +432,7 @@ def test_live_assets_and_physics_preview_byte_identical_then_apply_and_undo():
         original = _layers_text(stage)
         with _server(scene=lambda: SceneMCPService(HttpSceneBridge(ISAAC))) as call, _live(stage) as (bridge, _sel, sent):
             capabilities = call("scene_capabilities")
-            assert capabilities["rpc_version"] == "tier5-1" and capabilities["needs_bridge_update"] is False
+            assert capabilities["rpc_version"] == "tier7-1" and capabilities["needs_bridge_update"] is False
             assert capabilities["assets"]["available"] and capabilities["physics"]["available"]
             assert capabilities["viewport_capture"]["available"] and capabilities["simulation"]["available"]
 
@@ -618,7 +618,7 @@ def test_kit_bridge_dry_runs_default_true_and_never_touch_the_stage():
                 assert result["ok"] is True and result.get("dry_run", True) is True and result["mode"] == "live", result
             assert _layers_text(stage) == original
             info = bridge.capabilities()
-            assert info["version"] == "tier5-1" and info["physics"]["available"] and info["assets"]["available"]
+            assert info["version"] == "tier7-1" and info["physics"]["available"] and info["assets"]["available"]
         service = SceneMCPService(FakeSceneBridge())
         for result in (service.add_physics_scene(), service.make_rigid_body("/World/Props/Cube"),
                        service.make_collider("/World/Props/Cube"), service.remove_physics("/World/Props/Cube")):

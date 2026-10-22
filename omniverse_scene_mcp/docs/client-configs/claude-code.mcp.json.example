@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "omniverse_router": {
+      "type": "http",
+      "url": "http://127.0.0.1:9905/mcp"
+    }
+  }
+}

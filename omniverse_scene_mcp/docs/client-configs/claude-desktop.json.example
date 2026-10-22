@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "omniverse_router": {
+      "command": "C:/Program Files/Python312/python.exe",
+      "args": ["-m", "omniverse_scene_mcp", "serve", "--transport", "stdio"],
+      "env": {
+        "PYTHONPATH": "C:/Users/krngr/Omniverse/omniverse_scene_mcp/src;C:/Users/krngr/Omniverse/bowerbot-venv/Lib/site-packages;C:/Users/krngr/Omniverse/bowerbot-venv/Lib/site-packages/win32;C:/Users/krngr/Omniverse/bowerbot-venv/Lib/site-packages/win32/lib;C:/Users/krngr/Omniverse/bowerbot-venv/Lib/site-packages/pywin32_system32",
+        "OMNIVERSE_ROOT": "C:/Users/krngr/Omniverse",
+        "OMNIVERSE_MCP_PROFILE": "starter,study",
+        "OMNIVERSE_MCP_COMPACT": "1"
+      }
+    }
+  }
+}

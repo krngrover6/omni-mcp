@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 # Version of the extended live RPC (kit_rpc.make_extended_server_class); bump when its methods change.
-RPC_VERSION = "tier5-1"
+RPC_VERSION = "tier7-1"
 # Methods every LiveSceneControlServer (live_scene_control.py) answers, Composer's 9910 bridge included.
 BASIC_RPC_METHODS: tuple[str, ...] = (
     "ping",
@@ -61,6 +61,26 @@ TIER4_RPC_METHODS: tuple[str, ...] = (
 # Added in RPC tier5-1: read-only learning helpers that run on the open stage, the homework check
 # (assignments.check_assignment) and the beginner scene tour (scene_tour.scene_tour). Neither writes anything.
 HOMEWORK_RPC_METHODS: tuple[str, ...] = ("assignment_check", "scene_tour")
+# Added in RPC tier6-1: smart layout (layout.py: snap onto a surface, stack in rows, spread along a shelf, space
+# evenly, align), which moves prims' translations (dry_run=True by default, undoable), and the read-only robot
+# inspector (robot_inspector.inspect_robot), which reads articulations, links and joints under a time budget.
+LAYOUT_RPC_METHODS: tuple[str, ...] = ("layout_snap", "layout_stack", "layout_distribute", "layout_space", "layout_align")
+ROBOT_RPC_METHODS: tuple[str, ...] = ("robot_inspect",)
+# Added in RPC tier7-1: the layer manager (layer_manager.py). The read-only ones (layer stack, which layer sets a
+# value, a flatten preview of one prim) run under the insight time budget; the writing ones (add / remove a sublayer,
+# set the edit target, mute / unmute, move opinions between layers) are dry runs unless dry_run=false. Plus the
+# read-only asset health check (asset_health.asset_health) under the same time budget.
+LAYER_READ_RPC_METHODS: tuple[str, ...] = ("layer_stack", "layer_where_is", "layer_flatten_preview")
+LAYER_WRITE_RPC_METHODS: tuple[str, ...] = (
+    "layer_add_sublayer",
+    "layer_remove_sublayer",
+    "layer_set_edit_target",
+    "layer_mute",
+    "layer_unmute",
+    "layer_move_opinions",
+)
+LAYER_RPC_METHODS: tuple[str, ...] = (*LAYER_READ_RPC_METHODS, *LAYER_WRITE_RPC_METHODS)
+HEALTH_RPC_METHODS: tuple[str, ...] = ("asset_health",)
 # Methods only an extended bridge answers; an older bridge replies "Unsupported live scene method: <name>".
 LIVE_RPC_METHODS: tuple[str, ...] = (
     "capabilities",
@@ -72,6 +92,10 @@ LIVE_RPC_METHODS: tuple[str, ...] = (
     *UNDO_RPC_METHODS,
     *TIER4_RPC_METHODS,
     *HOMEWORK_RPC_METHODS,
+    *LAYOUT_RPC_METHODS,
+    *ROBOT_RPC_METHODS,
+    *LAYER_RPC_METHODS,
+    *HEALTH_RPC_METHODS,
 )
 # Read-only insight queries a live bridge runs on the open stage (usd_insight / usd_validate functions).
 INSIGHT_QUERIES: tuple[str, ...] = ("stage_info", "composition", "explain_value", "properties", "bounds", "validate")
@@ -322,3 +346,75 @@ class LiveSceneBridge(SceneBridge, Protocol):
     def scene_tour(
         self, focus_path: str | None = None, *, depth: int = 3, max_prims: int = 400
     ) -> dict[str, Any]: ...
+
+    # --- RPC tier6-1: smart layout (dry_run=True by default) and the read-only robot inspector -----------------
+
+    def layout_snap(self, paths: list[str], *, surface: str | float | None = None, dry_run: bool = True) -> dict[str, Any]: ...
+
+    def layout_stack(
+        self,
+        paths: list[str],
+        *,
+        rows: list[int] | None = None,
+        anchor: str | tuple[float, ...] | None = None,
+        gap: float = 0.0,
+        facing: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]: ...
+
+    def layout_distribute(
+        self, paths: list[str], surface_path: str, *, margin: float | None = None, dry_run: bool = True
+    ) -> dict[str, Any]: ...
+
+    def layout_space(
+        self, paths: list[str], *, axis: str = "x", spacing: float | None = None, dry_run: bool = True
+    ) -> dict[str, Any]: ...
+
+    def layout_align(self, paths: list[str], *, axis: str = "x", mode: str = "min", dry_run: bool = True) -> dict[str, Any]: ...
+
+    def robot_inspect(self, root_path: str | None = None, *, max_prims: int = 5000) -> dict[str, Any]: ...
+
+    # --- RPC tier7-1: the layer manager (writers: dry_run=True by default) and the read-only asset health check ---
+
+    def layer_stack(self) -> dict[str, Any]: ...
+
+    def layer_where_is(self, prim_path: str, attribute: str | None = None, *, time: Any = None) -> dict[str, Any]: ...
+
+    def layer_flatten_preview(self, prim_path: str, *, max_chars: int = 4000) -> dict[str, Any]: ...
+
+    def layer_add_sublayer(
+        self,
+        layer_path: str,
+        *,
+        position: str | int = "strongest",
+        create_if_missing: bool = False,
+        relative: bool = True,
+        allow_outside: bool = False,
+        offset: float = 0.0,
+        scale: float = 1.0,
+        dry_run: bool = True,
+    ) -> dict[str, Any]: ...
+
+    def layer_remove_sublayer(
+        self, layer: str, *, discard_unsaved_edits: bool = False, dry_run: bool = True
+    ) -> dict[str, Any]: ...
+
+    def layer_set_edit_target(self, layer: str, *, dry_run: bool = True) -> dict[str, Any]: ...
+
+    def layer_mute(self, layer: str, *, discard_unsaved_edits: bool = False, dry_run: bool = True) -> dict[str, Any]: ...
+
+    def layer_unmute(self, layer: str, *, dry_run: bool = True) -> dict[str, Any]: ...
+
+    def layer_move_opinions(
+        self,
+        prim_path: str,
+        src_layer: str,
+        dst_layer: str,
+        *,
+        include_children: bool = True,
+        properties: list[str] | None = None,
+        allow_changes: bool = False,
+        dry_run: bool = True,
+    ) -> dict[str, Any]: ...
+
+    def asset_health(self, root_path: str | None = None, *, max_prims: int = 50_000) -> dict[str, Any]: ...

@@ -348,7 +348,14 @@ def test_smoke_real_isaac_asset_pack():
     started = time.perf_counter()
     lib = AssetLibrary(REAL_PACK)
     found = lib.search("franka", top_k=5)
+    first = time.perf_counter() - started
     assert found["ok"] and found["results"], found
     assert any("franka" in hit["name"].lower() for hit in found["results"])
     assert lib.status()["usd_count"] > 1000
-    assert time.perf_counter() - started < 20
+    # The first search walks thousands of files, so its time depends on disk and load (it took >20 s during parallel
+    # test runs): only a generous ceiling here. The index is built once, so a second search must be much faster.
+    assert first < 120, first
+    again = time.perf_counter()
+    assert lib.search("carter", top_k=5)["ok"]
+    second = time.perf_counter() - again
+    assert second < max(2.0, first / 2), (first, second)

@@ -103,7 +103,7 @@ duplicating the underlying documentation tools.
 
 ## MCP Tools
 
-The server exposes 110 tools; `router_help()` lists all of them grouped by task.
+The server exposes 129 tools; `router_help()` lists all of them grouped by task.
 The main ones (Tier 4 below adds the asset, physics, screenshot, simulation and
 dashboard tools):
 
@@ -481,6 +481,79 @@ isaacsim-mentorship/session02/main.usda", "explain my scene", "describe the
 scene under /World/Shelves", "what did the teacher say about ground plane",
 "what did we learn in session 2", "list class sessions".
 
+### Drills, today's plan, change journal, layout, robots and Docker (Round 7, RPC `tier6-1`)
+
+Seven additions for daily practice and for building the warehouse scene. Read-only unless noted.
+
+Timed drills (`exam/drills.py`; sessions in `drill_sessions.json` beside `progress.json`, memory-only in test mode):
+
+- `learning_drill_focuses()` - the focuses (weak, mistakes, mixed, objective, domain, flash) and limits
+- `learning_drill_start(focus="weak", objective=None, domain=None, count=10, seconds_per_question=45)` - questions
+  without answers; saves only the drill session. Questions of an open mock exam are never used
+- `learning_drill_answer(drill_id, answers, elapsed_s=None)` - grades everything at once and SAVES the answers to
+  exam progress (source `drill`; flash prompts are not saved)
+- `learning_drill_status(drill_id)` - time left, or the saved result
+
+Today and the reminder (`exam/reminder.py`):
+
+- `learning_today(minutes=60)` - "what should I do today?": a time-boxed plan from saved progress (a read-only copy
+  of `progress.json`; nothing is written)
+- `learning_reminder_setup(at="19:00")` - returns the PowerShell text to create and remove a daily Windows reminder;
+  it creates NOTHING (`created: false`)
+
+Change journal (`journal.py`): every APPLIED edit made through the journaled tools (all scene edit tools, undo, save,
+layout and `router_dispatch`) is appended to `<workspace>/scene-journal/change_journal.jsonl` (or
+`$OMNIVERSE_SCENE_MCP_JOURNAL`; memory-only under `OMNIVERSE_SCENE_MCP_TEST`). Previews are never recorded; secrets
+in arguments are dropped; the file rotates at 5 MB. The default folder gets its own `.gitignore` (`*`), so it never
+shows up in git.
+
+- `scene_journal(limit=20, since=None, prim=None, tool=None, target=None)`, `scene_journal_explain(...)` and
+  `scene_journal_summary(day=None)` - entries, plain sentences ("14:02 - You moved /World/Cube from (0, 0, 0) to
+  (1, 2, 3) in Composer. Undo with scene_undo_last (id 7).") and the story of a day
+- `scene_journal_clear(confirm=False)` - empties only the journal, with a backup file; needs `confirm=True`
+
+Smart layout (`layout.py`, pure pxr; only translations change; DRY RUN BY DEFAULT; one undoable edit when applied):
+
+- `scene_layout_snap(paths, surface=None, dry_run=True)` - rest prims on the floor (found automatically), a surface
+  prim or a height
+- `scene_layout_stack(paths, rows=None, anchor=None, gap=0.0, facing=None, dry_run=True)` - rows bottom first
+  (default `[4, 3, 2, 1]`), each row resting on the one below
+- `scene_layout_distribute(paths, surface_path, margin=None, dry_run=True)` - spread along a shelf top
+- `scene_layout_space(paths, axis="x", spacing=None, dry_run=True)` and
+  `scene_layout_align(paths, axis="x", mode="min", dry_run=True)`
+- Live only (new RPC methods `layout_snap`, `layout_stack`, `layout_distribute`, `layout_space`, `layout_align`;
+  a missing or malformed `dry_run` is a dry run; stale requests are dropped like other writes). The fake scene says
+  it is not supported; an older bridge answers `needs_bridge_update` with `how_to_enable`
+
+Robot inspector (`robot_inspector.py`, pure pxr, read-only):
+
+- `robot_inspect(root_path=None, scene_file=None, max_prims=5000)` - articulations, links (mass, colliders), joints
+  in plain words (hinge, slider, fixed) with axes, limits and drives, the chain from the base, degrees of freedom and
+  setup problems with fixes. Live through the new read-only RPC method `robot_inspect` (time-budgeted like insight),
+  or a saved scene / robot asset under the workspace (for example
+  `isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/FrankaRobotics/FrankaPanda/franka.usd`) opened read-only
+
+Docker docs helper (`docker_docs.py`; never pulls, builds, starts or stops anything; key values are never read):
+
+- `docs_docker_status(service="usd", check_endpoint=False)` - read-only `docker version` / `image ls` / `ps`
+- `docs_docker_setup_plan(service="usd")` - the steps YOU would run, each marked when it needs your approval
+- `docs_docker_explain()` - is Docker worth it, compared with the offline docs the router already has
+
+`router_dispatch` phrases (`nl_tier6.py`): "start a drill on weak areas", "drill me on composition", "drill me on
+objective 1.6", "quick flash quiz", "what should I do today" (", i have 30 minutes"), "set up a daily reminder at
+7pm", "what did you change today", "show the change journal", "what did you change on /World/Cube", "stack these 10
+cubes 4 3 2 1" (the selection), "stack /World/Box_01 /World/Box_02 /World/Box_03 in rows 2 1", "snap /World/Box_01
+to the floor", "put boxes evenly on /World/Warehouse/Shelves/UpperShelf", "align /World/A /World/B on x", "inspect
+my robot", "inspect /World/Franka", "is docker worth it", "docker status", "how do I set up docker".
+
+Dry-run policy for sentences: a layout sentence ALWAYS previews (even with exact paths and
+`router_dispatch(dry_run=False)`); the answer lists the moves and the exact `scene_layout_*(..., dry_run=False)`
+call that applies them. Layout moves many prims at once and sentences may name prims by selection or by name, so
+applying is left to the explicit tool call. `router_dispatch(dry_run=True)` never starts a drill. Phrases that
+already had a route keep it ("what did you change" is still the undo history, "drill me on prims" is still a
+lesson, "inspect /World/Props/Cube" still inspects the prim; "inspect /World/<RobotName>" goes to the robot
+inspector only when the last path part is a robot name such as Franka, UR10 or Carter).
+
 ## Testing
 
 Run the whole suite offline (it sets `OMNIVERSE_SCENE_MCP_TEST=1`, refuses
@@ -496,8 +569,9 @@ With pytest installed outside Kit (`pip install -e "omniverse_scene_mcp[usd,test
 never into Kit, Isaac Sim or Composer): `pytest -q omniverse_scene_mcp/tests`.
 The Isaac Sim bridge reload runs `test_kit_bridge_usd.py`, `test_kit_rpc.py`,
 `test_edits.py`, `test_undo.py`, `test_kit_live_extras.py`, `test_physics.py`,
-`test_scene_tour.py` and `test_assignments.py` inside Isaac before it swaps the
-bridge (Composer's reload runs the same optional files when present).
+`test_scene_tour.py`, `test_assignments.py`, `test_layout.py` and
+`test_robot_inspector.py` inside Isaac before it swaps the bridge (Composer's reload runs the same optional files
+when present).
 
 ## Next step
 

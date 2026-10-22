@@ -1,0 +1,306 @@
+{
+  "version": 1,
+  "about": "Project starter templates for project_starter.py. Positions and sizes are in METERS with Z up; the starter converts them to the project's units and up axis. Layers are listed strongest first.",
+  "templates": {
+    "blank": {
+      "title": "Blank project",
+      "app": "USD Composer or Isaac Sim",
+      "description": "An empty, well-organized stage: a root layer, one layout layer and a /World default prim. Start here when no other template fits.",
+      "goal": "Start an empty OpenUSD project with a clean folder layout and a documented layer stack.",
+      "up_axis": "Z",
+      "units": "m",
+      "unit_choices": ["m", "cm", "mm"],
+      "kilograms_per_unit": null,
+      "default_prim": "World",
+      "layers": [
+        {"name": "layout", "owns": "Every prim in the scene and where it sits (transforms, references to assets).",
+         "why": "Only one layer to begin with, so there is nothing to order yet. Add more layers when one concern (looks, lights, physics) grows big enough to edit separately."}
+      ],
+      "layer_order_why": "A single layout layer under the root layer. The root layer stays empty so it works as a table of contents.",
+      "prims": [
+        {"path": "/World", "layer": "layout", "type": "Xform", "kind": "assembly",
+         "doc": "The default prim: everything in the project lives under /World, so referencing this file brings in the whole scene."}
+      ],
+      "controls": ["None yet. Add UI or MCP controls only after the USD capability exists."],
+      "lessons": [
+        "The root layer is a table of contents: it lists sublayers and stage metadata (upAxis, metersPerUnit, defaultPrim) and holds no prims.",
+        "Stage metadata is read from the root layer only, so units and up axis must be authored there."
+      ],
+      "next_steps": [
+        "Add your first prim under /World in layers/layout.usda (Composer: right-click layout.usda in the Layer window > Set Authoring Layer, then Create > Mesh > Cube)."
+      ]
+    },
+    "warehouse": {
+      "title": "Warehouse study scene",
+      "app": "Isaac Sim or USD Composer",
+      "description": "A study warehouse: a floor, a crate to practice moving, a racks group for Isaac warehouse assets, materials, a sky and sun, and an overview camera.",
+      "goal": "Build a small warehouse study scene to practice layout, references, materials and lighting.",
+      "up_axis": "Z",
+      "units": "m",
+      "unit_choices": ["m"],
+      "kilograms_per_unit": null,
+      "default_prim": "World",
+      "layers": [
+        {"name": "layout", "owns": "Floor, racks group, crate and camera: what is in the warehouse and where it sits.",
+         "why": "Strongest of the department layers: placement is what you change most, and if another layer ever authors a transform by mistake, layout still wins."},
+        {"name": "materials", "owns": "Material prims under /World/Looks and the material:binding relationships on geometry.",
+         "why": "Looks only add bindings and shaders; they should never move anything, so they sit below layout."},
+        {"name": "lighting", "owns": "The sky (DomeLight) and sun (DistantLight) under /World/Lights.",
+         "why": "Weakest: lights own their own prims and rarely conflict. Keeping them separate lets you swap a whole lighting setup by replacing one file."}
+      ],
+      "layer_order_why": "Strongest to weakest: layout, materials, lighting. Each layer owns different prims, so order only matters when two layers author the same property. Then the stronger one wins without deleting the weaker opinion. Putting layout on top keeps placement in charge.",
+      "prims": [
+        {"path": "/World", "layer": "layout", "type": "Xform", "kind": "assembly",
+         "doc": "Default prim of the warehouse."},
+        {"path": "/World/Environment", "layer": "layout", "type": "Xform", "kind": "component", "doc": "Floor, walls and other static surroundings (a component model, so its geometry sits inside a model)."},
+        {"path": "/World/Environment/Floor", "layer": "layout", "type": "Mesh", "size_m": 30,
+         "doc": "A 30 m x 30 m floor quad. Replace it with an Isaac warehouse environment reference later."},
+        {"path": "/World/Racks", "layer": "layout", "type": "Xform", "kind": "group",
+         "doc": "Reference Isaac warehouse racks here, for example Isaac/Environments/Simple_Warehouse/Props/."},
+        {"path": "/World/Racks/Crate_01", "layer": "layout", "type": "Xform", "kind": "component", "position_m": [2, 0, 0.5],
+         "doc": "A crate asset to practice selecting, moving and duplicating: move this Xform, not its Geom."},
+        {"path": "/World/Racks/Crate_01/Geom", "layer": "layout", "type": "Cube", "size_m": 1.0, "doc": "The crate's 1 m geometry."},
+        {"path": "/World/Cameras", "layer": "layout", "type": "Xform"},
+        {"path": "/World/Cameras/Overview", "layer": "layout", "type": "Camera", "eye_m": [18, -18, 12], "target_m": [0, 0, 0]},
+        {"path": "/World/Looks", "layer": "materials", "type": "Scope", "doc": "Material library for the scene."},
+        {"path": "/World/Looks/Concrete", "layer": "materials", "type": "Material", "color": [0.45, 0.45, 0.43], "roughness": 0.85},
+        {"path": "/World/Looks/Cardboard", "layer": "materials", "type": "Material", "color": [0.62, 0.45, 0.27], "roughness": 0.7},
+        {"path": "/World/Environment/Floor", "layer": "materials", "bind": "/World/Looks/Concrete"},
+        {"path": "/World/Racks/Crate_01/Geom", "layer": "materials", "bind": "/World/Looks/Cardboard"},
+        {"path": "/World/Lights", "layer": "lighting", "type": "Xform"},
+        {"path": "/World/Lights/Sky", "layer": "lighting", "type": "DomeLight", "intensity": 1000},
+        {"path": "/World/Lights/Sun", "layer": "lighting", "type": "DistantLight", "intensity": 3000, "angle": 1.0, "direction": [-0.4, 0.5, -0.77]}
+      ],
+      "controls": ["Composer/Isaac viewport: select /World/Racks/Crate_01 and move it (W key).", "MCP router: scene_inspect('/World'), then dry-run moves on Crate_01."],
+      "lessons": [
+        "A material binding is a relationship from geometry to a material prim; it lives in materials.usda, not on the mesh's own layer.",
+        "Bindings need MaterialBindingAPI applied on the bound prim; the starter authors both in the same layer."
+      ],
+      "next_steps": [
+        "Reference a rack asset under /World/Racks (Composer: drag a USD file from the Content browser onto /World/Racks with layout.usda as the authoring layer).",
+        "Look through the Overview camera: viewport camera menu > Cameras > Overview."
+      ]
+    },
+    "digital_twin": {
+      "title": "Factory digital twin",
+      "app": "USD Composer or Isaac Sim",
+      "description": "A factory twin: a floor, one production line with a station placeholder, materials, lights, and a live_data layer where a script writes machine status.",
+      "goal": "Build a factory digital twin whose machine status is driven by data written to a separate live-data layer.",
+      "up_axis": "Z",
+      "units": "m",
+      "unit_choices": ["m", "mm"],
+      "kilograms_per_unit": null,
+      "default_prim": "World",
+      "layers": [
+        {"name": "live_data", "owns": "Runtime values from sensors or the MES (twin:status, twin:temperatureC, twin:lastUpdate) as overs on existing machines.",
+         "why": "Strongest: live readings must beat the designed defaults. A script can rewrite or clear this one file without touching the authored factory."},
+        {"name": "layout", "owns": "Floor, lines, stations and cameras: the factory as designed (usually referenced CAD).",
+         "why": "The designed factory. Below live_data so readings override it, above looks and lights so placement stays in charge."},
+        {"name": "materials", "owns": "Materials under /World/Looks and their bindings.",
+         "why": "Looks never move machines, so they sit below layout."},
+        {"name": "lighting", "owns": "Sky and sun under /World/Lights.",
+         "why": "Weakest: lights own separate prims and rarely conflict."}
+      ],
+      "layer_order_why": "Strongest to weakest: live_data, layout, materials, lighting. The data layer is on top because the twin's job is to show the current state: a reading authored there wins over the default value in layout without deleting it, so clearing live_data.usda returns the factory to its designed state.",
+      "prims": [
+        {"path": "/World", "layer": "layout", "type": "Xform", "kind": "assembly", "doc": "Default prim of the factory twin."},
+        {"path": "/World/Environment", "layer": "layout", "type": "Xform", "kind": "component", "doc": "Building shell and floor (a component model)."},
+        {"path": "/World/Environment/Floor", "layer": "layout", "type": "Mesh", "size_m": 40, "doc": "A 40 m x 40 m factory floor."},
+        {"path": "/World/Factory", "layer": "layout", "type": "Xform", "kind": "group", "doc": "Production lines. Reference CAD-converted USD here."},
+        {"path": "/World/Factory/Line_01", "layer": "layout", "type": "Xform", "kind": "group"},
+        {"path": "/World/Factory/Line_01/Station_01", "layer": "layout", "type": "Xform", "kind": "component", "position_m": [0, 0, 0.75],
+         "doc": "Placeholder machine. Replace Geom with a referenced machine asset; keep the twin:* attributes on this prim.",
+         "attrs": [{"name": "twin:status", "type": "string", "value": "unknown"}]},
+        {"path": "/World/Factory/Line_01/Station_01/Geom", "layer": "layout", "type": "Cube", "size_m": 1.5, "doc": "Placeholder 1.5 m machine body."},
+        {"path": "/World/Cameras", "layer": "layout", "type": "Xform"},
+        {"path": "/World/Cameras/Overview", "layer": "layout", "type": "Camera", "eye_m": [25, -25, 18], "target_m": [0, 0, 0]},
+        {"path": "/World/Looks", "layer": "materials", "type": "Scope"},
+        {"path": "/World/Looks/FactoryFloor", "layer": "materials", "type": "Material", "color": [0.35, 0.37, 0.4], "roughness": 0.8},
+        {"path": "/World/Looks/MachinePaint", "layer": "materials", "type": "Material", "color": [0.1, 0.35, 0.65], "roughness": 0.4, "metallic": 0.2},
+        {"path": "/World/Environment/Floor", "layer": "materials", "bind": "/World/Looks/FactoryFloor"},
+        {"path": "/World/Factory/Line_01/Station_01/Geom", "layer": "materials", "bind": "/World/Looks/MachinePaint"},
+        {"path": "/World/Lights", "layer": "lighting", "type": "Xform"},
+        {"path": "/World/Lights/Sky", "layer": "lighting", "type": "DomeLight", "intensity": 1000},
+        {"path": "/World/Lights/Sun", "layer": "lighting", "type": "DistantLight", "intensity": 3000, "angle": 1.0, "direction": [-0.3, 0.4, -0.86]},
+        {"path": "/World/Factory/Line_01/Station_01", "layer": "live_data",
+         "doc": "Live readings. A data script rewrites these values; layout keeps the default.",
+         "attrs": [{"name": "twin:status", "type": "string", "value": "idle"},
+                   {"name": "twin:temperatureC", "type": "float", "value": 20.0},
+                   {"name": "twin:lastUpdate", "type": "string", "value": ""}]}
+      ],
+      "controls": ["A data script that writes twin:* attributes into layers/live_data.usda (not included yet).", "MCP router: read Station_01's twin:status with scene_inspect."],
+      "lessons": [
+        "twin:status is authored twice: 'unknown' in layout.usda and 'idle' in live_data.usda. The composed value is 'idle' because live_data is the stronger sublayer.",
+        "USD never rescales referenced data: a millimeter CAD file referenced into a meter stage needs a 0.001 scale on the referencing prim."
+      ],
+      "next_steps": [
+        "Check the stronger opinion: select Station_01, find twin:status in the Property window and confirm it shows 'idle' (from live_data.usda).",
+        "Reference a CAD-converted machine under /World/Factory/Line_01 and check its metersPerUnit first."
+      ]
+    },
+    "configurator": {
+      "title": "Product configurator",
+      "app": "USD Composer",
+      "description": "A product on a studio floor with a 'color' variant set that switches material bindings, plus materials, lights and a hero camera. Y-up centimeters, like most Composer content.",
+      "goal": "Build a product configurator where variant sets switch the product's look.",
+      "up_axis": "Y",
+      "units": "cm",
+      "unit_choices": ["cm", "m"],
+      "kilograms_per_unit": null,
+      "default_prim": "World",
+      "layers": [
+        {"name": "layout", "owns": "Studio floor, the product prim, its body geometry and the hero camera.",
+         "why": "Strongest department layer: the product's placement and geometry stay in charge."},
+        {"name": "variants", "owns": "The 'color' variant set on /World/Product and its default selection.",
+         "why": "Holds the choices. Each variant binds a material, so it must not be shadowed by a direct binding: a local opinion beats a variant opinion in the same layer stack (LIVRPS: L before V), whichever sublayer it sits in."},
+        {"name": "materials", "owns": "The material library under /World/Looks and the floor's binding.",
+         "why": "Defines the materials the variants point at. It deliberately does not bind the product body; the variants do that."},
+        {"name": "lighting", "owns": "Studio sky and key light under /World/Lights.",
+         "why": "Weakest: lights own separate prims and rarely conflict."}
+      ],
+      "layer_order_why": "Strongest to weakest: layout, variants, materials, lighting. Because a local opinion beats a variant opinion even from a weaker sublayer, no layer binds the product body directly; only the variants do. A configurator UI changes the look by writing a new variant selection to the root layer (or the session layer), which is stronger than variants.usda.",
+      "prims": [
+        {"path": "/World", "layer": "layout", "type": "Xform", "kind": "assembly", "doc": "Default prim of the configurator stage."},
+        {"path": "/World/Environment", "layer": "layout", "type": "Xform", "kind": "component"},
+        {"path": "/World/Environment/Floor", "layer": "layout", "type": "Mesh", "size_m": 6, "doc": "A 6 m x 6 m studio floor."},
+        {"path": "/World/Product", "layer": "layout", "type": "Xform", "kind": "component",
+         "doc": "The configurable product. Replace Body with a reference to your product asset; keep the variant set on this prim."},
+        {"path": "/World/Product/Body", "layer": "layout", "type": "Cube", "size_m": 0.5, "position_m": [0, 0, 0.25], "doc": "Placeholder body (50 cm cube)."},
+        {"path": "/World/Cameras", "layer": "layout", "type": "Xform"},
+        {"path": "/World/Cameras/Hero", "layer": "layout", "type": "Camera", "eye_m": [1.6, -1.6, 1.1], "target_m": [0, 0, 0.25]},
+        {"path": "/World/Product", "layer": "variants",
+         "variant_set": {"name": "color", "default": "red", "target": "Body",
+                          "variants": {"red": "/World/Looks/Red", "blue": "/World/Looks/Blue", "silver": "/World/Looks/Silver"}}},
+        {"path": "/World/Looks", "layer": "materials", "type": "Scope"},
+        {"path": "/World/Looks/Red", "layer": "materials", "type": "Material", "color": [0.7, 0.05, 0.05], "roughness": 0.35},
+        {"path": "/World/Looks/Blue", "layer": "materials", "type": "Material", "color": [0.05, 0.2, 0.7], "roughness": 0.35},
+        {"path": "/World/Looks/Silver", "layer": "materials", "type": "Material", "color": [0.8, 0.8, 0.82], "roughness": 0.2, "metallic": 1.0},
+        {"path": "/World/Looks/StudioFloor", "layer": "materials", "type": "Material", "color": [0.85, 0.85, 0.85], "roughness": 0.6},
+        {"path": "/World/Environment/Floor", "layer": "materials", "bind": "/World/Looks/StudioFloor"},
+        {"path": "/World/Lights", "layer": "lighting", "type": "Xform"},
+        {"path": "/World/Lights/Sky", "layer": "lighting", "type": "DomeLight", "intensity": 800},
+        {"path": "/World/Lights/Key", "layer": "lighting", "type": "DistantLight", "intensity": 2500, "angle": 2.0, "direction": [-0.5, 0.4, -0.77]}
+      ],
+      "controls": ["Composer Property window: select /World/Product and change the 'color' variant (red, blue, silver).", "Later: a DataTable or omni.ui panel that writes the variant selection."],
+      "lessons": [
+        "LIVRPS: local opinions (L) beat variant opinions (V) inside one layer stack, so a direct material:binding on Body in any sublayer would hide every color variant.",
+        "Switching a variant writes one variant-selection opinion; Composer writes it to the current authoring layer."
+      ],
+      "next_steps": [
+        "Select /World/Product and switch the color variant in the Property window; watch Body change material.",
+        "Add a second variant set (for example 'size') on /World/Product in layers/variants.usda."
+      ]
+    },
+    "robot_cell": {
+      "title": "Isaac Sim robot cell",
+      "app": "Isaac Sim",
+      "description": "A physics-ready robot cell for Isaac Sim: Z-up meters, kilograms, a PhysicsScene with gravity, a colliding ground plane, a rigid workpiece and a /World/Robot slot for a robot asset.",
+      "goal": "Build a robot work cell in Isaac Sim with physics: a robot, a workpiece and a ground to simulate against.",
+      "up_axis": "Z",
+      "units": "m",
+      "unit_choices": ["m"],
+      "kilograms_per_unit": 1.0,
+      "default_prim": "World",
+      "layers": [
+        {"name": "layout", "owns": "Ground plane, robot slot, workcell props and cameras.",
+         "why": "Strongest department layer: where the robot and props sit must win over anything else."},
+        {"name": "materials", "owns": "Materials under /World/Looks and their bindings.",
+         "why": "Looks never move things, so they sit below layout."},
+        {"name": "lighting", "owns": "Sky and sun under /World/Lights.",
+         "why": "Lights own separate prims and rarely conflict."},
+        {"name": "physics", "owns": "The PhysicsScene (gravity) and the physics APIs (collision, rigid body, mass) applied to existing prims.",
+         "why": "Weakest: physics only adds behavior on top of prims defined elsewhere. Keeping it in one file lets you turn simulation off by muting a single layer."}
+      ],
+      "layer_order_why": "Strongest to weakest: layout, materials, lighting, physics. Physics is last because it only applies APIs and simulation settings to prims that layout defines; it should never decide where something is. API schemas from different layers combine (they are list edits), so the ground gets its collision API from physics.usda while its geometry stays in layout.usda.",
+      "prims": [
+        {"path": "/World", "layer": "layout", "type": "Xform", "kind": "assembly", "doc": "Default prim of the robot cell."},
+        {"path": "/World/Environment", "layer": "layout", "type": "Xform", "kind": "component"},
+        {"path": "/World/Environment/GroundPlane", "layer": "layout", "type": "Mesh", "size_m": 10, "doc": "A 10 m x 10 m ground; physics.usda makes it collide."},
+        {"path": "/World/Robot", "layer": "layout", "type": "Xform",
+         "doc": "Reference a robot here, for example Isaac/Robots/FrankaRobotics/FrankaPanda/franka.usd from the Isaac assets."},
+        {"path": "/World/Workcell", "layer": "layout", "type": "Xform", "kind": "group"},
+        {"path": "/World/Workcell/Workpiece", "layer": "layout", "type": "Xform", "kind": "component", "position_m": [0.5, 0, 0.05],
+         "doc": "A 10 cm workpiece resting on the ground, ready to pick. physics.usda makes this Xform the rigid body."},
+        {"path": "/World/Workcell/Workpiece/Geom", "layer": "layout", "type": "Cube", "size_m": 0.1, "doc": "The workpiece's collision and render shape."},
+        {"path": "/World/Cameras", "layer": "layout", "type": "Xform"},
+        {"path": "/World/Cameras/Overview", "layer": "layout", "type": "Camera", "eye_m": [3, -3, 2.2], "target_m": [0.3, 0, 0.3]},
+        {"path": "/World/Looks", "layer": "materials", "type": "Scope"},
+        {"path": "/World/Looks/Ground", "layer": "materials", "type": "Material", "color": [0.3, 0.3, 0.3], "roughness": 0.9},
+        {"path": "/World/Looks/Workpiece", "layer": "materials", "type": "Material", "color": [0.9, 0.55, 0.1], "roughness": 0.5},
+        {"path": "/World/Environment/GroundPlane", "layer": "materials", "bind": "/World/Looks/Ground"},
+        {"path": "/World/Workcell/Workpiece/Geom", "layer": "materials", "bind": "/World/Looks/Workpiece"},
+        {"path": "/World/Lights", "layer": "lighting", "type": "Xform"},
+        {"path": "/World/Lights/Sky", "layer": "lighting", "type": "DomeLight", "intensity": 1000},
+        {"path": "/World/Lights/Sun", "layer": "lighting", "type": "DistantLight", "intensity": 3000, "angle": 1.0, "direction": [-0.4, 0.5, -0.77]},
+        {"path": "/World/PhysicsScene", "layer": "physics", "type": "PhysicsScene", "doc": "Gravity for the whole stage, in stage units per second squared."},
+        {"path": "/World/Environment/GroundPlane", "layer": "physics", "apis": ["PhysicsCollisionAPI"]},
+        {"path": "/World/Workcell/Workpiece", "layer": "physics", "apis": ["PhysicsRigidBodyAPI", "PhysicsMassAPI"],
+         "attrs": [{"name": "physics:mass", "type": "float", "value": 0.5}]},
+        {"path": "/World/Workcell/Workpiece/Geom", "layer": "physics", "apis": ["PhysicsCollisionAPI"]}
+      ],
+      "controls": ["Isaac Sim: press Play; the workpiece should stay on the ground (it has collision).", "MCP router: physics tools and dry-run moves on /World/Workcell/Workpiece."],
+      "lessons": [
+        "Gravity magnitude is in stage units per second squared: 9.81 in a meter stage, 981 in a centimeter stage.",
+        "kilogramsPerUnit is stage metadata like metersPerUnit; physics:mass is read in those units."
+      ],
+      "next_steps": [
+        "Press Play in Isaac Sim and confirm the workpiece rests on the ground; press Stop to reset.",
+        "Reference a robot under /World/Robot with layout.usda as the authoring layer (Isaac: Create > Robots, or drag from the Isaac Assets browser)."
+      ]
+    },
+    "synthetic_data": {
+      "title": "Synthetic data generation",
+      "app": "Isaac Sim (Replicator)",
+      "description": "A synthetic-data scene for Isaac Sim Replicator: a floor, a labeled target prop, an SDG camera, lights and a randomization layer where randomizers write their overrides.",
+      "goal": "Generate labeled synthetic images of a target object with Isaac Sim Replicator.",
+      "up_axis": "Z",
+      "units": "m",
+      "unit_choices": ["m"],
+      "kilograms_per_unit": null,
+      "default_prim": "World",
+      "layers": [
+        {"name": "randomization", "owns": "Overrides written by randomizer scripts (poses, colors, light intensity) for the current frame.",
+         "why": "Strongest: randomized values must win over the designed scene, and emptying this one file restores the clean scene."},
+        {"name": "layout", "owns": "Floor, props with their semantic labels, and the SDG camera.",
+         "why": "The designed scene the randomizers start from."},
+        {"name": "materials", "owns": "Materials under /World/Looks and their bindings.",
+         "why": "Base looks; randomizers override them from the stronger randomization layer."},
+        {"name": "lighting", "owns": "Sky and sun under /World/Lights.",
+         "why": "Weakest: base lighting that randomizers may override."}
+      ],
+      "layer_order_why": "Strongest to weakest: randomization, layout, materials, lighting. Randomizers write per-frame overrides into the top layer, so they win without editing the designed scene; clearing randomization.usda returns the scene to its starting state.",
+      "prims": [
+        {"path": "/World", "layer": "layout", "type": "Xform", "kind": "assembly", "doc": "Default prim of the SDG scene."},
+        {"path": "/World/Environment", "layer": "layout", "type": "Xform", "kind": "component"},
+        {"path": "/World/Environment/Floor", "layer": "layout", "type": "Mesh", "size_m": 8, "doc": "An 8 m x 8 m floor."},
+        {"path": "/World/Props", "layer": "layout", "type": "Xform", "kind": "group", "doc": "Objects the randomizers move and recolor."},
+        {"path": "/World/Props/Target", "layer": "layout", "type": "Xform", "kind": "component", "position_m": [0, 0, 0.15],
+         "doc": "The labeled object to detect. Replace Geom with a reference to your real asset; keep the label on this prim.",
+         "apis": ["SemanticsLabelsAPI:class"],
+         "attrs": [{"name": "semantics:labels:class", "type": "token[]", "value": ["target"]}]},
+        {"path": "/World/Props/Target/Geom", "layer": "layout", "type": "Cube", "size_m": 0.3, "doc": "Placeholder 30 cm shape."},
+        {"path": "/World/Cameras", "layer": "layout", "type": "Xform"},
+        {"path": "/World/Cameras/SDG_Camera", "layer": "layout", "type": "Camera", "eye_m": [1.5, -1.5, 1.2], "target_m": [0, 0, 0.15]},
+        {"path": "/World/Looks", "layer": "materials", "type": "Scope"},
+        {"path": "/World/Looks/Floor", "layer": "materials", "type": "Material", "color": [0.5, 0.5, 0.5], "roughness": 0.8},
+        {"path": "/World/Looks/Target", "layer": "materials", "type": "Material", "color": [0.1, 0.6, 0.3], "roughness": 0.5},
+        {"path": "/World/Environment/Floor", "layer": "materials", "bind": "/World/Looks/Floor"},
+        {"path": "/World/Props/Target/Geom", "layer": "materials", "bind": "/World/Looks/Target"},
+        {"path": "/World/Lights", "layer": "lighting", "type": "Xform"},
+        {"path": "/World/Lights/Sky", "layer": "lighting", "type": "DomeLight", "intensity": 1000},
+        {"path": "/World/Lights/Sun", "layer": "lighting", "type": "DistantLight", "intensity": 3000, "angle": 1.0, "direction": [-0.4, 0.5, -0.77]},
+        {"path": "/World/Props", "layer": "randomization",
+         "doc": "Empty on purpose: randomizer scripts author per-frame overrides under here."}
+      ],
+      "controls": ["Isaac Sim Replicator script (to be written in scripts/) that randomizes /World/Props and writes to renders/.", "Semantic label: semantics:labels:class on /World/Props/Target."],
+      "lessons": [
+        "Semantic labels are data on the prim (SemanticsLabelsAPI:class with semantics:labels:class); annotators read them to produce bounding boxes and segmentation.",
+        "Render outputs are generated files: keep them in renders/ and out of git."
+      ],
+      "next_steps": [
+        "Look through the SDG camera: viewport camera menu > Cameras > SDG_Camera.",
+        "Write a Replicator script in scripts/ that randomizes /World/Props/Target and writes images to renders/ (Isaac Sim: Window > Script Editor)."
+      ]
+    }
+  }
+}

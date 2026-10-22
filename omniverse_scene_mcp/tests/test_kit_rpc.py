@@ -143,7 +143,7 @@ def test_extended_class_subclasses_the_given_base():
     cls = kit_rpc.make_extended_server_class(_FakeBaseServer)
     assert issubclass(cls, _FakeBaseServer)
     assert cls.__name__ == "Extended_FakeBaseServer"
-    assert cls.rpc_version == RPC_VERSION == "tier5-1"
+    assert cls.rpc_version == RPC_VERSION == "tier7-1"
     assert set(cls.rpc_methods) == set(BASIC_RPC_METHODS) | set(LIVE_RPC_METHODS)
     _raises(lambda: kit_rpc.make_extended_server_class(object()), "_dispatch", error=TypeError)
     _raises(lambda: kit_rpc.make_extended_server_class(int), "_dispatch", error=TypeError)
@@ -154,7 +154,7 @@ def test_capabilities_reports_version_methods_and_queries():
     response = _call(server, "capabilities")
     assert response["ok"] is True
     result = response["result"]
-    assert result["version"] == "tier5-1"
+    assert result["version"] == "tier7-1"
     assert set(result["methods"]) == set(BASIC_RPC_METHODS) | set(LIVE_RPC_METHODS)
     assert result["insight_queries"] == list(INSIGHT_QUERIES)
     assert result["dry_run_default"] is True
@@ -625,12 +625,12 @@ class _RecordingEditBridge(_RecordingBridge):
 
 
 def test_edit_and_undo_methods_are_published_in_the_tier3_capabilities():
-    assert RPC_VERSION == "tier5-1"
+    assert RPC_VERSION == "tier7-1"
     assert set(EDIT_RPC_METHODS) | set(UNDO_RPC_METHODS) <= set(LIVE_RPC_METHODS)
     assert not (set(EDIT_RPC_METHODS) | set(UNDO_RPC_METHODS)) & set(BASIC_RPC_METHODS)
     assert set(LIVE_RPC_METHODS) <= set(kit_rpc._HANDLERS)
     result = _call(_server(_RecordingEditBridge()), "capabilities")["result"]
-    assert result["version"] == "tier5-1" and result["dry_run_default"] is True
+    assert result["version"] == "tier7-1" and result["dry_run_default"] is True
     assert result["edit_methods"] == list(EDIT_RPC_METHODS) and result["undo_methods"] == list(UNDO_RPC_METHODS)
     assert set(EDIT_RPC_METHODS) | set(UNDO_RPC_METHODS) <= set(result["methods"])
     # Every write is dropped when it waited too long in Kit's queue; undo_history only reads.

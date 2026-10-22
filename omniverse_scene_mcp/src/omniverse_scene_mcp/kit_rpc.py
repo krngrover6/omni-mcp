@@ -8,7 +8,12 @@ dry_run=false; for the tier3-1 edit and undo methods and the tier4-1 add_referen
 malformed dry_run is also a dry run. The tier4-1 viewport capture and simulation methods have no dry_run: capture only
 reads the viewport (it writes a new PNG), and simulation play/pause/stop/step change simulation state, not authored
 scene data. The tier5-1 homework methods (assignment_check, scene_tour) only read the open stage, under the same
-cooperative time budget as insight.
+cooperative time budget as insight. The tier6-1 layout methods (layout_snap, layout_stack, layout_distribute,
+layout_space, layout_align) move prim translations and, like the edit methods, treat a missing or malformed dry_run
+as a dry run; the tier6-1 robot_inspect method only reads, under the insight time budget. The tier7-1 layer methods
+split the same way: layer_stack, layer_where_is and layer_flatten_preview (one prim only) and asset_health read under
+the insight time budget; layer_add_sublayer, layer_remove_sublayer, layer_set_edit_target, layer_mute, layer_unmute
+and layer_move_opinions are dry runs unless dry_run is false.
 
 The extended server's HTTP handler is wrapped by guard_handler_class (localhost CSRF / DNS-rebinding guard): browser
 requests (an Origin or Sec-Fetch-* header), POSTs whose Content-Type is not application/json, requests whose Host is
@@ -31,10 +36,15 @@ from .bridge import (
     BASIC_RPC_METHODS,
     CAPTURE_RPC_METHODS,
     EDIT_RPC_METHODS,
+    HEALTH_RPC_METHODS,
     HOMEWORK_RPC_METHODS,
     INSIGHT_QUERIES,
+    LAYER_READ_RPC_METHODS,
+    LAYER_WRITE_RPC_METHODS,
+    LAYOUT_RPC_METHODS,
     LIVE_RPC_METHODS,
     PHYSICS_RPC_METHODS,
+    ROBOT_RPC_METHODS,
     RPC_VERSION,
     SIMULATION_RPC_METHODS,
     UNDO_RPC_METHODS,
@@ -66,6 +76,8 @@ _WRITE_METHODS = (
     "simulation_pause",
     "simulation_stop",
     "simulation_step",
+    *LAYOUT_RPC_METHODS,
+    *LAYER_WRITE_RPC_METHODS,
 )
 _MAX_CAPTURE_SIDE = 16384
 _STALE_AFTER_S = 10.0
@@ -77,11 +89,25 @@ INSIGHT_MAX_BUDGET_MS = 10000.0
 _CALLER_WAIT_S = 15.0
 _RESULT_MARGIN_S = 2.0
 _MIN_BUDGET_MS = 1.0
-# Read-only methods that get the queue-aware time budget (see _dispatch): insight and the tier5-1 homework methods.
-_BUDGETED_METHODS = ("insight", *HOMEWORK_RPC_METHODS)
+# Read-only methods that get the queue-aware time budget (see _dispatch): insight, the tier5-1 homework methods,
+# the tier6-1 robot inspector and the tier7-1 read-only layer methods and asset health check.
+_BUDGETED_METHODS = ("insight", *HOMEWORK_RPC_METHODS, *ROBOT_RPC_METHODS, *LAYER_READ_RPC_METHODS, *HEALTH_RPC_METHODS)
 _TOUR_MAX_DEPTH = 50
 _TOUR_MAX_PRIMS = 20_000
 _DEFAULT_ASSIGNMENT = "isaac_session02_warehouse"
+# tier6-1 limits: prims per layout call (layout.MAX_PRIMS), stack rows (layout.MAX_ROWS), robot-inspector prims.
+_LAYOUT_MAX_PATHS = 500
+_LAYOUT_MAX_ROWS = 200
+_ROBOT_MAX_PRIMS = 50_000
+_ROBOT_DEFAULT_PRIMS = 5000
+# tier7-1 limits: flatten preview text (layer_manager.MAX_FLATTEN_CHARS), sublayer list index, property names per
+# move (layer_manager.MAX_PROPERTY_NAMES) and asset-health prims.
+_FLATTEN_MIN_CHARS = 200
+_FLATTEN_MAX_CHARS = 20_000
+_SUBLAYER_MAX_INDEX = 10_000
+_MOVE_MAX_PROPERTIES = 500
+_HEALTH_MAX_PRIMS = 200_000
+_HEALTH_DEFAULT_PRIMS = 50_000
 
 Handler = Callable[[Any, dict[str, Any]], dict[str, Any]]
 
@@ -260,6 +286,11 @@ def _capabilities(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
             "capture_methods": list(CAPTURE_RPC_METHODS),
             "simulation_methods": list(SIMULATION_RPC_METHODS),
             "homework_methods": list(HOMEWORK_RPC_METHODS),
+            "layout_methods": list(LAYOUT_RPC_METHODS),
+            "robot_methods": list(ROBOT_RPC_METHODS),
+            "layer_read_methods": list(LAYER_READ_RPC_METHODS),
+            "layer_write_methods": list(LAYER_WRITE_RPC_METHODS),
+            "health_methods": list(HEALTH_RPC_METHODS),
             "dry_run_default": True,
         }
     )
@@ -686,6 +717,241 @@ def _simulation_step(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
     return step(1 if frames is None else frames)
 
 
+# --- RPC tier6-1: smart layout (dry run unless dry_run is false) and the read-only robot inspector -----------
+
+
+def _layout_snap(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("layout_snap", params, ("paths", "surface", "dry_run"))
+    author = getattr(bridge, "layout_snap", None)
+    if not callable(author):
+        return _bridge_lacks("layout_snap", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    result = author(_paths(params, "paths"), surface=_surface(params, "surface"), dry_run=dry_run)
+    return _with_warning(result, warning)
+
+
+def _layout_stack(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("layout_stack", params, ("paths", "rows", "anchor", "gap", "facing", "dry_run"))
+    author = getattr(bridge, "layout_stack", None)
+    if not callable(author):
+        return _bridge_lacks("layout_stack", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    gap = _number(params, "gap")
+    result = author(
+        _paths(params, "paths"),
+        rows=_rows(params, "rows"),
+        anchor=_target(params, "anchor"),
+        gap=0.0 if gap is None else gap,
+        facing=_word(params, "facing"),
+        dry_run=dry_run,
+    )
+    return _with_warning(result, warning)
+
+
+def _layout_distribute(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("layout_distribute", params, ("paths", "surface_path", "margin", "dry_run"))
+    author = getattr(bridge, "layout_distribute", None)
+    if not callable(author):
+        return _bridge_lacks("layout_distribute", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    result = author(
+        _paths(params, "paths"), _path(params, "surface_path"), margin=_number(params, "margin"), dry_run=dry_run
+    )
+    return _with_warning(result, warning)
+
+
+def _layout_space(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("layout_space", params, ("paths", "axis", "spacing", "dry_run"))
+    author = getattr(bridge, "layout_space", None)
+    if not callable(author):
+        return _bridge_lacks("layout_space", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    result = author(
+        _paths(params, "paths"),
+        axis=_word(params, "axis") or "x",
+        spacing=_number(params, "spacing"),
+        dry_run=dry_run,
+    )
+    return _with_warning(result, warning)
+
+
+def _layout_align(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("layout_align", params, ("paths", "axis", "mode", "dry_run"))
+    author = getattr(bridge, "layout_align", None)
+    if not callable(author):
+        return _bridge_lacks("layout_align", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    result = author(
+        _paths(params, "paths"),
+        axis=_word(params, "axis") or "x",
+        mode=_word(params, "mode") or "min",
+        dry_run=dry_run,
+    )
+    return _with_warning(result, warning)
+
+
+def _robot_inspect(bridge: Any, params: dict[str, Any], queued_at: Any = None) -> dict[str, Any]:
+    """Describe the robots (articulations) on the open stage (robot_inspector.inspect_robot); never writes anything."""
+    _check_params("robot_inspect", params, ("root_path", "max_prims", "budget_ms"))
+    runner = getattr(bridge, "robot_inspect", None)
+    if not callable(runner):
+        return _bridge_lacks("robot_inspect", bridge)
+    root_path = _path(params, "root_path", required=False)
+    max_prims = _whole(params, "max_prims", 1, _ROBOT_MAX_PRIMS)
+    return _run_budgeted(
+        lambda: runner(root_path, max_prims=_ROBOT_DEFAULT_PRIMS if max_prims is None else max_prims),
+        _budget_ms(params.get("budget_ms")),
+        queued_at,
+    )
+
+
+# --- RPC tier7-1: the layer manager (writers are dry runs unless dry_run is false) and the asset health check -----
+
+
+def _layer_stack(bridge: Any, params: dict[str, Any], queued_at: Any = None) -> dict[str, Any]:
+    """Every layer of the open stage's layer stack, strongest first (layer_manager.layer_stack); reads only."""
+    _check_params("layer_stack", params, ("budget_ms",))
+    runner = getattr(bridge, "layer_stack", None)
+    if not callable(runner):
+        return _bridge_lacks("layer_stack", bridge)
+    return _run_budgeted(runner, _budget_ms(params.get("budget_ms")), queued_at)
+
+
+def _layer_where_is(bridge: Any, params: dict[str, Any], queued_at: Any = None) -> dict[str, Any]:
+    """Which layers hold opinions on a prim or attribute, and which wins (layer_manager.where_is); reads only."""
+    _check_params("layer_where_is", params, ("prim_path", "attribute", "time", "budget_ms"))
+    runner = getattr(bridge, "layer_where_is", None)
+    if not callable(runner):
+        return _bridge_lacks("layer_where_is", bridge)
+    prim_path = _path(params, "prim_path")
+    attribute = _name(params, "attribute") if params.get("attribute") is not None else None
+    time_value = params.get("time")
+    if not (isinstance(time_value, str) and time_value.strip().lower() in ("default", "earliest")):
+        time_value = _number(params, "time")
+    return _run_budgeted(
+        lambda: runner(prim_path, attribute, time=time_value), _budget_ms(params.get("budget_ms")), queued_at
+    )
+
+
+def _layer_flatten_preview(bridge: Any, params: dict[str, Any], queued_at: Any = None) -> dict[str, Any]:
+    """A capped .usda preview of ONE prim with every layer and arc baked in; prim_path is required over RPC."""
+    _check_params("layer_flatten_preview", params, ("prim_path", "max_chars", "budget_ms"))
+    runner = getattr(bridge, "layer_flatten_preview", None)
+    if not callable(runner):
+        return _bridge_lacks("layer_flatten_preview", bridge)
+    prim_path = _path(params, "prim_path")
+    if not prim_path.startswith("/") or prim_path == "/":
+        raise ValueError("'prim_path' must name one prim such as '/World/Cube' (the whole stage is too big over RPC)")
+    max_chars = _whole(params, "max_chars", _FLATTEN_MIN_CHARS, _FLATTEN_MAX_CHARS)
+    return _run_budgeted(
+        lambda: runner(prim_path, max_chars=4000 if max_chars is None else max_chars),
+        _budget_ms(params.get("budget_ms")),
+        queued_at,
+    )
+
+
+def _layer_add_sublayer(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params(
+        "layer_add_sublayer", params,
+        ("layer_path", "position", "create_if_missing", "relative", "allow_outside", "offset", "scale", "dry_run"),
+    )
+    author = getattr(bridge, "layer_add_sublayer", None)
+    if not callable(author):
+        return _bridge_lacks("layer_add_sublayer", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    offset = _number(params, "offset")
+    scale = _number(params, "scale")
+    result = author(
+        _file_path(params, "layer_path"),
+        position=_position(params, "position"),
+        create_if_missing=_flag(params, "create_if_missing", False),
+        relative=_flag(params, "relative", True),
+        allow_outside=_flag(params, "allow_outside", False),
+        offset=0.0 if offset is None else offset,
+        scale=1.0 if scale is None else scale,
+        dry_run=dry_run,
+    )
+    return _with_warning(result, warning)
+
+
+def _layer_remove_sublayer(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("layer_remove_sublayer", params, ("layer", "discard_unsaved_edits", "dry_run"))
+    author = getattr(bridge, "layer_remove_sublayer", None)
+    if not callable(author):
+        return _bridge_lacks("layer_remove_sublayer", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    result = author(
+        _file_path(params, "layer"), discard_unsaved_edits=_flag(params, "discard_unsaved_edits", False), dry_run=dry_run
+    )
+    return _with_warning(result, warning)
+
+
+def _layer_set_edit_target(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("layer_set_edit_target", params, ("layer", "dry_run"))
+    author = getattr(bridge, "layer_set_edit_target", None)
+    if not callable(author):
+        return _bridge_lacks("layer_set_edit_target", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    return _with_warning(author(_file_path(params, "layer"), dry_run=dry_run), warning)
+
+
+def _layer_mute(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("layer_mute", params, ("layer", "discard_unsaved_edits", "dry_run"))
+    author = getattr(bridge, "layer_mute", None)
+    if not callable(author):
+        return _bridge_lacks("layer_mute", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    result = author(
+        _file_path(params, "layer"), discard_unsaved_edits=_flag(params, "discard_unsaved_edits", False), dry_run=dry_run
+    )
+    return _with_warning(result, warning)
+
+
+def _layer_unmute(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params("layer_unmute", params, ("layer", "dry_run"))
+    author = getattr(bridge, "layer_unmute", None)
+    if not callable(author):
+        return _bridge_lacks("layer_unmute", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    return _with_warning(author(_file_path(params, "layer"), dry_run=dry_run), warning)
+
+
+def _layer_move_opinions(bridge: Any, params: dict[str, Any]) -> dict[str, Any]:
+    _check_params(
+        "layer_move_opinions", params,
+        ("prim_path", "src_layer", "dst_layer", "include_children", "properties", "allow_changes", "dry_run"),
+    )
+    author = getattr(bridge, "layer_move_opinions", None)
+    if not callable(author):
+        return _bridge_lacks("layer_move_opinions", bridge)
+    dry_run, warning = _dry_run_flag(params)
+    result = author(
+        _path(params, "prim_path"),
+        _file_path(params, "src_layer"),
+        _file_path(params, "dst_layer"),
+        include_children=_flag(params, "include_children", True),
+        properties=_property_names(params, "properties"),
+        allow_changes=_flag(params, "allow_changes", False),
+        dry_run=dry_run,
+    )
+    return _with_warning(result, warning)
+
+
+def _asset_health(bridge: Any, params: dict[str, Any], queued_at: Any = None) -> dict[str, Any]:
+    """Health-check the open stage, or one subtree (asset_health.asset_health); never writes anything."""
+    _check_params("asset_health", params, ("root_path", "max_prims", "budget_ms"))
+    runner = getattr(bridge, "asset_health", None)
+    if not callable(runner):
+        return _bridge_lacks("asset_health", bridge)
+    root_path = _path(params, "root_path", required=False)
+    max_prims = _whole(params, "max_prims", 1, _HEALTH_MAX_PRIMS)
+    return _run_budgeted(
+        lambda: runner(root_path, max_prims=_HEALTH_DEFAULT_PRIMS if max_prims is None else max_prims),
+        _budget_ms(params.get("budget_ms")),
+        queued_at,
+    )
+
+
 # Fixed method table: the only names the extended server adds. Lookups never touch attributes named by callers.
 _HANDLERS: dict[str, Handler] = {
     "capabilities": _capabilities,
@@ -713,6 +979,22 @@ _HANDLERS: dict[str, Handler] = {
     "simulation_step": _simulation_step,
     "assignment_check": _assignment_check,
     "scene_tour": _scene_tour,
+    "layout_snap": _layout_snap,
+    "layout_stack": _layout_stack,
+    "layout_distribute": _layout_distribute,
+    "layout_space": _layout_space,
+    "layout_align": _layout_align,
+    "robot_inspect": _robot_inspect,
+    "layer_stack": _layer_stack,
+    "layer_where_is": _layer_where_is,
+    "layer_flatten_preview": _layer_flatten_preview,
+    "layer_add_sublayer": _layer_add_sublayer,
+    "layer_remove_sublayer": _layer_remove_sublayer,
+    "layer_set_edit_target": _layer_set_edit_target,
+    "layer_mute": _layer_mute,
+    "layer_unmute": _layer_unmute,
+    "layer_move_opinions": _layer_move_opinions,
+    "asset_health": _asset_health,
 }
 
 
@@ -731,6 +1013,73 @@ def _path(params: dict[str, Any], key: str, required: bool = True) -> str | None
     if len(value) > _MAX_PATH_CHARS:
         raise ValueError(f"'{key}' is longer than {_MAX_PATH_CHARS} characters")
     return value.strip()
+
+
+def _paths(params: dict[str, Any], key: str) -> list[str]:
+    """A list of 1 to 500 prim path strings (each starts with '/', no NUL); the bridge checks that they exist."""
+    value = params.get(key)
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"'{key}' must be a non-empty list of prim path strings")
+    if len(value) > _LAYOUT_MAX_PATHS:
+        raise ValueError(f"'{key}' may list at most {_LAYOUT_MAX_PATHS} prims")
+    paths = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip().startswith("/") or "\0" in item:
+            raise ValueError(f"'{key}' must contain prim path strings such as '/World/Box_01'")
+        if len(item) > _MAX_PATH_CHARS:
+            raise ValueError(f"a path in '{key}' is longer than {_MAX_PATH_CHARS} characters")
+        paths.append(item.strip())
+    return paths
+
+
+def _rows(params: dict[str, Any], key: str) -> list[int] | None:
+    """None, or a list of 1 to 200 whole numbers of at least 1 (prims per row, bottom row first)."""
+    value = params.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value or len(value) > _LAYOUT_MAX_ROWS:
+        raise ValueError(f"'{key}' must be a list of 1 to {_LAYOUT_MAX_ROWS} whole numbers")
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, int) or not 1 <= item <= _LAYOUT_MAX_PATHS:
+            raise ValueError(f"'{key}' must contain whole numbers from 1 to {_LAYOUT_MAX_PATHS}")
+    return list(value)
+
+
+def _surface(params: dict[str, Any], key: str) -> str | float | None:
+    """None (find the floor), a prim path string, or a height number along the up axis."""
+    value = params.get(key)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return _path(params, key)
+    return _number(params, key)
+
+
+def _position(params: dict[str, Any], key: str) -> str | int:
+    """'strongest' (default), 'weakest', or a whole-number index into the root layer's sublayer list."""
+    value = params.get(key)
+    if value is None:
+        return "strongest"
+    if isinstance(value, str) and value.strip().lower() in ("strongest", "weakest"):
+        return value.strip().lower()
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= _SUBLAYER_MAX_INDEX:
+        raise ValueError(f"'{key}' must be 'strongest', 'weakest' or a whole number from 0 to {_SUBLAYER_MAX_INDEX}")
+    return value
+
+
+def _property_names(params: dict[str, Any], key: str) -> list[str] | None:
+    """None (move the whole prim spec), or a list of 1 to 500 property names."""
+    value = params.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value or len(value) > _MOVE_MAX_PROPERTIES:
+        raise ValueError(f"'{key}' must be a list of 1 to {_MOVE_MAX_PROPERTIES} property names")
+    names = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip() or len(item) > _MAX_NAME_CHARS or "\0" in item:
+            raise ValueError(f"'{key}' must contain property names such as 'xformOp:translate'")
+        names.append(item.strip())
+    return names
 
 
 def _file_path(params: dict[str, Any], key: str, required: bool = True) -> str | None:

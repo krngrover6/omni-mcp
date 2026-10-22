@@ -2,8 +2,10 @@
 
 1. The new omniverse_scene_mcp code is imported fresh and self-tested on temporary stages with Composer's own USD
    build: tests/test_kit_bridge_usd.py and tests/test_kit_rpc.py (required), plus tests/test_edits.py,
-   tests/test_undo.py, tests/test_kit_live_extras.py, tests/test_physics.py, tests/test_scene_tour.py and
-   tests/test_assignments.py when present (fixture-free test_* functions only). Any failure keeps the running bridge.
+   tests/test_undo.py, tests/test_kit_live_extras.py, tests/test_physics.py, tests/test_scene_tour.py,
+   tests/test_assignments.py, tests/test_layout.py, tests/test_robot_inspector.py, tests/test_layer_manager.py and
+   tests/test_asset_health.py when present (fixture-free test_*
+   functions only). Any failure keeps the running bridge.
 2. Whatever serves 127.0.0.1:9910 in this Composer is stopped: the bridge an earlier start/reload registered, or the
    setup extension's stock LiveSceneControlServer (found through its _live_scene_control attribute and a gc scan for
    running server objects bound to 9910). Servers on other ports (the stock one on 9909, Isaac Sim's 9911) are never
@@ -43,6 +45,10 @@ OPTIONAL_SELF_TESTS = (
     "test_physics.py",
     "test_scene_tour.py",
     "test_assignments.py",
+    "test_layout.py",
+    "test_robot_inspector.py",
+    "test_layer_manager.py",
+    "test_asset_health.py",
 )
 SERVER_CLASS_NAME = "LiveSceneControlServer"
 EXTENSION_ATTR = "_live_scene_control"
