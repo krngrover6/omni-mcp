@@ -46,7 +46,20 @@ Evidence: `blender_export_plan_live.json`, `blender_live_export.json`,
 `blender_composer_capture_retry.json`, `blender_visual_check.json`, and
 `blender_composer_preview.png`. The tiny exported asset is under `assets/blender_mcp_20261024_232131/`.
 
-Still pending: proprietary CAD, ROS connectivity and enabling the generated extension.
+Generated-extension follow-up: `extension_live_20261024_233954.json` passed all nine live
+checks. The extension enabled, created its UI, and the user's actual Inspect stage click
+displayed the correct stage identifier. It then disabled, hid/released its window, cleared
+widget references, removed its test search path and restored the original enabled-extension
+set. Scene and extension files stayed unchanged during the successful run.
+
+The first attempts found a helper assumption about Kit clearing instance attributes and a
+real shutdown gap: the generated window needed to be hidden before release. Both generator
+and test copy were fixed; 16 focused tests pass on USD 26.8 and 25.11, including a new shutdown
+regression. These focused results supplement the earlier full-suite baseline of 1,428;
+the complete suite was not rerun after this small lifecycle fix. The updated generator is
+on disk; the running router needs an approved restart before newly generated templates use it.
+
+Still pending: proprietary CAD and ROS connectivity.
 The sections below record earlier checkpoints, not the latest coverage.
 
 Codex ran the external MCP client `scripts/mcp_operability.py` against the user's running

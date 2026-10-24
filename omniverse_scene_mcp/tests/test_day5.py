@@ -52,6 +52,31 @@ def test_extension_bundle_is_inert_valid_python_toml_and_never_overwrites():
         assert before == {str(p):p.read_bytes() for p in root.rglob('*') if p.is_file()}
 
 
+def test_generated_extension_shutdown_hides_retained_window_and_is_repeatable():
+    import sys
+    from types import ModuleType
+    with tempfile.TemporaryDirectory() as folder:
+        result=extension_starter.extension_create(folder,dry_run=False)
+        code=(Path(result['directory'])/'study_extension/__init__.py').read_text()
+        omni=ModuleType('omni');ext=ModuleType('omni.ext');ui=ModuleType('omni.ui');usd=ModuleType('omni.usd')
+        ext.IExt=object;omni.ext=ext;omni.ui=ui;omni.usd=usd
+        with patch.dict(sys.modules,{'omni':omni,'omni.ext':ext,'omni.ui':ui,'omni.usd':usd}):
+            namespace={};exec(compile(code,'<generated extension>','exec'),namespace)
+        instance=namespace['StudyExtension']()
+        class RetainedWindow:
+            visible=True
+            destroyed=False
+            def destroy(self):
+                assert self.visible is False
+                self.destroyed=True
+        window=RetainedWindow();instance._window=window;instance._label=object()
+        instance.on_shutdown()
+        assert window.destroyed and not window.visible
+        assert instance._window is None and instance._label is None
+        instance.on_shutdown()  # safe when already shut down
+        namespace['StudyExtension']().on_shutdown()  # safe if startup never finished
+
+
 def test_output_names_and_numeric_arguments_are_strict_and_reserved_names_refused():
     with tempfile.TemporaryDirectory() as folder:
         for name in ('../escape', 'CON', 'COM1', 'x/y', 'x\\y', 'x\nprint(1)', ''):

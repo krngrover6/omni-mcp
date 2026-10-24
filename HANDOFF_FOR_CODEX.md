@@ -1,5 +1,14 @@
 # Handoff: Omniverse scene MCP (Claude -> Codex), 2026-10-22
 
+Extension lifecycle completed: `mcp_day5_validation/docs/extension_live_20261024_233954.json`
+passed all 9 checks, including the user's real Inspect stage click and complete cleanup.
+Generator shutdown now hides the window before destroying/releasing it, and tolerates
+incomplete startup. A focused regression passes with all 16 Day 5 tests on both USD builds.
+No full-suite rerun after this small change; prior full baseline remains 1,428 per build.
+Current router still has the previous generator imported; ask before restarting it to load
+the fixed source. No bridge reload is needed for this router-local generator change.
+Remaining functional prerequisites: a real CAD fixture and a ROS publisher/subscriber setup.
+
 Blender follow-up, 2026-10-24: existing addon connected (protocol 13, Blender 5.2.2 LTS);
 no installation/update. The custom MCP-generated selection-only script exported a separate
 2x1x1 m green box. USD handoff checks, actual Composer reference/bounds/material and a visual

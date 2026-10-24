@@ -1,0 +1,12 @@
+[package]
+version = "0.1.0"
+title = "OpenUSD Study Extension"
+description = "A minimal read-only learning extension"
+category = "Examples"
+
+[dependencies]
+"omni.usd" = {}
+"omni.ui" = {}
+
+[[python.module]]
+name = "study_extension"

@@ -1,0 +1,20 @@
+{
+  "started": 1792877994.4533145,
+  "extension_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\mcp_verified_extension_20261024_225558",
+  "checks": {
+    "enabled": true,
+    "window_created": true,
+    "actual_button_click": true,
+    "disabled": true,
+    "window_destroyed": true,
+    "widget_references_cleared": true,
+    "test_path_removed": true,
+    "enabled_extensions_restored": true,
+    "scene_and_extension_files_unchanged": true
+  },
+  "extension_id": "mcp_verified_extension_20261024_225558-0.1.0",
+  "initial_label": "Press Inspect to read the active stage.",
+  "label_after_click": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+  "passed": true,
+  "finished": 1792878001.146843
+}

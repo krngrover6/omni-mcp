@@ -38,7 +38,8 @@ class StudyExtension(omni.ext.IExt):
         self._label.text = stage.GetRootLayer().identifier if stage else "No active stage"
 
     def on_shutdown(self):
-        if self._window:
+        if getattr(self, '_window', None) is not None:
+            self._window.visible = False
             self._window.destroy()
         self._window = self._label = None
 '''
