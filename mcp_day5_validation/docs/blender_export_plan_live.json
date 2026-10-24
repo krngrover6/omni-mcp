@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "dry_run": true,
+  "written": false,
+  "executed": false,
+  "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\blender_mcp_20261024_232131",
+  "script": "# Run in Blender's Text Editor after reviewing the plan.\nfrom pathlib import Path\nimport bpy\n\nDRY_RUN = True\ndirectory = Path('C:\\\\Users\\\\krngr\\\\Omniverse\\\\mcp_day5_validation\\\\assets\\\\blender_mcp_20261024_232131')\ndestination = directory / 'asset.usdc'\nif not bpy.context.selected_objects:\n    raise RuntimeError('Select the intended export objects first')\nif directory.exists():\n    raise RuntimeError('Refusing to overwrite an existing export directory')\noptions = dict(filepath=str(destination), selected_objects_only=True,\n               export_animation=False, export_materials=True,\n               generate_preview_surface=True, relative_paths=True,\n               overwrite_textures=False, root_prim_path='/Asset')\nproperties = bpy.ops.wm.usd_export.get_rna_type().properties.keys()\nif not all(key in properties for key in options):\n    raise RuntimeError('This Blender USD exporter lacks a required option; no export started')\nif 'export_textures_mode' in properties:\n    options['export_textures_mode'] = 'NEW'\nelif 'export_textures' in properties:\n    options['export_textures'] = True\nprint('USD export plan:', options)\nif DRY_RUN is False:\n    directory.mkdir()\n    result = bpy.ops.wm.usd_export(**options)\n    if 'FINISHED' not in result:\n        raise RuntimeError('USD export did not finish; inspect the new output directory')\n",
+  "next_step": "Review/run in Blender with DRY_RUN=True, then explicitly apply and inspect the exported USD."
+}

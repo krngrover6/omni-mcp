@@ -1,0 +1,518 @@
+{
+  "calls": [
+    {
+      "tool": "scene_summary",
+      "result": {
+        "stage_name": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 32,
+        "top_level_prims": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras"
+        ]
+      }
+    },
+    {
+      "tool": "scene_add_asset",
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": true,
+        "changes": [
+          {
+            "action": "add_reference",
+            "path": "/World/BlenderVisualProbe",
+            "summary": "Add a reference to asset.usdc at /World/BlenderVisualProbe",
+            "before": null,
+            "after": {
+              "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/blender_mcp_20261024_232131/asset.usdc",
+              "translation": [
+                2.0,
+                0.0,
+                0.5
+              ]
+            }
+          }
+        ],
+        "payload": {
+          "ok": true,
+          "dry_run": true,
+          "action": "add_reference",
+          "written": false,
+          "would_create": {
+            "path": "/World/BlenderVisualProbe",
+            "parent": "/World",
+            "type": "Xform",
+            "reference": {
+              "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/blender_mcp_20261024_232131/asset.usdc",
+              "prim_path": null
+            },
+            "asset": {
+              "name": "asset.usdc",
+              "size": 2621,
+              "default_prim": "Asset",
+              "up_axis": "Z",
+              "meters_per_unit": 1.0,
+              "header_read": true
+            },
+            "stage_units": {
+              "up_axis": "Z",
+              "meters_per_unit": 1.0
+            },
+            "unit_correction": null,
+            "xform_ops": [
+              "xformOp:translate"
+            ],
+            "translation": [
+              2.0,
+              0.0,
+              0.5
+            ],
+            "rotation": null,
+            "scale": null,
+            "instanceable": null,
+            "path_note": "The reference uses the absolute forward-slash path, so it only resolves on machines with the asset pack at the same location.",
+            "relative_path_hint": "./assets/blender_mcp_20261024_232131/asset.usdc"
+          },
+          "edit_target_layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+          "edit_target": {
+            "identifier": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "display_name": "root.usda",
+            "anonymous": false,
+            "session_layer": false,
+            "root_layer": true,
+            "editable": true
+          },
+          "warnings": [
+            "These xform ops are authored on the referencing prim, so they replace the asset root prim's own xformOpOrder (any transform authored on the asset's default prim stops applying)."
+          ],
+          "next_step": "Dry run: nothing was written. Call again with dry_run=False to author this.",
+          "mode": "live",
+          "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/blender_mcp_20261024_232131/asset.usdc"
+        },
+        "warnings": [
+          "These xform ops are authored on the referencing prim, so they replace the asset root prim's own xformOpOrder (any transform authored on the asset's default prim stops applying)."
+        ],
+        "next_step": "Dry run: nothing was written. Call again with dry_run=False to author this.",
+        "applied": false,
+        "preview": true,
+        "message": "Preview only: nothing in the open scene changed. Show this plan to the user and apply it (same arguments plus dry_run=False) only after they agree.",
+        "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/blender_mcp_20261024_232131/asset.usdc"
+      }
+    },
+    {
+      "tool": "scene_add_asset",
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": false,
+        "changes": [
+          {
+            "action": "add_reference",
+            "path": "/World/BlenderVisualProbe",
+            "summary": "Add a reference to asset.usdc at /World/BlenderVisualProbe",
+            "before": null,
+            "after": {
+              "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/blender_mcp_20261024_232131/asset.usdc",
+              "translation": [
+                2.0,
+                0.0,
+                0.5
+              ]
+            }
+          }
+        ],
+        "payload": {
+          "ok": true,
+          "dry_run": false,
+          "action": "add_reference",
+          "written": true,
+          "would_create": {
+            "path": "/World/BlenderVisualProbe",
+            "parent": "/World",
+            "type": "Xform",
+            "reference": {
+              "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/blender_mcp_20261024_232131/asset.usdc",
+              "prim_path": null
+            },
+            "asset": {
+              "name": "asset.usdc",
+              "size": 2621,
+              "default_prim": "Asset",
+              "up_axis": "Z",
+              "meters_per_unit": 1.0,
+              "header_read": true
+            },
+            "stage_units": {
+              "up_axis": "Z",
+              "meters_per_unit": 1.0
+            },
+            "unit_correction": null,
+            "xform_ops": [
+              "xformOp:translate"
+            ],
+            "translation": [
+              2.0,
+              0.0,
+              0.5
+            ],
+            "rotation": null,
+            "scale": null,
+            "instanceable": null,
+            "path_note": "The reference uses the absolute forward-slash path, so it only resolves on machines with the asset pack at the same location.",
+            "relative_path_hint": "./assets/blender_mcp_20261024_232131/asset.usdc"
+          },
+          "edit_target_layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+          "edit_target": {
+            "identifier": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "display_name": "root.usda",
+            "anonymous": false,
+            "session_layer": false,
+            "root_layer": true,
+            "editable": true
+          },
+          "warnings": [
+            "These xform ops are authored on the referencing prim, so they replace the asset root prim's own xformOpOrder (any transform authored on the asset's default prim stops applying)."
+          ],
+          "created": {
+            "path": "/World/BlenderVisualProbe",
+            "type": "Xform",
+            "references": [
+              {
+                "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/blender_mcp_20261024_232131/asset.usdc",
+                "prim_path": null
+              }
+            ],
+            "xform_op_order": [
+              "xformOp:translate"
+            ],
+            "instanceable": false,
+            "reference_resolved": true,
+            "child_count": 2
+          },
+          "undoable": true,
+          "mode": "live",
+          "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/blender_mcp_20261024_232131/asset.usdc"
+        },
+        "warnings": [
+          "These xform ops are authored on the referencing prim, so they replace the asset root prim's own xformOpOrder (any transform authored on the asset's default prim stops applying)."
+        ],
+        "undoable": true,
+        "applied": true,
+        "message": "Applied to the user's open scene in memory: it is not saved (scene_save keeps it). scene_undo_last undoes it (preview first); saving is not undoable.",
+        "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/blender_mcp_20261024_232131/asset.usdc"
+      }
+    },
+    {
+      "tool": "scene_set_attribute",
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": true,
+        "changes": [
+          {
+            "action": "set_attribute",
+            "path": "/World/Racks/Crate_01",
+            "summary": "Set visibility on /World/Racks/Crate_01 to 'invisible'",
+            "before": null,
+            "after": {
+              "name": "visibility",
+              "value": "invisible"
+            }
+          }
+        ],
+        "payload": {
+          "ok": true,
+          "dry_run": true,
+          "action": "set_attribute",
+          "written": false,
+          "path": "/World/Racks/Crate_01",
+          "attribute": "visibility",
+          "type_name": "token",
+          "time": "default",
+          "creates_attribute": false,
+          "before": {
+            "exists": true,
+            "value": "inherited",
+            "source": "fallback",
+            "blocked": false,
+            "winning_layer": null,
+            "winning_spec": null,
+            "winning_opinion": null,
+            "time_sample_count": 0,
+            "edit_target_value": null
+          },
+          "after": "invisible",
+          "effective_after": {
+            "time": "default",
+            "predicted_value": "invisible",
+            "visible": true,
+            "hidden_by": null,
+            "predicted": true,
+            "visible_on_timeline": true,
+            "timeline_hidden_by": null
+          },
+          "would_change": true,
+          "edit_target_layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+          "edit_target": {
+            "identifier": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "display_name": "root.usda",
+            "anonymous": false,
+            "session_layer": false,
+            "root_layer": true,
+            "editable": true
+          },
+          "warnings": [],
+          "notes": [],
+          "next_step": "Dry run: nothing was written. Call again with dry_run=False to author this.",
+          "mode": "live"
+        },
+        "warnings": [],
+        "notes": [],
+        "next_step": "Dry run: nothing was written. Call again with dry_run=False to author this.",
+        "applied": false,
+        "preview": true,
+        "message": "Preview only: nothing in the open scene changed. Show this plan to the user and apply it (same arguments plus dry_run=False) only after they agree."
+      }
+    },
+    {
+      "tool": "scene_set_attribute",
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": false,
+        "changes": [
+          {
+            "action": "set_attribute",
+            "path": "/World/Racks/Crate_01",
+            "summary": "Set visibility on /World/Racks/Crate_01 to 'invisible'",
+            "before": null,
+            "after": {
+              "name": "visibility",
+              "value": "invisible"
+            }
+          }
+        ],
+        "payload": {
+          "ok": true,
+          "dry_run": false,
+          "action": "set_attribute",
+          "written": true,
+          "path": "/World/Racks/Crate_01",
+          "attribute": "visibility",
+          "type_name": "token",
+          "time": "default",
+          "creates_attribute": false,
+          "before": {
+            "exists": true,
+            "value": "inherited",
+            "source": "fallback",
+            "blocked": false,
+            "winning_layer": null,
+            "winning_spec": null,
+            "winning_opinion": null,
+            "time_sample_count": 0,
+            "edit_target_value": null
+          },
+          "after": "invisible",
+          "effective_after": {
+            "time": "default",
+            "predicted_value": "invisible",
+            "visible": true,
+            "hidden_by": null,
+            "predicted": true,
+            "visible_on_timeline": true,
+            "timeline_hidden_by": null
+          },
+          "changed": true,
+          "readback": {
+            "value": "invisible",
+            "shows_new_value": true
+          },
+          "edit_target_layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+          "edit_target": {
+            "identifier": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "display_name": "root.usda",
+            "anonymous": false,
+            "session_layer": false,
+            "root_layer": true,
+            "editable": true
+          },
+          "warnings": [],
+          "notes": [],
+          "undoable": true,
+          "mode": "live"
+        },
+        "warnings": [],
+        "notes": [],
+        "undoable": true,
+        "applied": true,
+        "message": "Applied to the user's open scene in memory: it is not saved (scene_save keeps it). scene_undo_last undoes it (preview first); saving is not undoable."
+      }
+    },
+    {
+      "tool": "render_capture",
+      "result": {
+        "ok": true,
+        "status": "pending",
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\blender_visual_20261024_232543\\viewport_20261024_232543_481065.png",
+        "camera": "/OmniverseKit_Persp",
+        "resolution": [
+          877,
+          346
+        ],
+        "requested_resolution": null,
+        "renderer": "rtx",
+        "render_mode": "RealTimePathTracing",
+        "api": "omni.kit.viewport.utility.capture_viewport_to_file",
+        "note": "Poll scene_capture_status(path); it finishes the optional resized copy.",
+        "dry_run": false,
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\blender_visual_20261024_232543"
+      }
+    },
+    {
+      "tool": "scene_capture_status",
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\blender_visual_20261024_232543\\viewport_20261024_232543_481065.png",
+        "ready": false,
+        "size": 0,
+        "capture_done": true,
+        "note": "Not written yet; Kit saves it after the next rendered frame or two. Check again shortly.",
+        "mode": "live",
+        "action": "capture_status"
+      }
+    },
+    {
+      "tool": "scene_capture_status",
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\blender_visual_20261024_232543\\viewport_20261024_232543_481065.png",
+        "ready": true,
+        "size": 157857,
+        "capture_done": true,
+        "mode": "live",
+        "action": "capture_status"
+      }
+    },
+    {
+      "tool": "scene_undo_last",
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "dry_run": false,
+        "undone": {
+          "label": "Set visibility on /World/Racks/Crate_01",
+          "paths": [],
+          "layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda"
+        },
+        "verified": true,
+        "via": "kit_undo",
+        "message": "Undone through Kit's undo history, exactly like Ctrl+Z; Ctrl+Y in Kit redoes it.",
+        "remaining": 5,
+        "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state.",
+        "mode": "live",
+        "action": "undo_last",
+        "applied": true
+      }
+    },
+    {
+      "tool": "scene_undo_last",
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "dry_run": false,
+        "undone": {
+          "label": "Add asset.usdc at /World/BlenderVisualProbe",
+          "paths": [
+            "/World/BlenderVisualProbe"
+          ],
+          "layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda"
+        },
+        "verified": true,
+        "via": "kit_undo",
+        "message": "Undone through Kit's undo history, exactly like Ctrl+Z; Ctrl+Y in Kit redoes it.",
+        "remaining": 4,
+        "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state.",
+        "mode": "live",
+        "action": "undo_last",
+        "applied": true
+      }
+    },
+    {
+      "tool": "scene_summary",
+      "result": {
+        "stage_name": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 32,
+        "top_level_prims": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras"
+        ]
+      }
+    }
+  ],
+  "capture": {
+    "target": "scene",
+    "ok": true,
+    "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\blender_visual_20261024_232543\\viewport_20261024_232543_481065.png",
+    "ready": true,
+    "size": 157857,
+    "capture_done": true,
+    "mode": "live",
+    "action": "capture_status"
+  },
+  "undos": [
+    {
+      "target": "scene",
+      "ok": true,
+      "dry_run": false,
+      "undone": {
+        "label": "Set visibility on /World/Racks/Crate_01",
+        "paths": [],
+        "layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda"
+      },
+      "verified": true,
+      "via": "kit_undo",
+      "message": "Undone through Kit's undo history, exactly like Ctrl+Z; Ctrl+Y in Kit redoes it.",
+      "remaining": 5,
+      "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state.",
+      "mode": "live",
+      "action": "undo_last",
+      "applied": true
+    },
+    {
+      "target": "scene",
+      "ok": true,
+      "dry_run": false,
+      "undone": {
+        "label": "Add asset.usdc at /World/BlenderVisualProbe",
+        "paths": [
+          "/World/BlenderVisualProbe"
+        ],
+        "layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda"
+      },
+      "verified": true,
+      "via": "kit_undo",
+      "message": "Undone through Kit's undo history, exactly like Ctrl+Z; Ctrl+Y in Kit redoes it.",
+      "remaining": 4,
+      "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state.",
+      "mode": "live",
+      "action": "undo_last",
+      "applied": true
+    }
+  ],
+  "summary_restored": true,
+  "saved_files_unchanged": true,
+  "passed": true
+}

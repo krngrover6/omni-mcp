@@ -1,0 +1,420 @@
+{
+  "mcp_handoff": {
+    "ok": true,
+    "file": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\blender_mcp_20261024_232131\\asset.usdc",
+    "mode": "saved_file",
+    "note": "Preview Surface approximates Blender materials; compare appearance in the target renderer.",
+    "read_only": true,
+    "default_prim": "/Asset",
+    "up_axis": "Z",
+    "meters_per_unit": 1.0,
+    "health": {
+      "ok": true,
+      "healthy": true,
+      "score": 100,
+      "grade": "A",
+      "score_is_partial": false,
+      "stage": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/blender_mcp_20261024_232131/asset.usdc",
+      "root_path": "/",
+      "usd_version": "0.26.8",
+      "checks": [
+        {
+          "id": "missing_files",
+          "title": "Missing files (textures, references, payloads, sublayers)",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "A path that does not resolve loads nothing: a missing reference or payload drops geometry, and a missing texture renders as a flat or pink surface. URL paths (https://, omniverse://) cannot be checked offline and fail the same way when no resolver for them is installed.",
+          "how_to_fix": [],
+          "kit_validator_rule": "MissingReferenceChecker",
+          "checked": true
+        },
+        {
+          "id": "composition_errors",
+          "title": "Composition errors (broken references and arcs)",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "USD reported an arc it could not compose, so part of the asset is silently missing on the stage.",
+          "how_to_fix": [],
+          "kit_validator_rule": null,
+          "checked": true
+        },
+        {
+          "id": "absolute_paths",
+          "title": "Absolute file paths",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "A path like C:/Users/me/asset/wood.png only works on the machine that wrote it. Move the folder or share it and every such file goes missing.",
+          "how_to_fix": [],
+          "kit_validator_rule": "AnchoredAssetPathsChecker",
+          "checked": true
+        },
+        {
+          "id": "outside_project",
+          "title": "Files outside the asset's folder",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "The asset depends on files outside its own folder, so copying only that folder to a project, a teammate or a server leaves those files behind.",
+          "how_to_fix": [],
+          "kit_validator_rule": null,
+          "checked": true
+        },
+        {
+          "id": "backslash_paths",
+          "title": "Backslashes in asset paths",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "Backslashes only work on Windows; Linux render farms and containers will not find the files.",
+          "how_to_fix": [],
+          "kit_validator_rule": "PortableAssetPathChecker",
+          "checked": true
+        },
+        {
+          "id": "stage_units",
+          "title": "Units and up axis authored",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "Without metersPerUnit and upAxis every tool guesses (USD's fallback is centimeters, Y up), so the asset can arrive 100x too big or lying on its side. Isaac Sim expects meters and Z up (Isaac validator profiles: MetersPerUnit1Checker, UpAxisZChecker).",
+          "how_to_fix": [],
+          "kit_validator_rule": "StageMetadataChecker",
+          "checked": true
+        },
+        {
+          "id": "units_mismatch",
+          "title": "Unit or up-axis mismatch between files",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "USD never rescales or rotates referenced data. A millimeter asset referenced into a meter stage appears 1000x too large; a Y-up asset in a Z-up stage lies on its back.",
+          "how_to_fix": [],
+          "kit_validator_rule": null,
+          "checked": true
+        },
+        {
+          "id": "default_prim",
+          "title": "defaultPrim set (here and in referenced files)",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "defaultPrim tells a reference without a prim path which prim to bring in. A file without one references as empty unless every arc names the prim explicitly.",
+          "how_to_fix": [],
+          "kit_validator_rule": "OmniDefaultPrimChecker",
+          "checked": true
+        },
+        {
+          "id": "model_hierarchy",
+          "title": "Kind / model hierarchy",
+          "status": "info",
+          "count": 1,
+          "examples": [
+            "Root prim /Asset contains geometry but has no kind."
+          ],
+          "why": "kind (component, assembly, group) lets tools treat the asset as one selectable model. A broken chain (a component inside a component, or a model under a prim without group/assembly) means model traversal and selection modes skip it.",
+          "how_to_fix": [
+            "Give the asset root kind = component (a leaf asset) or assembly (an asset made of assets).",
+            "Every ancestor of a model must be group or assembly; parts inside a component use subcomponent or no kind."
+          ],
+          "kit_validator_rule": "KindChecker",
+          "checked": true
+        },
+        {
+          "id": "extents",
+          "title": "Extents present and up to date",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "extent is a mesh's precomputed bounding box. Missing or stale extents make framing, culling and bounds queries wrong (objects vanish at some angles or 'frame selected' zooms to the wrong place).",
+          "how_to_fix": [],
+          "kit_validator_rule": "ExtentsChecker",
+          "checked": true
+        },
+        {
+          "id": "mesh_topology",
+          "title": "Mesh topology valid",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "faceVertexCounts, faceVertexIndices and points disagree, so renderers drop or garble the mesh.",
+          "how_to_fix": [],
+          "kit_validator_rule": "ValidateTopologyChecker",
+          "checked": true
+        },
+        {
+          "id": "primvars",
+          "title": "Primvars (UVs, colors) sized and indexed correctly",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "A primvar whose length or indices do not match its interpolation is ignored or reads garbage, so textures map wrongly.",
+          "how_to_fix": [],
+          "kit_validator_rule": "IndexedPrimvarChecker",
+          "checked": true
+        },
+        {
+          "id": "normals",
+          "title": "Normals sanity",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "Normals decide smooth vs faceted shading. Wrong-length normals are ignored; normals on a subdivision mesh are ignored too (USD computes its own), which is why CAD/FBX imports often look blobby or faceted.",
+          "how_to_fix": [],
+          "kit_validator_rule": "NormalsExistChecker, NormalsValidChecker",
+          "checked": true
+        },
+        {
+          "id": "heavy_meshes",
+          "title": "Very heavy meshes",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "A single mesh above 500,000 faces (or more than 10,000,000 faces in total) slows loading, selection and physics; CAD tessellation is the usual cause.",
+          "how_to_fix": [],
+          "kit_validator_rule": null,
+          "checked": true
+        },
+        {
+          "id": "instancing_opportunities",
+          "title": "Repeated geometry not instanced",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "Many copies of the same asset or identical meshes each cost memory and load time. Marking references instanceable lets USD share one prototype across all copies.",
+          "how_to_fix": [],
+          "kit_validator_rule": null,
+          "checked": true
+        },
+        {
+          "id": "instancing_setup",
+          "title": "Instancing set up correctly",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "instanceable without a composition arc does nothing, and edits below an instance are ignored.",
+          "how_to_fix": [],
+          "kit_validator_rule": null,
+          "checked": true
+        },
+        {
+          "id": "material_bindings",
+          "title": "Every visible mesh has a material",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "An unbound mesh renders with the renderer's default grey; a binding to a missing material or one outside the referenced asset is silently dropped.",
+          "how_to_fix": [],
+          "kit_validator_rule": "UsdDanglingMaterialBinding, UsdMaterialBindingApi, MaterialOutOfScopeChecker",
+          "checked": true
+        },
+        {
+          "id": "materials_surface",
+          "title": "Materials have a surface shader",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "A Material whose outputs:surface (or outputs:mdl:surface) connects to nothing renders as if unbound.",
+          "how_to_fix": [],
+          "kit_validator_rule": null,
+          "checked": true
+        },
+        {
+          "id": "shading_models",
+          "title": "Shading models used (UsdPreviewSurface / MDL / MaterialX)",
+          "status": "info",
+          "count": 1,
+          "examples": [
+            "UsdPreviewSurface: 1"
+          ],
+          "why": "MDL looks best in Omniverse RTX but other tools (Blender, usdview) show only UsdPreviewSurface. Assets meant to travel should carry a UsdPreviewSurface too.",
+          "how_to_fix": [
+            "Nothing to fix; this is information. For portability add a UsdPreviewSurface network next to the MDL."
+          ],
+          "kit_validator_rule": "OmniMaterialUsdPreviewSurfaceChecker",
+          "checked": true
+        },
+        {
+          "id": "textures",
+          "title": "Texture formats, sizes and color spaces",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "Only PNG, JPEG and EXR load everywhere. Normal, roughness, metallic and AO maps hold data, not color, and must be read as 'raw'; read as sRGB they shade wrongly. Very large textures cost GPU memory.",
+          "how_to_fix": [],
+          "kit_validator_rule": "TextureChecker, SupportedFileTypesChecker, NormalMapTextureChecker",
+          "checked": true
+        },
+        {
+          "id": "prim_names",
+          "title": "Prim names portable",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "Non-ASCII or very long prim names (common from CAD part numbers) break older tools, scripts and some Isaac/ROS pipelines.",
+          "how_to_fix": [],
+          "kit_validator_rule": "UnicodeNameChecker",
+          "checked": true
+        },
+        {
+          "id": "empty_xforms",
+          "title": "Empty Xforms",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "Xforms with no children are often leftovers from an exporter (null nodes, empty groups). They do no harm but clutter the tree.",
+          "how_to_fix": [],
+          "kit_validator_rule": null,
+          "checked": true
+        },
+        {
+          "id": "hierarchy_depth",
+          "title": "Hierarchy depth",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "Trees deeper than 24 levels (typical of CAD assemblies) make the stage slow to traverse and hard to navigate.",
+          "how_to_fix": [],
+          "kit_validator_rule": null,
+          "checked": true
+        },
+        {
+          "id": "time_samples",
+          "title": "Time samples on static content",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "Values written as time samples that never change (often one sample at frame 0 from an exporter) make tools treat the asset as animated, which disables caching and can hide default values.",
+          "how_to_fix": [],
+          "kit_validator_rule": null,
+          "checked": true
+        },
+        {
+          "id": "physics_colliders",
+          "title": "Colliders on heavy render meshes",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "Using a render mesh with more than 20,000 faces as a triangle-mesh collider makes physics slow, and moving rigid bodies cannot simulate triangle meshes at all (PhysX falls back to a convex hull).",
+          "how_to_fix": [],
+          "kit_validator_rule": "ColliderChecker",
+          "checked": true
+        },
+        {
+          "id": "physics_mass",
+          "title": "Rigid bodies with explicit mass",
+          "status": "pass",
+          "count": 0,
+          "examples": [],
+          "why": "A rigid body without MassAPI gets its mass from collider volume times a default density (1000 kg/m3, water), which is often far from the real part and makes robots and grippers behave oddly.",
+          "how_to_fix": [],
+          "kit_validator_rule": "MassChecker, RigidBodyChecker",
+          "checked": true
+        }
+      ],
+      "dependencies": {
+        "counts": {
+          "resolved": 0,
+          "unresolved": 0,
+          "unchecked_urls": 0,
+          "absolute_paths": 0,
+          "outside_project": 0,
+          "mdl_search_path": 0
+        },
+        "by_usage": {},
+        "resolved": [],
+        "unresolved": [],
+        "unchecked_urls": [],
+        "absolute_paths": [],
+        "outside_project": [],
+        "mdl_search_path": [],
+        "project_root": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\blender_mcp_20261024_232131"
+      },
+      "stats": {
+        "prims": 6,
+        "meshes": 1,
+        "meshes_measured": 1,
+        "gprims": 1,
+        "total_points": 8,
+        "total_faces": 6,
+        "total_faces_with_instances": 6,
+        "largest_meshes": [
+          {
+            "path": "/Asset/MCP_ValidationBox/MCP_ValidationBoxMesh",
+            "faces": 6,
+            "points": 8
+          }
+        ],
+        "materials": 1,
+        "shaders": 1,
+        "instanceable": 0,
+        "instances": 0,
+        "prototypes": 0,
+        "payloads": 0,
+        "references": 0,
+        "max_depth": 4,
+        "rigid_bodies": 0,
+        "colliders": 0,
+        "sampled": false,
+        "textures": {
+          "count": 0,
+          "missing": 0,
+          "formats": {},
+          "local_files_inspected": 0,
+          "local_bytes": 0,
+          "largest": []
+        },
+        "layers": 2,
+        "layer_files": [
+          "asset.usdc",
+          "anon:00000252A5B91550:asset-session.usda"
+        ],
+        "meters_per_unit": 1.0,
+        "up_axis": "Z",
+        "default_prim": "Asset"
+      },
+      "summary": "This asset scores 100/100 (grade A). It has 6 prims, 1 meshes with 6 faces, 1 materials and 0 textures, in 1 m units, Z-up. No problems were found; it is ready to reference into a project.",
+      "truncated": false,
+      "truncated_by_time": false,
+      "prims_checked": 6,
+      "elapsed_ms": 63.3,
+      "usd_validate": {
+        "counts": {
+          "error": 0,
+          "warning": 0,
+          "info": 1
+        },
+        "validators_run": 12
+      },
+      "notes": [
+        "Read-only: nothing was changed, fixed or saved."
+      ]
+    },
+    "warnings": []
+  },
+  "meshes": [
+    "/Asset/MCP_ValidationBox/MCP_ValidationBoxMesh"
+  ],
+  "materials": [
+    "/Asset/_materials/MCP_ValidationGreen"
+  ],
+  "bindings": [
+    "/Asset/_materials/MCP_ValidationGreen"
+  ],
+  "dimensions_m": [
+    2.0,
+    1.0,
+    1.0
+  ],
+  "colors": [
+    [
+      0.10000000149011612,
+      0.550000011920929,
+      0.20000000298023224
+    ]
+  ],
+  "up_axis": "Z",
+  "passed": true
+}

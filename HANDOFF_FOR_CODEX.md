@@ -1,5 +1,12 @@
 # Handoff: Omniverse scene MCP (Claude -> Codex), 2026-10-22
 
+Blender follow-up, 2026-10-24: existing addon connected (protocol 13, Blender 5.2.2 LTS);
+no installation/update. The custom MCP-generated selection-only script exported a separate
+2x1x1 m green box. USD handoff checks, actual Composer reference/bounds/material and a visual
+capture passed. Original Blender scene/objects were restored. Composer temporary edits were
+undone and saved layer hashes unchanged. Evidence: `mcp_day5_validation/docs/blender_*.json`
+and `blender_composer_preview.png`. Remaining integrations: CAD fixture, ROS delivery, extension enablement.
+
 Composer follow-up, 2026-10-24: user opened the independent test project; Codex switched
 the router to Composer and ran 14 successful direct-MCP checks (see
 `mcp_day5_validation/docs/mcp_composer_20261024_231805.json`). Label preview/apply/undo,

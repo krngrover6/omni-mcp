@@ -1,0 +1,14 @@
+{
+  "blender_version": "5.2.2 LTS",
+  "expected_dimensions": [
+    2,
+    1,
+    1
+  ],
+  "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\blender_mcp_20261024_232131",
+  "selection_only": true,
+  "export_exists": true,
+  "original_scene_restored": true,
+  "original_objects_unchanged": true,
+  "original_file": ""
+}

@@ -30,8 +30,24 @@ event delivery, actual selection MCPTest=B, and viewport capture. Temporary cube
 were removed; prim count returned to 32 and saved scene files stayed unchanged. The router
 currently targets Composer on 9910; Isaac's bridge was offline at the connection check.
 
-Still pending: Blender, proprietary CAD, ROS connectivity and enabling the generated
-extension. The sections below record earlier checkpoints, not the latest coverage.
+Blender follow-up: Blender 5.2.2 LTS connected through its existing protocol-13 addon.
+No update/install was performed. The MCP-generated export script previewed, then exported
+a separate original 2x1x1 m green box. The original Blender scene/objects were restored;
+the additional `MCP_USD_Validation` test scene is retained for review and no .blend file was saved.
+`blender_usd_verification.json` confirms a real mesh, Z-up, metre units, expected dimensions,
+material binding and the expected Preview Surface color. Composer then loaded the USD through
+MCP with the same bounds and material. The first capture stalled while Composer was behind
+Blender; it succeeded with Composer visible. A dedicated visual check temporarily hid the
+existing test crate and placed the exported box at its position, verified its green material,
+then undid both edits. Scene summary and saved-file hashes were restored.
+
+Evidence: `blender_export_plan_live.json`, `blender_live_export.json`,
+`blender_usd_verification.json`, `blender_composer_handoff.json` (initial capture limitation),
+`blender_composer_capture_retry.json`, `blender_visual_check.json`, and
+`blender_composer_preview.png`. The tiny exported asset is under `assets/blender_mcp_20261024_232131/`.
+
+Still pending: proprietary CAD, ROS connectivity and enabling the generated extension.
+The sections below record earlier checkpoints, not the latest coverage.
 
 Codex ran the external MCP client `scripts/mcp_operability.py` against the user's running
 router at port 9905 and live Isaac bridge at 9911. The user opened the dedicated test

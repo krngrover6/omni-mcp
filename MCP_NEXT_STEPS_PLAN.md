@@ -39,7 +39,9 @@ labelled SDG passed with matching class/mask/box content, not only file checks. 
 and a follow-up job passed; an initialized repeat run left the compared runtime paths unchanged.
 Composer subsequently passed 14 direct MCP checks, including event-driven variants,
 label apply/undo and capture; own fixtures were removed with unchanged scene files.
-Blender, ROS/CAD and enabling the extension remain outstanding.
+Blender subsequently passed real export and Composer handoff checks, including dimensions,
+material binding and a visual screenshot; original contexts and temporary edits were restored.
+ROS/CAD and enabling the extension remain outstanding.
 
 ### 1. Preserve the completed work
 
