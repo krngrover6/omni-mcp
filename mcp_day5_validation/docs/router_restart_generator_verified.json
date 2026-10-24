@@ -1,0 +1,473 @@
+{
+  "checked": 1792878256.9808285,
+  "capabilities": {
+    "ok": true,
+    "backend": {
+      "mode": "http_env",
+      "bridge": "HttpSceneBridge",
+      "endpoint": "http://127.0.0.1:9910",
+      "reason": "OMNIVERSE_SCENE_HTTP_ENDPOINT is set",
+      "warnings": [],
+      "target": null
+    },
+    "rpc_version": "tier8-1",
+    "expected_rpc_version": "tier8-1",
+    "live_insight": {
+      "available": true,
+      "needs_bridge_update": false,
+      "reason": null,
+      "queries": [
+        "stage_info",
+        "composition",
+        "explain_value",
+        "properties",
+        "bounds",
+        "validate"
+      ]
+    },
+    "live_authoring": {
+      "available": true,
+      "reason": null,
+      "dry_run_default": true
+    },
+    "scene_edits": {
+      "available": true,
+      "reason": null,
+      "methods": [
+        "set_attribute",
+        "create_material",
+        "bind_material"
+      ],
+      "dry_run_default": true
+    },
+    "undo": {
+      "available": true,
+      "reason": null,
+      "kit_ctrl_z": true,
+      "methods": [
+        "undo_last",
+        "undo_history"
+      ],
+      "dry_run_default": true
+    },
+    "assets": {
+      "available": true,
+      "reason": null,
+      "methods": [
+        "add_reference"
+      ],
+      "dry_run_default": true
+    },
+    "physics": {
+      "available": true,
+      "reason": null,
+      "methods": [
+        "physics_report",
+        "add_physics_scene",
+        "make_rigid_body",
+        "make_collider",
+        "remove_physics"
+      ],
+      "dry_run_default": true
+    },
+    "viewport_capture": {
+      "available": true,
+      "reason": null,
+      "methods": [
+        "capture_viewport",
+        "capture_status"
+      ],
+      "dry_run_default": null
+    },
+    "simulation": {
+      "available": true,
+      "reason": null,
+      "methods": [
+        "simulation_status",
+        "simulation_play",
+        "simulation_pause",
+        "simulation_stop",
+        "simulation_step"
+      ],
+      "dry_run_default": null
+    },
+    "homework": {
+      "available": true,
+      "reason": null,
+      "methods": [
+        "assignment_check",
+        "scene_tour"
+      ],
+      "dry_run_default": null
+    },
+    "layout": {
+      "available": true,
+      "reason": null,
+      "methods": [
+        "layout_snap",
+        "layout_stack",
+        "layout_distribute",
+        "layout_space",
+        "layout_align"
+      ],
+      "dry_run_default": true
+    },
+    "robots": {
+      "available": true,
+      "reason": null,
+      "methods": [
+        "robot_inspect"
+      ],
+      "dry_run_default": null
+    },
+    "layers": {
+      "available": true,
+      "reason": null,
+      "methods": [
+        "layer_stack",
+        "layer_where_is",
+        "layer_flatten_preview",
+        "layer_add_sublayer",
+        "layer_remove_sublayer",
+        "layer_set_edit_target",
+        "layer_mute",
+        "layer_unmute",
+        "layer_move_opinions"
+      ],
+      "dry_run_default": true
+    },
+    "health": {
+      "available": true,
+      "reason": null,
+      "methods": [
+        "asset_health"
+      ],
+      "dry_run_default": null
+    },
+    "missing_live_methods": [],
+    "needs_bridge_update": false,
+    "message": "Live insight, light/camera authoring, attribute/material edits, undo, assets, physics, viewport capture, simulation controls, the homework check, the scene tour, smart layout, the robot inspector, the layer manager and the asset health check are available on the open stage.",
+    "capabilities": {
+      "ok": true,
+      "bridge": "LiveKitSceneBridge",
+      "version": "tier8-1",
+      "methods": [
+        "ping",
+        "selection",
+        "select",
+        "snapshot",
+        "summary",
+        "inspect",
+        "children",
+        "create",
+        "delete",
+        "duplicate",
+        "reparent",
+        "rename",
+        "move",
+        "material",
+        "variants",
+        "variant_set",
+        "timeline",
+        "timeline_set",
+        "timeline_play",
+        "timeline_stop",
+        "make_red",
+        "find",
+        "save",
+        "feature_call",
+        "capabilities",
+        "insight",
+        "create_light",
+        "create_camera",
+        "aim",
+        "set_attribute",
+        "create_material",
+        "bind_material",
+        "undo_last",
+        "undo_history",
+        "add_reference",
+        "physics_report",
+        "add_physics_scene",
+        "make_rigid_body",
+        "make_collider",
+        "remove_physics",
+        "capture_viewport",
+        "capture_status",
+        "simulation_status",
+        "simulation_play",
+        "simulation_pause",
+        "simulation_stop",
+        "simulation_step",
+        "assignment_check",
+        "scene_tour",
+        "layout_snap",
+        "layout_stack",
+        "layout_distribute",
+        "layout_space",
+        "layout_align",
+        "robot_inspect",
+        "layer_stack",
+        "layer_where_is",
+        "layer_flatten_preview",
+        "layer_add_sublayer",
+        "layer_remove_sublayer",
+        "layer_set_edit_target",
+        "layer_mute",
+        "layer_unmute",
+        "layer_move_opinions",
+        "asset_health"
+      ],
+      "insight_queries": [
+        "stage_info",
+        "composition",
+        "explain_value",
+        "properties",
+        "bounds",
+        "validate"
+      ],
+      "insight_args": {
+        "stage_info": [],
+        "composition": [
+          "prim_path"
+        ],
+        "explain_value": [
+          "prim_path",
+          "attribute",
+          "time"
+        ],
+        "properties": [
+          "prim_path",
+          "include_values",
+          "time",
+          "authored_only"
+        ],
+        "bounds": [
+          "prim_path",
+          "purposes",
+          "time",
+          "use_extents_hint"
+        ],
+        "validate": [
+          "profile",
+          "max_issues",
+          "max_prims"
+        ]
+      },
+      "authoring": {
+        "available": true
+      },
+      "edits": {
+        "available": true,
+        "methods": [
+          "set_attribute",
+          "create_material",
+          "bind_material"
+        ],
+        "dry_run_default": true
+      },
+      "undo": {
+        "available": true,
+        "kit_ctrl_z": true,
+        "methods": [
+          "undo_last",
+          "undo_history"
+        ],
+        "recorded": 4,
+        "max_entries": 50,
+        "dry_run_default": true,
+        "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state."
+      },
+      "assets": {
+        "available": true,
+        "methods": [
+          "add_reference"
+        ],
+        "dry_run_default": true
+      },
+      "physics": {
+        "available": true,
+        "methods": [
+          "physics_report",
+          "add_physics_scene",
+          "make_rigid_body",
+          "make_collider",
+          "remove_physics"
+        ],
+        "dry_run_default": true
+      },
+      "capture": {
+        "available": true,
+        "methods": [
+          "capture_viewport",
+          "capture_status"
+        ]
+      },
+      "simulation": {
+        "available": true,
+        "methods": [
+          "simulation_status",
+          "simulation_play",
+          "simulation_pause",
+          "simulation_stop",
+          "simulation_step"
+        ]
+      },
+      "homework": {
+        "available": true,
+        "methods": [
+          "assignment_check",
+          "scene_tour"
+        ]
+      },
+      "layout": {
+        "available": true,
+        "methods": [
+          "layout_snap",
+          "layout_stack",
+          "layout_distribute",
+          "layout_space",
+          "layout_align"
+        ],
+        "dry_run_default": true
+      },
+      "robots": {
+        "available": true,
+        "methods": [
+          "robot_inspect"
+        ]
+      },
+      "layers": {
+        "available": true,
+        "methods": [
+          "layer_stack",
+          "layer_where_is",
+          "layer_flatten_preview",
+          "layer_add_sublayer",
+          "layer_remove_sublayer",
+          "layer_set_edit_target",
+          "layer_mute",
+          "layer_unmute",
+          "layer_move_opinions"
+        ],
+        "dry_run_default": true
+      },
+      "health": {
+        "available": true,
+        "methods": [
+          "asset_health"
+        ]
+      },
+      "dry_run_default": true,
+      "stage_open": true,
+      "insight_budget_ms": {
+        "default": 3000.0,
+        "max": 10000.0
+      },
+      "edit_methods": [
+        "set_attribute",
+        "create_material",
+        "bind_material"
+      ],
+      "undo_methods": [
+        "undo_last",
+        "undo_history"
+      ],
+      "asset_methods": [
+        "add_reference"
+      ],
+      "physics_methods": [
+        "physics_report",
+        "add_physics_scene",
+        "make_rigid_body",
+        "make_collider",
+        "remove_physics"
+      ],
+      "capture_methods": [
+        "capture_viewport",
+        "capture_status"
+      ],
+      "simulation_methods": [
+        "simulation_status",
+        "simulation_play",
+        "simulation_pause",
+        "simulation_stop",
+        "simulation_step"
+      ],
+      "homework_methods": [
+        "assignment_check",
+        "scene_tour"
+      ],
+      "layout_methods": [
+        "layout_snap",
+        "layout_stack",
+        "layout_distribute",
+        "layout_space",
+        "layout_align"
+      ],
+      "robot_methods": [
+        "robot_inspect"
+      ],
+      "layer_read_methods": [
+        "layer_stack",
+        "layer_where_is",
+        "layer_flatten_preview"
+      ],
+      "layer_write_methods": [
+        "layer_add_sublayer",
+        "layer_remove_sublayer",
+        "layer_set_edit_target",
+        "layer_mute",
+        "layer_unmute",
+        "layer_move_opinions"
+      ],
+      "health_methods": [
+        "asset_health"
+      ],
+      "endpoint": "http://127.0.0.1:9910"
+    }
+  },
+  "scene": {
+    "stage_name": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+    "root_path": "/World",
+    "selection": [
+      "/World",
+      "/Replicator",
+      "/PhysicsScene"
+    ],
+    "prim_count": 32,
+    "top_level_prims": [
+      "/World/Lights",
+      "/World/Looks",
+      "/World/Environment",
+      "/World/Racks",
+      "/World/Cameras"
+    ]
+  },
+  "preview": {
+    "ok": true,
+    "dry_run": true,
+    "written": false,
+    "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\extension_restart_verified_20261024_234417",
+    "files": [
+      "config/extension.toml",
+      "study_extension/__init__.py",
+      "README.md"
+    ]
+  },
+  "created": {
+    "ok": true,
+    "dry_run": false,
+    "written": true,
+    "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\extension_restart_verified_20261024_234417",
+    "files": [
+      "config/extension.toml",
+      "study_extension/__init__.py",
+      "README.md"
+    ]
+  },
+  "generator_fix_loaded": true,
+  "composer_target": true,
+  "scene_files_unchanged": true,
+  "passed": true
+}

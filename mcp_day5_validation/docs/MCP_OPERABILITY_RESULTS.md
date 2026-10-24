@@ -56,8 +56,10 @@ The first attempts found a helper assumption about Kit clearing instance attribu
 real shutdown gap: the generated window needed to be hidden before release. Both generator
 and test copy were fixed; 16 focused tests pass on USD 26.8 and 25.11, including a new shutdown
 regression. These focused results supplement the earlier full-suite baseline of 1,428;
-the complete suite was not rerun after this small lifecycle fix. The updated generator is
-on disk; the running router needs an approved restart before newly generated templates use it.
+the complete suite was not rerun after this small lifecycle fix. The user then manually
+restarted the router; `router_restart_generator_verified.json` confirms it targets Composer
+and an actual newly generated extension contains the corrected shutdown code. Scene files
+remained unchanged.
 
 Still pending: proprietary CAD and ROS connectivity.
 The sections below record earlier checkpoints, not the latest coverage.

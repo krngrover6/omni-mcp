@@ -5,8 +5,9 @@ passed all 9 checks, including the user's real Inspect stage click and complete 
 Generator shutdown now hides the window before destroying/releasing it, and tolerates
 incomplete startup. A focused regression passes with all 16 Day 5 tests on both USD builds.
 No full-suite rerun after this small change; prior full baseline remains 1,428 per build.
-Current router still has the previous generator imported; ask before restarting it to load
-the fixed source. No bridge reload is needed for this router-local generator change.
+User manually restarted the router; `router_restart_generator_verified.json` confirms
+the Composer target and corrected code in an actual newly generated extension. Saved
+scene files were unchanged. No bridge reload was required.
 Remaining functional prerequisites: a real CAD fixture and a ROS publisher/subscriber setup.
 
 Blender follow-up, 2026-10-24: existing addon connected (protocol 13, Blender 5.2.2 LTS);

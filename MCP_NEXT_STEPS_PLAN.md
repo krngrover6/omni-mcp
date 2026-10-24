@@ -42,8 +42,8 @@ label apply/undo and capture; own fixtures were removed with unchanged scene fil
 Blender subsequently passed real export and Composer handoff checks, including dimensions,
 material binding and a visual screenshot; original contexts and temporary edits were restored.
 The generated extension subsequently passed all nine live lifecycle/button/cleanup checks.
-The generator and a regression test were corrected; its router-local update awaits an approved
-router restart. ROS/CAD remain outstanding.
+The generator and a regression test were corrected; the user restarted the router, and
+newly generated output verified that the fix is active. ROS/CAD remain outstanding.
 
 ### 1. Preserve the completed work
 
