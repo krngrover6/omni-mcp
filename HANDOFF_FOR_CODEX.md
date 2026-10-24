@@ -1,5 +1,12 @@
 # Handoff: Omniverse scene MCP (Claude -> Codex), 2026-10-22
 
+Composer follow-up, 2026-10-24: user opened the independent test project; Codex switched
+the router to Composer and ran 14 successful direct-MCP checks (see
+`mcp_day5_validation/docs/mcp_composer_20261024_231805.json`). Label preview/apply/undo,
+graph/event-driven variant A -> B and capture worked. Own fixtures were removed; prim
+count returned to 32; saved scene files remained unchanged. Router remains on Composer
+9910; Isaac 9911 was offline. Blender addon connection is still unavailable.
+
 ## Latest direct MCP evidence, 2026-10-24
 
 See `mcp_day5_validation/docs/MCP_OPERABILITY_RESULTS.md`: 42 calls across 33 tools

@@ -37,7 +37,9 @@ add runtime-prim cleanup/isolation verification before claiming exact live-stage
 Follow-up: robot motion, camera samples and conversion also passed through MCP. Two-frame
 labelled SDG passed with matching class/mask/box content, not only file checks. Cancellation
 and a follow-up job passed; an initialized repeat run left the compared runtime paths unchanged.
-External-app workflows, ROS/CAD and enabling the extension remain outstanding.
+Composer subsequently passed 14 direct MCP checks, including event-driven variants,
+label apply/undo and capture; own fixtures were removed with unchanged scene files.
+Blender, ROS/CAD and enabling the extension remain outstanding.
 
 ### 1. Preserve the completed work
 

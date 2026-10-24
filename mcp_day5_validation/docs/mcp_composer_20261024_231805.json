@@ -1,0 +1,1744 @@
+{
+  "started": 1792876685.020025,
+  "calls": [
+    {
+      "tool": "scene_capabilities",
+      "arguments": {},
+      "result": {
+        "ok": true,
+        "backend": {
+          "mode": "http_switch",
+          "bridge": "HttpSceneBridge",
+          "endpoint": "http://127.0.0.1:9910",
+          "reason": "switch_scene_target('composer'): http://127.0.0.1:9910 answered /health",
+          "warnings": [],
+          "target": "composer"
+        },
+        "rpc_version": "tier8-1",
+        "expected_rpc_version": "tier8-1",
+        "live_insight": {
+          "available": true,
+          "needs_bridge_update": false,
+          "reason": null,
+          "queries": [
+            "stage_info",
+            "composition",
+            "explain_value",
+            "properties",
+            "bounds",
+            "validate"
+          ]
+        },
+        "live_authoring": {
+          "available": true,
+          "reason": null,
+          "dry_run_default": true
+        },
+        "scene_edits": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "set_attribute",
+            "create_material",
+            "bind_material"
+          ],
+          "dry_run_default": true
+        },
+        "undo": {
+          "available": true,
+          "reason": null,
+          "kit_ctrl_z": true,
+          "methods": [
+            "undo_last",
+            "undo_history"
+          ],
+          "dry_run_default": true
+        },
+        "assets": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "add_reference"
+          ],
+          "dry_run_default": true
+        },
+        "physics": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "physics_report",
+            "add_physics_scene",
+            "make_rigid_body",
+            "make_collider",
+            "remove_physics"
+          ],
+          "dry_run_default": true
+        },
+        "viewport_capture": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "capture_viewport",
+            "capture_status"
+          ],
+          "dry_run_default": null
+        },
+        "simulation": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "simulation_status",
+            "simulation_play",
+            "simulation_pause",
+            "simulation_stop",
+            "simulation_step"
+          ],
+          "dry_run_default": null
+        },
+        "homework": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "assignment_check",
+            "scene_tour"
+          ],
+          "dry_run_default": null
+        },
+        "layout": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "layout_snap",
+            "layout_stack",
+            "layout_distribute",
+            "layout_space",
+            "layout_align"
+          ],
+          "dry_run_default": true
+        },
+        "robots": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "robot_inspect"
+          ],
+          "dry_run_default": null
+        },
+        "layers": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "layer_stack",
+            "layer_where_is",
+            "layer_flatten_preview",
+            "layer_add_sublayer",
+            "layer_remove_sublayer",
+            "layer_set_edit_target",
+            "layer_mute",
+            "layer_unmute",
+            "layer_move_opinions"
+          ],
+          "dry_run_default": true
+        },
+        "health": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "asset_health"
+          ],
+          "dry_run_default": null
+        },
+        "missing_live_methods": [],
+        "needs_bridge_update": false,
+        "message": "Live insight, light/camera authoring, attribute/material edits, undo, assets, physics, viewport capture, simulation controls, the homework check, the scene tour, smart layout, the robot inspector, the layer manager and the asset health check are available on the open stage.",
+        "capabilities": {
+          "ok": true,
+          "bridge": "LiveKitSceneBridge",
+          "version": "tier8-1",
+          "methods": [
+            "ping",
+            "selection",
+            "select",
+            "snapshot",
+            "summary",
+            "inspect",
+            "children",
+            "create",
+            "delete",
+            "duplicate",
+            "reparent",
+            "rename",
+            "move",
+            "material",
+            "variants",
+            "variant_set",
+            "timeline",
+            "timeline_set",
+            "timeline_play",
+            "timeline_stop",
+            "make_red",
+            "find",
+            "save",
+            "feature_call",
+            "capabilities",
+            "insight",
+            "create_light",
+            "create_camera",
+            "aim",
+            "set_attribute",
+            "create_material",
+            "bind_material",
+            "undo_last",
+            "undo_history",
+            "add_reference",
+            "physics_report",
+            "add_physics_scene",
+            "make_rigid_body",
+            "make_collider",
+            "remove_physics",
+            "capture_viewport",
+            "capture_status",
+            "simulation_status",
+            "simulation_play",
+            "simulation_pause",
+            "simulation_stop",
+            "simulation_step",
+            "assignment_check",
+            "scene_tour",
+            "layout_snap",
+            "layout_stack",
+            "layout_distribute",
+            "layout_space",
+            "layout_align",
+            "robot_inspect",
+            "layer_stack",
+            "layer_where_is",
+            "layer_flatten_preview",
+            "layer_add_sublayer",
+            "layer_remove_sublayer",
+            "layer_set_edit_target",
+            "layer_mute",
+            "layer_unmute",
+            "layer_move_opinions",
+            "asset_health"
+          ],
+          "insight_queries": [
+            "stage_info",
+            "composition",
+            "explain_value",
+            "properties",
+            "bounds",
+            "validate"
+          ],
+          "insight_args": {
+            "stage_info": [],
+            "composition": [
+              "prim_path"
+            ],
+            "explain_value": [
+              "prim_path",
+              "attribute",
+              "time"
+            ],
+            "properties": [
+              "prim_path",
+              "include_values",
+              "time",
+              "authored_only"
+            ],
+            "bounds": [
+              "prim_path",
+              "purposes",
+              "time",
+              "use_extents_hint"
+            ],
+            "validate": [
+              "profile",
+              "max_issues",
+              "max_prims"
+            ]
+          },
+          "authoring": {
+            "available": true
+          },
+          "edits": {
+            "available": true,
+            "methods": [
+              "set_attribute",
+              "create_material",
+              "bind_material"
+            ],
+            "dry_run_default": true
+          },
+          "undo": {
+            "available": true,
+            "kit_ctrl_z": true,
+            "methods": [
+              "undo_last",
+              "undo_history"
+            ],
+            "recorded": 0,
+            "max_entries": 50,
+            "dry_run_default": true,
+            "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state."
+          },
+          "assets": {
+            "available": true,
+            "methods": [
+              "add_reference"
+            ],
+            "dry_run_default": true
+          },
+          "physics": {
+            "available": true,
+            "methods": [
+              "physics_report",
+              "add_physics_scene",
+              "make_rigid_body",
+              "make_collider",
+              "remove_physics"
+            ],
+            "dry_run_default": true
+          },
+          "capture": {
+            "available": true,
+            "methods": [
+              "capture_viewport",
+              "capture_status"
+            ]
+          },
+          "simulation": {
+            "available": true,
+            "methods": [
+              "simulation_status",
+              "simulation_play",
+              "simulation_pause",
+              "simulation_stop",
+              "simulation_step"
+            ]
+          },
+          "homework": {
+            "available": true,
+            "methods": [
+              "assignment_check",
+              "scene_tour"
+            ]
+          },
+          "layout": {
+            "available": true,
+            "methods": [
+              "layout_snap",
+              "layout_stack",
+              "layout_distribute",
+              "layout_space",
+              "layout_align"
+            ],
+            "dry_run_default": true
+          },
+          "robots": {
+            "available": true,
+            "methods": [
+              "robot_inspect"
+            ]
+          },
+          "layers": {
+            "available": true,
+            "methods": [
+              "layer_stack",
+              "layer_where_is",
+              "layer_flatten_preview",
+              "layer_add_sublayer",
+              "layer_remove_sublayer",
+              "layer_set_edit_target",
+              "layer_mute",
+              "layer_unmute",
+              "layer_move_opinions"
+            ],
+            "dry_run_default": true
+          },
+          "health": {
+            "available": true,
+            "methods": [
+              "asset_health"
+            ]
+          },
+          "dry_run_default": true,
+          "stage_open": true,
+          "insight_budget_ms": {
+            "default": 3000.0,
+            "max": 10000.0
+          },
+          "edit_methods": [
+            "set_attribute",
+            "create_material",
+            "bind_material"
+          ],
+          "undo_methods": [
+            "undo_last",
+            "undo_history"
+          ],
+          "asset_methods": [
+            "add_reference"
+          ],
+          "physics_methods": [
+            "physics_report",
+            "add_physics_scene",
+            "make_rigid_body",
+            "make_collider",
+            "remove_physics"
+          ],
+          "capture_methods": [
+            "capture_viewport",
+            "capture_status"
+          ],
+          "simulation_methods": [
+            "simulation_status",
+            "simulation_play",
+            "simulation_pause",
+            "simulation_stop",
+            "simulation_step"
+          ],
+          "homework_methods": [
+            "assignment_check",
+            "scene_tour"
+          ],
+          "layout_methods": [
+            "layout_snap",
+            "layout_stack",
+            "layout_distribute",
+            "layout_space",
+            "layout_align"
+          ],
+          "robot_methods": [
+            "robot_inspect"
+          ],
+          "layer_read_methods": [
+            "layer_stack",
+            "layer_where_is",
+            "layer_flatten_preview"
+          ],
+          "layer_write_methods": [
+            "layer_add_sublayer",
+            "layer_remove_sublayer",
+            "layer_set_edit_target",
+            "layer_mute",
+            "layer_unmute",
+            "layer_move_opinions"
+          ],
+          "health_methods": [
+            "asset_health"
+          ],
+          "endpoint": "http://127.0.0.1:9910"
+        }
+      }
+    },
+    {
+      "tool": "scene_summary",
+      "arguments": {},
+      "result": {
+        "stage_name": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 32,
+        "top_level_prims": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras"
+        ]
+      }
+    },
+    {
+      "tool": "scene_stage_info",
+      "arguments": {},
+      "result": {
+        "ok": true,
+        "root_layer": {
+          "identifier": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+          "display_name": "root.usda",
+          "real_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda",
+          "anonymous": false,
+          "dirty": true,
+          "muted": false
+        },
+        "session_layer": {
+          "present": true,
+          "identifier": "anon:0000032A760C0A00",
+          "empty": false,
+          "dirty": true
+        },
+        "edit_target": {
+          "layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+          "is_root_layer": true,
+          "is_session_layer": false
+        },
+        "layer_stack": [
+          {
+            "identifier": "anon:0000032A760C0A00",
+            "display_name": "",
+            "real_path": null,
+            "anonymous": true,
+            "dirty": true,
+            "muted": false,
+            "role": "session",
+            "authored_path": null,
+            "depth": 0,
+            "parent": null,
+            "offset": {
+              "offset": 0.0,
+              "scale": 1.0
+            },
+            "missing": false,
+            "in_layer_stack": true
+          },
+          {
+            "identifier": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "display_name": "root.usda",
+            "real_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda",
+            "anonymous": false,
+            "dirty": true,
+            "muted": false,
+            "role": "root",
+            "authored_path": null,
+            "depth": 0,
+            "parent": null,
+            "offset": {
+              "offset": 0.0,
+              "scale": 1.0
+            },
+            "missing": false,
+            "in_layer_stack": true
+          },
+          {
+            "identifier": "C:/Users/krngr/Omniverse/mcp_day5_validation/layers/layout.usda",
+            "display_name": "layout.usda",
+            "real_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\layers\\layout.usda",
+            "anonymous": false,
+            "dirty": false,
+            "muted": false,
+            "role": "sublayer",
+            "authored_path": "./layers/layout.usda",
+            "depth": 1,
+            "parent": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "offset": {
+              "offset": 0.0,
+              "scale": 1.0
+            },
+            "missing": false,
+            "in_layer_stack": true
+          },
+          {
+            "identifier": "C:/Users/krngr/Omniverse/mcp_day5_validation/layers/materials.usda",
+            "display_name": "materials.usda",
+            "real_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\layers\\materials.usda",
+            "anonymous": false,
+            "dirty": false,
+            "muted": false,
+            "role": "sublayer",
+            "authored_path": "./layers/materials.usda",
+            "depth": 1,
+            "parent": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "offset": {
+              "offset": 0.0,
+              "scale": 1.0
+            },
+            "missing": false,
+            "in_layer_stack": true
+          },
+          {
+            "identifier": "C:/Users/krngr/Omniverse/mcp_day5_validation/layers/lighting.usda",
+            "display_name": "lighting.usda",
+            "real_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\layers\\lighting.usda",
+            "anonymous": false,
+            "dirty": false,
+            "muted": false,
+            "role": "sublayer",
+            "authored_path": "./layers/lighting.usda",
+            "depth": 1,
+            "parent": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "offset": {
+              "offset": 0.0,
+              "scale": 1.0
+            },
+            "missing": false,
+            "in_layer_stack": true
+          }
+        ],
+        "layer_stack_truncated": false,
+        "muted_layers": [],
+        "used_layers": {
+          "count": 6,
+          "identifiers": [
+            "anon:0000032A760C0A00",
+            "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "C:/Users/krngr/Omniverse/mcp_day5_validation/layers/lighting.usda",
+            "C:/Users/krngr/Omniverse/mcp_day5_validation/layers/materials.usda",
+            "C:/Users/krngr/Omniverse/mcp_day5_validation/layers/layout.usda",
+            "C:/users/krngr/omniverse/kit-app-template/_build/windows-x86_64/release/kit/resources/models/camera/camera.usd"
+          ],
+          "truncated": false
+        },
+        "default_prim": "/World",
+        "default_prim_authored": "World",
+        "up_axis": "Z",
+        "up_axis_authored": true,
+        "meters_per_unit": 1.0,
+        "meters_per_unit_authored": true,
+        "time_codes_per_second": 24.0,
+        "frames_per_second": 24.0,
+        "start_time_code": 0.0,
+        "end_time_code": 0.0,
+        "has_authored_time_code_range": false,
+        "prims": {
+          "total": 32,
+          "traversed_by_default": 32,
+          "inactive": 0,
+          "unloaded": 0,
+          "abstract": 0,
+          "instances": 0,
+          "prototypes": 0,
+          "by_type": {
+            "Xform": 7,
+            "Camera": 5,
+            "(typeless)": 4,
+            "Scope": 2,
+            "Material": 2,
+            "Shader": 2,
+            "Mesh": 2,
+            "DomeLight": 1,
+            "DistantLight": 1,
+            "Cube": 1,
+            "RenderProduct": 1,
+            "RenderSettings": 1,
+            "RenderVar": 1,
+            "OmniGraph": 1,
+            "PhysicsScene": 1
+          },
+          "other_types": 0,
+          "by_specifier": {
+            "def": 32
+          },
+          "truncated": false,
+          "truncated_by_time": false
+        },
+        "model_hierarchy": {
+          "by_kind": {
+            "assembly": 1,
+            "component": 7,
+            "group": 1,
+            "subcomponent": 1
+          },
+          "models": [
+            {
+              "path": "/World",
+              "kind": "assembly"
+            },
+            {
+              "path": "/World/Environment",
+              "kind": "component"
+            },
+            {
+              "path": "/World/Racks",
+              "kind": "group"
+            },
+            {
+              "path": "/World/Racks/Crate_01",
+              "kind": "component"
+            },
+            {
+              "path": "/OmniverseKit_Persp",
+              "kind": "component"
+            },
+            {
+              "path": "/OmniverseKit_Front",
+              "kind": "component"
+            },
+            {
+              "path": "/OmniverseKit_Right",
+              "kind": "component"
+            },
+            {
+              "path": "/OmniverseKit_Top",
+              "kind": "component"
+            }
+          ],
+          "models_truncated": false,
+          "broken_model_kinds": [
+            {
+              "path": "/World/Cameras/Overview",
+              "kind": "component"
+            }
+          ],
+          "note": "broken_model_kinds lists prims with a model kind whose ancestors are not all group/assembly, so IsModel() is False.",
+          "truncated_by_time": false
+        },
+        "composition_errors": [],
+        "truncated_by_time": false,
+        "time_budget": {
+          "truncated_by_time": false,
+          "elapsed_ms": 5.9,
+          "budget_ms": 3000.0,
+          "processed": 32,
+          "note": "Finished within the time budget.",
+          "layers_walked": 5,
+          "requested_budget_ms": 3000.0,
+          "limited_by_queue_wait": false,
+          "queue_wait_ms": 16.0,
+          "enforced": true
+        },
+        "stage_identifier": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "root_layer_anonymous": false,
+        "has_unsaved_changes": true,
+        "unsaved_layers": [
+          {
+            "identifier": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "anonymous": false,
+            "is_root_layer": true
+          }
+        ],
+        "unsaved_layer_count": 1,
+        "session_layer_has_edits": true,
+        "mode": "live",
+        "query": "stage_info",
+        "args": {},
+        "elapsed_ms": 5,
+        "note": "Read from the LIVE stage in Kit, including unsaved edits; nothing was changed, selected or saved.",
+        "budget_ms": 3000.0,
+        "mode_requested": "auto"
+      }
+    },
+    {
+      "tool": "graph_inspect",
+      "arguments": {},
+      "result": {
+        "ok": true,
+        "root_path": null,
+        "summary": "Found 1 graph(s) with 0 node(s) in total; no errors or warnings.",
+        "graphs": [
+          {
+            "path": "/Replicator/SDGPipeline",
+            "name": "SDGPipeline",
+            "evaluator": "execution",
+            "evaluator_plain": "an Action Graph: nothing runs until an event node (key press, tick, message) fires, then execution flows along the white execution wires from node to node",
+            "pipeline_stage": "simulation",
+            "pipeline_stage_plain": "simulation (the normal stage, evaluated every app update)",
+            "evaluation_mode": "Automatic",
+            "file_format_version": [
+              1,
+              9
+            ],
+            "variables": {
+              "globalSeed": null
+            },
+            "plain": "SDGPipeline is an Action Graph: nothing runs until an event node (key press, tick, message) fires, then execution flows along the white execution wires from node to node. It has 0 node(s).",
+            "node_count": 0,
+            "nodes": [],
+            "flow": [],
+            "problems": []
+          }
+        ],
+        "problems": [],
+        "counts": {
+          "graphs": 1,
+          "nodes": 0,
+          "prims_visited": 32,
+          "unknown_node_types": 0,
+          "error": 0,
+          "warning": 0,
+          "info": 0
+        },
+        "glossary": [
+          {
+            "term": "OmniGraph",
+            "meaning": "OmniGraph is Omniverse's visual programming system; each graph is saved in USD as an OmniGraph prim with node prims inside."
+          },
+          {
+            "term": "node",
+            "meaning": "A node is one box in the graph; its node:type says what it does (for example omni.graph.nodes.SetVariantSelection)."
+          },
+          {
+            "term": "event node",
+            "meaning": "An event node (On Keyboard Input, On Tick, On MessageBus Event, ...) starts a chain of execution."
+          },
+          {
+            "term": "execution wire",
+            "meaning": "An execution wire says what runs next: when one node finishes, the node its exec output is wired to runs."
+          },
+          {
+            "term": "data wire",
+            "meaning": "A data wire hands a value (a token, number, path ...) from one node's output to another node's input."
+          },
+          {
+            "term": "Action Graph",
+            "meaning": "An Action Graph (evaluator 'execution') does nothing until an event node fires; then execution flows from node to node."
+          }
+        ],
+        "truncated": false,
+        "truncated_by_time": false,
+        "node_types_source": {
+          "kit": "110.0 (extension builds tagged +110.0.0; omni.graph 1.142.5); Composer build kit-app-template/_build is 110.1.2",
+          "isaac_sim": "6.1.0-rc.26 (isaacsim-6.1.0/VERSION)"
+        }
+      }
+    },
+    {
+      "tool": "variant_list",
+      "arguments": {},
+      "result": {
+        "ok": true,
+        "action": "list_variants",
+        "dry_run": false,
+        "applied": false,
+        "written": false,
+        "read_only": true,
+        "explanation": "No prim here has a variant set. Create one with create_variant_set.",
+        "warnings": [],
+        "prims": [],
+        "prim_count": 0,
+        "prims_scanned": 33,
+        "truncated": false,
+        "truncated_by_time": false
+      }
+    },
+    {
+      "tool": "rubric_check",
+      "arguments": {
+        "rubric": {
+          "rules": [
+            {
+              "id": "world",
+              "kind": "prim",
+              "path": "/World",
+              "type": "Xform"
+            }
+          ]
+        }
+      },
+      "result": {
+        "ok": true,
+        "passed": true,
+        "read_only": true,
+        "score_percent": 100.0,
+        "earned": 1,
+        "possible": 1,
+        "rules": [
+          {
+            "id": "world",
+            "passed": true,
+            "actual": true,
+            "weight": 1
+          }
+        ],
+        "note": "Checks declared USD structure only; visual quality and physical behavior require separate review."
+      }
+    },
+    {
+      "tool": "semantic_audit",
+      "arguments": {},
+      "result": {
+        "ok": true,
+        "read_only": true,
+        "scanned": 32,
+        "truncated": false,
+        "labelled_prims": [],
+        "class_histogram": {},
+        "unlabelled_geometry": [
+          "/World/Environment/Floor",
+          "/World/Racks/Crate_01/Geom",
+          "/World/Cameras/Overview/OmniverseKitViewportCameraMesh/CameraModel"
+        ],
+        "unlabelled_count": 3,
+        "ambiguous_geometry": [],
+        "note": "Multiple classes may be intentional; audit does not decide training-label correctness."
+      }
+    },
+    {
+      "tool": "semantic_labels",
+      "arguments": {
+        "mapping": {
+          "/World/Racks/Crate_01/Geom": "composer_probe"
+        }
+      },
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "applied": false,
+        "written": false,
+        "plan": {
+          "mapping": {
+            "/World/Racks/Crate_01/Geom": "composer_probe"
+          },
+          "schema": "SemanticsLabelsAPI:class"
+        },
+        "explanation": "Would author class labels in the current edit layer; nothing has changed."
+      }
+    },
+    {
+      "tool": "semantic_labels",
+      "arguments": {
+        "mapping": {
+          "/World/Racks/Crate_01/Geom": "composer_probe"
+        },
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "action": "semantic_labels",
+        "dry_run": false,
+        "applied": true,
+        "written": true,
+        "explanation": "Authored semantic class labels.",
+        "warnings": [
+          "root.usda now has unsaved changes; save it to keep this edit."
+        ],
+        "undo": {
+          "recorded": true,
+          "label": "Set semantic class labels"
+        },
+        "plan": {
+          "mapping": {
+            "/World/Racks/Crate_01/Geom": "composer_probe"
+          },
+          "schema": "SemanticsLabelsAPI:class"
+        }
+      }
+    },
+    {
+      "tool": "semantic_audit",
+      "arguments": {},
+      "result": {
+        "ok": true,
+        "read_only": true,
+        "scanned": 32,
+        "truncated": false,
+        "labelled_prims": [
+          {
+            "path": "/World/Racks/Crate_01/Geom",
+            "labels": [
+              "composer_probe"
+            ]
+          }
+        ],
+        "class_histogram": {
+          "composer_probe": 1
+        },
+        "unlabelled_geometry": [
+          "/World/Environment/Floor",
+          "/World/Cameras/Overview/OmniverseKitViewportCameraMesh/CameraModel"
+        ],
+        "unlabelled_count": 2,
+        "ambiguous_geometry": [],
+        "note": "Multiple classes may be intentional; audit does not decide training-label correctness."
+      }
+    },
+    {
+      "tool": "scene_undo_last",
+      "arguments": {
+        "dry_run": false
+      },
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "dry_run": false,
+        "undone": {
+          "label": "Set semantic class labels",
+          "paths": [
+            "/World/Racks/Crate_01/Geom"
+          ],
+          "layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda"
+        },
+        "verified": true,
+        "remaining": 0,
+        "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state.",
+        "via": "mcp_snapshot",
+        "mode": "live",
+        "action": "undo_last",
+        "applied": true
+      }
+    },
+    {
+      "tool": "semantic_audit",
+      "arguments": {},
+      "result": {
+        "ok": true,
+        "read_only": true,
+        "scanned": 32,
+        "truncated": false,
+        "labelled_prims": [],
+        "class_histogram": {},
+        "unlabelled_geometry": [
+          "/World/Environment/Floor",
+          "/World/Racks/Crate_01/Geom",
+          "/World/Cameras/Overview/OmniverseKitViewportCameraMesh/CameraModel"
+        ],
+        "unlabelled_count": 3,
+        "ambiguous_geometry": [],
+        "note": "Multiple classes may be intentional; audit does not decide training-label correctness."
+      }
+    },
+    {
+      "tool": "scene_create",
+      "arguments": {
+        "path": "/World/ComposerProbe_5dfeef7f",
+        "type_name": "Cube"
+      },
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": true,
+        "changes": [
+          {
+            "action": "create",
+            "path": "/World/ComposerProbe_5dfeef7f",
+            "summary": "Create Cube at /World/ComposerProbe_5dfeef7f",
+            "before": null,
+            "after": null
+          }
+        ],
+        "payload": {
+          "path": "/World/ComposerProbe_5dfeef7f",
+          "type_name": "Cube"
+        }
+      }
+    },
+    {
+      "tool": "scene_create",
+      "arguments": {
+        "path": "/World/ComposerProbe_5dfeef7f",
+        "type_name": "Cube",
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": false,
+        "changes": [
+          {
+            "action": "create",
+            "path": "/World/ComposerProbe_5dfeef7f",
+            "summary": "Create Cube at /World/ComposerProbe_5dfeef7f",
+            "before": null,
+            "after": null
+          }
+        ],
+        "payload": {
+          "prim": {
+            "path": "/World/ComposerProbe_5dfeef7f",
+            "type_name": "Cube",
+            "parent": "/World",
+            "children": [],
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "material": null
+          }
+        }
+      }
+    },
+    {
+      "tool": "variant_create_set",
+      "arguments": {
+        "prim_path": "/World/ComposerProbe_5dfeef7f",
+        "name": "MCPTest",
+        "variants": [
+          "A",
+          "B"
+        ],
+        "selection": "A"
+      },
+      "result": {
+        "ok": true,
+        "action": "create_variant_set",
+        "dry_run": true,
+        "applied": false,
+        "written": false,
+        "explanation": "/World/ComposerProbe_5dfeef7f would get a variant set MCPTest with 2 variant(s) (A, B) in root.usda, with A selected.",
+        "warnings": [
+          "The new variants are empty: each changes nothing until you author opinions inside it."
+        ],
+        "plan": {
+          "prim_path": "/World/ComposerProbe_5dfeef7f",
+          "variant_set": "MCPTest",
+          "variants": [
+            "A",
+            "B"
+          ],
+          "selection": "A",
+          "layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+          "layer_short": "root.usda"
+        },
+        "next_step": "Dry run: nothing was changed. Call again with dry_run=False to apply it."
+      }
+    },
+    {
+      "tool": "variant_create_set",
+      "arguments": {
+        "prim_path": "/World/ComposerProbe_5dfeef7f",
+        "name": "MCPTest",
+        "variants": [
+          "A",
+          "B"
+        ],
+        "selection": "A",
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "action": "create_variant_set",
+        "dry_run": false,
+        "applied": true,
+        "written": true,
+        "explanation": "/World/ComposerProbe_5dfeef7f got a variant set MCPTest with 2 variant(s) (A, B) in root.usda, with A selected.",
+        "warnings": [
+          "The new variants are empty: each changes nothing until you author opinions inside it.",
+          "root.usda now has unsaved changes; save it to keep this edit."
+        ],
+        "undo": {
+          "recorded": true,
+          "label": "create variant set MCPTest on /World/ComposerProbe_5dfeef7f"
+        },
+        "variants": [
+          "A",
+          "B"
+        ],
+        "selection": "A",
+        "plan": {
+          "prim_path": "/World/ComposerProbe_5dfeef7f",
+          "variant_set": "MCPTest",
+          "variants": [
+            "A",
+            "B"
+          ],
+          "selection": "A",
+          "layer": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+          "layer_short": "root.usda"
+        }
+      }
+    },
+    {
+      "tool": "graph_apply",
+      "arguments": {
+        "name": "event_sets_variant",
+        "graph_path": "/World/ComposerGraph_5dfeef7f",
+        "options": {
+          "event_name": "mcp_composer_5dfeef7f",
+          "prim": "/World/ComposerProbe_5dfeef7f",
+          "variant_set": "MCPTest",
+          "payload": "colors"
+        }
+      },
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "recipe": "event_sets_variant",
+        "summary": "The configurator pattern: a message bus event (such as setColor with payload colors='Black') selects the variant named in its payload; optionally a test key sends that event.",
+        "graph_path": "/World/ComposerGraph_5dfeef7f",
+        "graph": {
+          "graph_path": "/World/ComposerGraph_5dfeef7f",
+          "evaluator_name": "execution"
+        },
+        "nodes": [
+          {
+            "name": "OnEvent",
+            "type": "omni.graph.action.OnMessageBusEvent",
+            "ui_name": "On MessageBus Event",
+            "path": "/World/ComposerGraph_5dfeef7f/OnEvent",
+            "plain": "Starts the graph when an event with this exact name arrives on the app message bus (from a graph, Python or a browser client); payload keys are copied into matching extra outputs.",
+            "why": "waits for message bus event 'mcp_composer_5dfeef7f'",
+            "source": "C:/Users/krngr/Omniverse/isaacsim-6.1.0/extscache/omni.graph.action_nodes_core-2.11.0+110.0.0.wx64.r.cp312.u7f4/ogn/nodes.json"
+          },
+          {
+            "name": "SetVariant",
+            "type": "omni.graph.nodes.SetVariantSelection",
+            "ui_name": "Set Variant Selection",
+            "path": "/World/ComposerGraph_5dfeef7f/SetVariant",
+            "plain": "Switches a prim's variant set (such as Leather) to the named variant (such as Black).",
+            "why": "selects the MCPTest variant named in the payload",
+            "source": "C:/Users/krngr/Omniverse/isaacsim-6.1.0/extscache/omni.graph.nodes-2.12.0+110.0.0.wx64.r.cp312.u7f4/ogn/nodes.json"
+          }
+        ],
+        "attributes": [
+          {
+            "attribute": "OnEvent.outputs:colors",
+            "type": "token",
+            "why": "extra output that receives the payload key 'colors' (must match the sender exactly)"
+          }
+        ],
+        "connections": [
+          {
+            "from": "OnEvent.outputs:execOut",
+            "to": "SetVariant.inputs:execIn",
+            "kind": "execution",
+            "why": "run Set Variant Selection when the event arrives"
+          },
+          {
+            "from": "OnEvent.outputs:colors",
+            "to": "SetVariant.inputs:variantName",
+            "kind": "data",
+            "why": "data wire: the payload's colors value becomes the variant name"
+          }
+        ],
+        "values": [
+          {
+            "attribute": "OnEvent.inputs:eventName",
+            "value": "mcp_composer_5dfeef7f",
+            "why": "the event name, letter for letter"
+          },
+          {
+            "attribute": "OnEvent.inputs:onlyPlayback",
+            "value": false,
+            "why": "react without pressing Play"
+          },
+          {
+            "attribute": "SetVariant.inputs:prim",
+            "value": [
+              "/World/ComposerProbe_5dfeef7f"
+            ],
+            "why": "the prim that owns the variant set (a target input)",
+            "target": true
+          },
+          {
+            "attribute": "SetVariant.inputs:variantSetName",
+            "value": "MCPTest",
+            "why": "which variant set to switch"
+          },
+          {
+            "attribute": "SetVariant.inputs:setVariant",
+            "value": true,
+            "why": "change the variant selection itself (the node's default is off)"
+          }
+        ],
+        "explanation": [
+          "When message bus event 'mcp_composer_5dfeef7f' arrives -> Set Variant Selection sets MCPTest=<the 'colors' value> on /World/ComposerProbe_5dfeef7f.",
+          "The sender (a browser client, Python, or Send MessageBus Event) must use event name 'mcp_composer_5dfeef7f' and payload key 'colors' exactly, with a value such as A, B.",
+          "Python test inside Kit: import carb.events, omni.kit.app; omni.kit.app.get_app().get_message_bus_event_stream().push(carb.events.type_from_string('mcp_composer_5dfeef7f'), payload={'colors': 'A'})"
+        ],
+        "checks": [
+          "/World/ComposerProbe_5dfeef7f exists (Cube prim).",
+          "Variant set MCPTest exists with variants ['A', 'B']."
+        ],
+        "warnings": [],
+        "validated": true,
+        "python": "# Recipe 'event_sets_variant': builds a new Action Graph at /World/ComposerGraph_5dfeef7f\n# Run it in Kit: Window > Script Editor, paste, press Run. Ctrl+Z undoes the whole edit at once.\n# API: og.Controller.edit(graph, edits) from omni.graph.core (omni.graph 1.142.5, Kit 110),\n#      see omni/graph/core/_impl/controller.py in the omni.graph extension.\nimport omni.graph.core as og\nimport usdrt  # prim pickers ('target' inputs) take a list of usdrt.Sdf.Path values\n\nkeys = og.Controller.Keys  # names of the edit sections: CREATE_NODES, CONNECT, SET_VALUES, ...\n\n(graph, nodes, _, _) = og.Controller.edit(\n    # Which graph: a dict means 'create this graph'. 'execution' makes it an Action Graph.\n    {\"graph_path\": '/World/ComposerGraph_5dfeef7f', \"evaluator_name\": \"execution\"},\n    {\n        # Step 1. The nodes: (short name inside the graph, node type id)\n        keys.CREATE_NODES: [\n            ('OnEvent', 'omni.graph.action.OnMessageBusEvent'),  # waits for message bus event 'mcp_composer_5dfeef7f'\n            ('SetVariant', 'omni.graph.nodes.SetVariantSelection'),  # selects the MCPTest variant named in the payload\n        ],\n        # Step 2. Extra (dynamic) attributes: the name decides input or output\n        keys.CREATE_ATTRIBUTES: [\n            ('OnEvent.outputs:colors', 'token'),  # extra output that receives the payload key 'colors' (must match the sender exactly)\n        ],\n        # Step 3. The wires: (from an output, to an input)\n        keys.CONNECT: [\n            ('OnEvent.outputs:execOut', 'SetVariant.inputs:execIn'),  # run Set Variant Selection when the event arrives\n            ('OnEvent.outputs:colors', 'SetVariant.inputs:variantName'),  # data wire: the payload's colors value becomes the variant name\n        ],\n        # Step 4. Values typed into inputs (a third item names the type for 'any'-type inputs)\n        keys.SET_VALUES: [\n            ('OnEvent.inputs:eventName', 'mcp_composer_5dfeef7f'),  # the event name, letter for letter\n            ('OnEvent.inputs:onlyPlayback', False),  # react without pressing Play\n            ('SetVariant.inputs:prim', [usdrt.Sdf.Path('/World/ComposerProbe_5dfeef7f')]),  # the prim that owns the variant set (a target input)\n            ('SetVariant.inputs:variantSetName', 'MCPTest'),  # which variant set to switch\n            ('SetVariant.inputs:setVariant', True),  # change the variant selection itself (the node's default is off)\n        ],\n    },\n)\nprint('Created', [node.get_prim_path() for node in nodes])\n",
+        "how_to_run": "Inside Kit: apply_recipe(stage, name, dry_run=False, ...) - or paste 'python' into Window > Script Editor. One Ctrl+Z undoes the whole edit."
+      }
+    },
+    {
+      "tool": "graph_apply",
+      "arguments": {
+        "name": "event_sets_variant",
+        "graph_path": "/World/ComposerGraph_5dfeef7f",
+        "options": {
+          "event_name": "mcp_composer_5dfeef7f",
+          "prim": "/World/ComposerProbe_5dfeef7f",
+          "variant_set": "MCPTest",
+          "payload": "colors"
+        },
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "dry_run": false,
+        "recipe": "event_sets_variant",
+        "graph_path": "/World/ComposerGraph_5dfeef7f",
+        "created": [
+          "/World/ComposerGraph_5dfeef7f/OnEvent",
+          "/World/ComposerGraph_5dfeef7f/SetVariant"
+        ],
+        "explanation": [
+          "When message bus event 'mcp_composer_5dfeef7f' arrives -> Set Variant Selection sets MCPTest=<the 'colors' value> on /World/ComposerProbe_5dfeef7f.",
+          "The sender (a browser client, Python, or Send MessageBus Event) must use event name 'mcp_composer_5dfeef7f' and payload key 'colors' exactly, with a value such as A, B.",
+          "Python test inside Kit: import carb.events, omni.kit.app; omni.kit.app.get_app().get_message_bus_event_stream().push(carb.events.type_from_string('mcp_composer_5dfeef7f'), payload={'colors': 'A'})"
+        ],
+        "warnings": [],
+        "message": "Built event_sets_variant at /World/ComposerGraph_5dfeef7f. Ctrl+Z undoes it in one step; nothing was saved.",
+        "flow": [
+          "When message bus event 'mcp_composer_5dfeef7f' arrives -> Set Variant Selection sets MCPTest=the 'colors' value carried by the 'mcp_composer_5dfeef7f' event on /World/ComposerProbe_5dfeef7f"
+        ],
+        "problems": [
+          {
+            "severity": "info",
+            "code": "no_sender",
+            "message": "No graph in this stage sends message bus event 'mcp_composer_5dfeef7f'; OnEvent waits for it from outside (Python code or a browser client) - which must use exactly this name.",
+            "node": "/World/ComposerGraph_5dfeef7f/OnEvent",
+            "graph": "/World/ComposerGraph_5dfeef7f"
+          },
+          {
+            "severity": "info",
+            "code": "variant_from_outside",
+            "message": "SetVariant takes the variant name from an event payload that no node in this stage sends; whoever sends it must use one of ['A', 'B'] exactly.",
+            "node": "/World/ComposerGraph_5dfeef7f/SetVariant",
+            "graph": "/World/ComposerGraph_5dfeef7f"
+          }
+        ]
+      }
+    },
+    {
+      "tool": "event_listen",
+      "arguments": {
+        "event_name": "mcp_composer_5dfeef7f",
+        "timeout_s": 10,
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "listener_id": "listener-91688-1",
+        "event_name": "mcp_composer_5dfeef7f",
+        "timeout_s": 10.0,
+        "message": "Listening for 'mcp_composer_5dfeef7f'; call listener_status('listener-91688-1')."
+      }
+    },
+    {
+      "tool": "event_send",
+      "arguments": {
+        "event_name": "mcp_composer_5dfeef7f",
+        "payload": {
+          "colors": "B"
+        },
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "dry_run": false,
+        "sent": true,
+        "target": "kit",
+        "event_type": "mcp_composer_5dfeef7f",
+        "bus_event": "mcp_composer_5dfeef7f",
+        "bus_payload": {
+          "colors": "B"
+        },
+        "payload": {
+          "colors": "B"
+        },
+        "api": "omni.kit.app.queue_event",
+        "delivered": "on the next app update (graph nodes react then)",
+        "message": "Sent 'mcp_composer_5dfeef7f' with {'colors': 'B'}."
+      }
+    },
+    {
+      "tool": "event_status",
+      "arguments": {
+        "listener_id": "listener-91688-1"
+      },
+      "result": {
+        "ok": true,
+        "listener_id": "listener-91688-1",
+        "event_name": "mcp_composer_5dfeef7f",
+        "received": true,
+        "payload": {
+          "colors": "B"
+        },
+        "timed_out": false,
+        "active": false,
+        "unsubscribed": true,
+        "waited_s": 1.109
+      }
+    },
+    {
+      "tool": "scene_variants",
+      "arguments": {
+        "path": "/World/ComposerProbe_5dfeef7f"
+      },
+      "result": {
+        "path": "/World/ComposerProbe_5dfeef7f",
+        "selections": {
+          "MCPTest": "B"
+        }
+      }
+    },
+    {
+      "tool": "event_stop",
+      "arguments": {
+        "listener_id": "listener-91688-1",
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "listener_id": "listener-91688-1",
+        "stopped": true,
+        "received": true
+      }
+    },
+    {
+      "tool": "scene_inspect",
+      "arguments": {
+        "path": "/World/ComposerGraph_5dfeef7f"
+      },
+      "result": {
+        "path": "/World/ComposerGraph_5dfeef7f",
+        "type_name": "OmniGraph",
+        "parent": "/World",
+        "children": [
+          "/World/ComposerGraph_5dfeef7f/OnEvent",
+          "/World/ComposerGraph_5dfeef7f/SetVariant"
+        ],
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "material": null
+      }
+    },
+    {
+      "tool": "scene_delete",
+      "arguments": {
+        "path": "/World/ComposerGraph_5dfeef7f"
+      },
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": true,
+        "changes": [
+          {
+            "action": "delete",
+            "path": "/World/ComposerGraph_5dfeef7f",
+            "summary": "Delete prim at /World/ComposerGraph_5dfeef7f",
+            "before": {
+              "path": "/World/ComposerGraph_5dfeef7f",
+              "type_name": "OmniGraph",
+              "parent": "/World",
+              "children": [
+                "/World/ComposerGraph_5dfeef7f/OnEvent",
+                "/World/ComposerGraph_5dfeef7f/SetVariant"
+              ],
+              "translation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "material": null
+            },
+            "after": null
+          }
+        ],
+        "payload": {
+          "path": "/World/ComposerGraph_5dfeef7f"
+        }
+      }
+    },
+    {
+      "tool": "scene_delete",
+      "arguments": {
+        "path": "/World/ComposerGraph_5dfeef7f",
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": false,
+        "changes": [
+          {
+            "action": "delete",
+            "path": "/World/ComposerGraph_5dfeef7f",
+            "summary": "Delete prim at /World/ComposerGraph_5dfeef7f",
+            "before": {
+              "path": "/World/ComposerGraph_5dfeef7f",
+              "type_name": "OmniGraph",
+              "parent": "/World",
+              "children": [
+                "/World/ComposerGraph_5dfeef7f/OnEvent",
+                "/World/ComposerGraph_5dfeef7f/SetVariant"
+              ],
+              "translation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "material": null
+            },
+            "after": null
+          }
+        ],
+        "payload": {
+          "path": "/World/ComposerGraph_5dfeef7f"
+        }
+      }
+    },
+    {
+      "tool": "scene_inspect",
+      "arguments": {
+        "path": "/World/ComposerProbe_5dfeef7f"
+      },
+      "result": {
+        "path": "/World/ComposerProbe_5dfeef7f",
+        "type_name": "Cube",
+        "parent": "/World",
+        "children": [],
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "material": null
+      }
+    },
+    {
+      "tool": "scene_delete",
+      "arguments": {
+        "path": "/World/ComposerProbe_5dfeef7f"
+      },
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": true,
+        "changes": [
+          {
+            "action": "delete",
+            "path": "/World/ComposerProbe_5dfeef7f",
+            "summary": "Delete prim at /World/ComposerProbe_5dfeef7f",
+            "before": {
+              "path": "/World/ComposerProbe_5dfeef7f",
+              "type_name": "Cube",
+              "parent": "/World",
+              "children": [],
+              "translation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "material": null
+            },
+            "after": null
+          }
+        ],
+        "payload": {
+          "path": "/World/ComposerProbe_5dfeef7f"
+        }
+      }
+    },
+    {
+      "tool": "scene_delete",
+      "arguments": {
+        "path": "/World/ComposerProbe_5dfeef7f",
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": false,
+        "changes": [
+          {
+            "action": "delete",
+            "path": "/World/ComposerProbe_5dfeef7f",
+            "summary": "Delete prim at /World/ComposerProbe_5dfeef7f",
+            "before": {
+              "path": "/World/ComposerProbe_5dfeef7f",
+              "type_name": "Cube",
+              "parent": "/World",
+              "children": [],
+              "translation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "material": null
+            },
+            "after": null
+          }
+        ],
+        "payload": {
+          "path": "/World/ComposerProbe_5dfeef7f"
+        }
+      }
+    },
+    {
+      "tool": "render_capture",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+        "name": "composer_capture_20261024_231805",
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "status": "pending",
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\composer_capture_20261024_231805\\viewport_20261024_231808_749871.png",
+        "camera": "/OmniverseKit_Persp",
+        "resolution": [
+          877,
+          346
+        ],
+        "requested_resolution": null,
+        "renderer": "rtx",
+        "render_mode": "RealTimePathTracing",
+        "api": "omni.kit.viewport.utility.capture_viewport_to_file",
+        "note": "Poll scene_capture_status(path); it finishes the optional resized copy.",
+        "dry_run": false,
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\composer_capture_20261024_231805"
+      }
+    },
+    {
+      "tool": "scene_capture_status",
+      "arguments": {
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\composer_capture_20261024_231805\\viewport_20261024_231808_749871.png"
+      },
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\composer_capture_20261024_231805\\viewport_20261024_231808_749871.png",
+        "ready": false,
+        "size": 0,
+        "capture_done": true,
+        "note": "Not written yet; Kit saves it after the next rendered frame or two. Check again shortly.",
+        "mode": "live",
+        "action": "capture_status"
+      }
+    },
+    {
+      "tool": "scene_capture_status",
+      "arguments": {
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\composer_capture_20261024_231805\\viewport_20261024_231808_749871.png"
+      },
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\composer_capture_20261024_231805\\viewport_20261024_231808_749871.png",
+        "ready": true,
+        "size": 139761,
+        "capture_done": true,
+        "mode": "live",
+        "action": "capture_status"
+      }
+    },
+    {
+      "tool": "scene_summary",
+      "arguments": {},
+      "result": {
+        "stage_name": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 32,
+        "top_level_prims": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras"
+        ]
+      }
+    }
+  ],
+  "checks": {
+    "live_composer": true,
+    "scene_stage_info": true,
+    "graph_inspect": true,
+    "variant_list": true,
+    "rubric_check": true,
+    "label_apply": true,
+    "label_preview": true,
+    "label_undo": true,
+    "variant_create": true,
+    "graph_creation": true,
+    "event_delivery": true,
+    "event_driven_variant": true,
+    "capture_ready": true,
+    "saved_files_unchanged": true
+  },
+  "baseline": {
+    "stage_name": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+    "root_path": "/World",
+    "selection": [],
+    "prim_count": 32,
+    "top_level_prims": [
+      "/World/Lights",
+      "/World/Looks",
+      "/World/Environment",
+      "/World/Racks",
+      "/World/Cameras"
+    ]
+  },
+  "variant_readout": {
+    "path": "/World/ComposerProbe_5dfeef7f",
+    "selections": {
+      "MCPTest": "B"
+    }
+  },
+  "final_summary": {
+    "stage_name": "C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+    "root_path": "/World",
+    "selection": [],
+    "prim_count": 32,
+    "top_level_prims": [
+      "/World/Lights",
+      "/World/Looks",
+      "/World/Environment",
+      "/World/Racks",
+      "/World/Cameras"
+    ]
+  },
+  "passed": true,
+  "finished": 1792876689.7224314
+}

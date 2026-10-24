@@ -24,7 +24,13 @@
   generated Blender/SDG scripts parse. Enabling the extension and Blender execution remain separate.
 - Final full suites: 1,428 passed on USD 26.8 (159.7 s); 1,428 on USD 25.11 (227.1 s).
 
-Still pending: Composer, Blender, proprietary CAD, ROS connectivity and enabling the generated
+Composer follow-up `mcp_composer_20261024_231805.json` passed all 14 checks through MCP:
+stage/rubric/graph/variant reads, label preview/apply/undo, variant creation, graph creation,
+event delivery, actual selection MCPTest=B, and viewport capture. Temporary cube and graph
+were removed; prim count returned to 32 and saved scene files stayed unchanged. The router
+currently targets Composer on 9910; Isaac's bridge was offline at the connection check.
+
+Still pending: Blender, proprietary CAD, ROS connectivity and enabling the generated
 extension. The sections below record earlier checkpoints, not the latest coverage.
 
 Codex ran the external MCP client `scripts/mcp_operability.py` against the user's running
