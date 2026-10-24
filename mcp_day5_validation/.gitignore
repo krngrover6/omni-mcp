@@ -1,0 +1,10 @@
+# Generated output stays out of git: renders, Replicator/SDG output, thumbnails and caches.
+renders/*
+!renders/.gitkeep
+_out*/
+.thumbs/
+__pycache__/
+*.pyc
+*.log
+.DS_Store
+Thumbs.db

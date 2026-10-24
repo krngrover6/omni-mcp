@@ -405,7 +405,10 @@ def test_non_portable_texture_format():
 
 def test_mdl_library_modules_are_not_missing_but_relative_mdl_files_are():
     stage = _memory_stage()
-    for name, module in (("Lib", "OmniPBR.mdl"), ("Local", "./materials/Custom.mdl")):
+    # Use a synthetic library name: Kit can resolve installed modules such as
+    # OmniPBR.mdl, whereas standalone USD cannot. Exercise the unresolved-library
+    # fallback consistently in both runtimes without changing resolver settings.
+    for name, module in (("Lib", "McpSyntheticLibraryForHealthTest.mdl"), ("Local", "./materials/Custom.mdl")):
         material = UsdShade.Material.Define(stage, f"/World/Looks/{name}")
         shader = UsdShade.Shader.Define(stage, f"/World/Looks/{name}/Shader")
         shader.SetSourceAsset(Sdf.AssetPath(module), "mdl")

@@ -1,0 +1,70 @@
+{
+  "started": 1792710955.9144258,
+  "initial_status": "Status.STARTED",
+  "stopped_status": "Status.STOPPED",
+  "preview": {
+    "ok": true,
+    "dry_run": true,
+    "written": false,
+    "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\sdg_retry_20261023_011555_a055a9",
+    "config": {
+      "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+      "name": "sdg_retry_20261023_011555_a055a9",
+      "camera": "/World/Cameras/Overview",
+      "frames": 2,
+      "width": 64,
+      "height": 64,
+      "seed": 42,
+      "annotations": [
+        "rgb"
+      ]
+    },
+    "prerequisites": [
+      "Isaac/Kit Replicator extension already enabled",
+      "Existing camera on the active stage",
+      "Semantic class labels for segmentation and bounding boxes",
+      "Use a dedicated test stage"
+    ],
+    "note": "Fixed seed controls Replicator RNG; GPU images are not guaranteed bit-identical. No domain randomization is added."
+  },
+  "start": {
+    "ok": true,
+    "job_id": "e3fb18b25bca4ae5a00944cb779cb5fe",
+    "status": "pending",
+    "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\sdg_retry_20261023_011555_a055a9",
+    "frames_stepped": 0,
+    "requested_frames": 2,
+    "dry_run": false,
+    "written": true
+  },
+  "capture": {
+    "ok": true,
+    "job_id": "e3fb18b25bca4ae5a00944cb779cb5fe",
+    "status": "completed",
+    "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\sdg_retry_20261023_011555_a055a9",
+    "frames_stepped": 2,
+    "requested_frames": 2,
+    "dry_run": false,
+    "written": true,
+    "finished_at": 1792710956.9366112
+  },
+  "dataset": {
+    "ok": true,
+    "passed": true,
+    "read_only": true,
+    "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\sdg_retry_20261023_011555_a055a9",
+    "scanned": 4,
+    "truncated": false,
+    "counts": {
+      "rgb": 2,
+      "semantic_segmentation": 0,
+      "bounding_box_2d_tight": 0
+    },
+    "issues": [],
+    "issue_count": 0,
+    "limitations": "Checks files and frame coverage; it does not assess label accuracy or dataset bias."
+  },
+  "passed": true,
+  "scene_files_unchanged": true,
+  "finished": 1792710956.9561398
+}

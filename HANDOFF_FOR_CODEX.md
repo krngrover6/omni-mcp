@@ -1,5 +1,47 @@
 # Handoff: Omniverse scene MCP (Claude -> Codex), 2026-10-22
 
+## Latest direct MCP evidence, 2026-10-24
+
+See `mcp_day5_validation/docs/MCP_OPERABILITY_RESULTS.md`: 42 calls across 33 tools
+completed without call failures, including apply/observe/undo, event delivery, screenshot,
+two-frame sequence and two-frame RGB SDG with dataset validation. A follow-up proved OBJ
+conversion, ready camera data and actual robot motion from 0 to 24.763578 degrees through MCP.
+PhysX runtime opinions made undo of the robot reference stale; the guard refused correctly,
+and only the uniquely named test robot was explicitly deleted (preview first) and verified absent.
+Saved scene-file hashes were unchanged. Exact runtime prim preservation is not proven.
+Sensor use left Replicator active; the user subsequently stopped it with the guarded helper.
+Labelled capture then passed through MCP: two RGB, segmentation and tight-box frames, with
+matching visible crate pixels and in-bounds boxes. Cancellation and a follow-up job also passed,
+with stable compared runtime paths on the initialized stage. Never bypass the active-run guard.
+Composer launch and Blender connection are being handled manually by the user.
+Final full suites on this candidate: 1,428 passed on USD 26.8 and 1,428 on USD 25.11.
+The older activation checkpoint below records earlier states, not current prerequisites.
+
+## Day 5 activation checkpoint, 2026-10-23
+
+Latest live evidence: the user opened the independent test project and manually ran
+`scripts/live_checks.py`. Nine checks passed: rubric, semantic labels, graph creation,
+message delivery, graph evaluation, OBJ conversion, real articulation motion (0 -> 24.76
+degrees), camera samples and viewport capture. SDG initially refused an already active
+Replicator run. The user authorized stopping it and manually ran `scripts/retry_sdg.py`:
+two 64x64 RGB frames were generated, dataset validation passed with zero issues, and scene
+file hashes were unchanged. Reports are in `mcp_day5_validation/docs/`. Proprietary CAD,
+ROS connectivity, Composer/Blender live checks and segmentation/bounding-box output are
+still unverified; do not describe the entire remaining plan as complete.
+
+- Day 5 source now registers 249 tools in total (21 visible in the default starter profile).
+- Full suites: 1,428 passed on system USD 26.8 and 1,428 passed on installed Isaac USD 25.11.
+- Live reload first preserved the old bridge because an asset-health test assumed OmniPBR.mdl could not resolve.
+  The test now uses a synthetic MDL library name so it exercises the fallback in both environments; all 24
+  asset-health tests passed on both USD versions after this test-only change.
+- User manually reran the reload: result file confirms `reloaded`, 2026-10-23 00:27:10.
+- With explicit user approval, Codex restarted only the verified router process: PID 120092 -> 104384.
+  MCP initialization, catalog discovery (249 total, 21 visible), scene summary and the new semantic_audit
+  succeeded. The anonymous World0.usd stage still has 14 prims. No scene was edited or switched.
+- Activation evidence: `mcp_day5_validation/docs/activation-check.json`; later test runs are documented above.
+- Composer/Blender integration and external CAD/ROS prerequisites remain unverified.
+  Nothing from this Day 5 work has been pushed or merged into main.
+
 ## Prompt to paste into Codex
 
 ```

@@ -1,0 +1,3900 @@
+{
+  "started": 1792874701.4536462,
+  "transport": "MCP streamable HTTP on 9905",
+  "checks": [
+    {
+      "tool": "router_list_tools",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "tools": [
+          {
+            "name": "animation_clear",
+            "about": "Plan (default) or remove the time samples the edit target layer holds for a prim's attributes."
+          },
+          {
+            "name": "animation_conveyor_plan",
+            "about": "PLAN ONLY (never writes): how to move boxes on a conveyor with PhysX surface velocity vs keyframes."
+          },
+          {
+            "name": "animation_info",
+            "about": "Read-only: start/end time codes, timeCodesPerSecond, framesPerSecond, duration and animated attributes."
+          },
+          {
+            "name": "animation_keyframes",
+            "about": "Plan (default) or author time samples on the prim's own translate / rotation / scale ops."
+          },
+          {
+            "name": "animation_move_along",
+            "about": "Plan (default) or author a ride through world-space points at constant speed (a box on a conveyor)."
+          },
+          {
+            "name": "animation_sample",
+            "about": "Read-only: the prim's world position and rotation (and local op values) at each time code."
+          },
+          {
+            "name": "animation_swing",
+            "about": "Plan (default) or author a door swing: turn angle_deg about axis (parent space) in `seconds`."
+          },
+          {
+            "name": "animation_timeline",
+            "about": "Plan (default) or author the stage time range and rates as layer metadata."
+          },
+          {
+            "name": "animation_turntable",
+            "about": "Plan (default) or author a steady spin: `turns` full turns (negative = the other way) in `seconds`."
+          },
+          {
+            "name": "asset_detect_units",
+            "about": "Read metersPerUnit/upAxis and judge them against the asset's bounding-box size. Read-only."
+          },
+          {
+            "name": "asset_import",
+            "about": "Kit-only: convert source_path into <project>/assets/<name>/<name>.usd, wrap its units, health-check it."
+          },
+          {
+            "name": "asset_import_formats",
+            "about": "Converters and input formats verified in this workspace's installs (read-only facts, no Kit needed)."
+          },
+          {
+            "name": "asset_import_plan",
+            "about": "Dry run of an import: which converter, where the files go, the wrapper fix, steps and warnings. Never writes."
+          },
+          {
+            "name": "asset_import_status",
+            "about": "The state of one import_asset job (running / succeeded / failed), or a list of recent jobs."
+          },
+          {
+            "name": "asset_info",
+            "about": "Read-only: one asset file's absolute path, category, size, thumbnail and (cheaply, from its header) its"
+          },
+          {
+            "name": "asset_search",
+            "about": "Read-only: search the local Isaac Sim 6.1 asset pack (robots, environments, props, sensors, materials,"
+          },
+          {
+            "name": "asset_wrap_units",
+            "about": "Author (dry_run=False) or preview a wrapper layer that fixes units and up axis of a converted asset."
+          },
+          {
+            "name": "assignment_check",
+            "about": "Read-only: check your homework scene against the class rubric (default: Isaac Sim session 02, the"
+          },
+          {
+            "name": "assignment_list",
+            "about": "Read-only: the homework assignments the checker knows (id, title, class session, summary and how many"
+          },
+          {
+            "name": "blender_export_plan",
+            "about": "Return a Blender script for a new export folder; never execute Blender or alter selected objects."
+          },
+          {
+            "name": "blender_handoff_check",
+            "about": "Inspect exported stage metadata and dependencies; do not assume Blender's authored axes or units."
+          },
+          {
+            "name": "bowerbot_knowledge",
+            "about": "Query the Bowerbot knowledge backend directly."
+          },
+          {
+            "name": "class_ask",
+            "about": "Read-only: what did the teacher say about something? Searches the class subtitles, Gemini meeting notes"
+          },
+          {
+            "name": "class_search",
+            "about": "Read-only: keyword search of the class subtitles, Gemini notes and revision notes; returns ranked"
+          },
+          {
+            "name": "class_sessions",
+            "about": "Read-only: the mentorship class sessions found in your class folder (subtitles, Gemini notes) and your"
+          },
+          {
+            "name": "dataset_check",
+            "about": "Check frame coverage, PNG integrity, safe NPY arrays and label JSON; never modify data or load pickle."
+          },
+          {
+            "name": "docs_docker_explain",
+            "about": "Read-only: is Docker worth it? Plain-English pros and cons of the Docker docs MCP versus the router's"
+          },
+          {
+            "name": "docs_docker_setup_plan",
+            "about": "Read-only, runs nothing: the ordered steps and exact commands YOU would run to set up the Docker docs MCP"
+          },
+          {
+            "name": "docs_docker_status",
+            "about": "Read-only: is Docker installed and running, are the NVIDIA docs MCP images built and is the container up"
+          },
+          {
+            "name": "docs_search",
+            "about": "Search the installed Isaac Sim / Kit extension docs offline (no network, no docs MCP): domain 'isaac_sim'"
+          },
+          {
+            "name": "event_check_graph",
+            "about": "Which OmniGraph nodes in the stage listen for event_name: exact matches and near misses (pure pxr)."
+          },
+          {
+            "name": "event_listen",
+            "about": "Subscribe to the next event_name (Kit only) without waiting; read it later with listener_status."
+          },
+          {
+            "name": "event_names",
+            "about": "Which names a graph listens to versus what you must send, for one event name (all case-sensitive)."
+          },
+          {
+            "name": "event_plan",
+            "about": "Validate an event and show how to send it, WITHOUT sending anything."
+          },
+          {
+            "name": "event_send",
+            "about": "Send one message bus event inside Kit (dry_run=True by default: only plans it)."
+          },
+          {
+            "name": "event_status",
+            "about": "{received, payload, timed_out, active}; unsubscribes once the event arrived or the time ran out."
+          },
+          {
+            "name": "event_stop",
+            "about": "Unsubscribe and forget a listener (safe to call twice)."
+          },
+          {
+            "name": "explain_error",
+            "about": "Read-only: explain an error you pasted (a Python traceback, a Kit [Error] line, a USD/Tf message, a PhysX"
+          },
+          {
+            "name": "extension_create",
+            "about": "Preview or create a minimal Kit extension with a read-only stage-summary button; no setup or installation."
+          },
+          {
+            "name": "extension_info",
+            "about": "Facts about one installed Kit / Isaac Sim / omni.ui extension, read offline from its extension.toml and"
+          },
+          {
+            "name": "graph_apply",
+            "about": "Plan a recipe against stage and, only with dry_run=False and only inside Kit, build it via og.Controller.edit."
+          },
+          {
+            "name": "graph_inspect",
+            "about": "Read-only, plain-language report of every OmniGraph (Action Graph) saved in the stage."
+          },
+          {
+            "name": "graph_node_type",
+            "about": "The table entry for a node type id (plain sentence, version, extension, source), or ok False when unknown."
+          },
+          {
+            "name": "graph_plan",
+            "about": "A dry-run plan for one recipe; nothing is created. With stage, prim paths and variants are checked via pxr."
+          },
+          {
+            "name": "graph_recipes",
+            "about": "The recipe names with a one-line summary and their parameters."
+          },
+          {
+            "name": "isaac_sim_knowledge",
+            "about": "Query the Isaac Sim knowledge backend directly."
+          },
+          {
+            "name": "kit_explain_recent_errors",
+            "about": "Read-only: the latest distinct errors of the app's current log (limit 1-20), repeats grouped with a count,"
+          },
+          {
+            "name": "kit_knowledge",
+            "about": "Query the Kit knowledge backend directly."
+          },
+          {
+            "name": "kit_log_errors",
+            "about": "Read-only: errors written to the app's log since `cursor`; call again with the returned cursor to keep"
+          },
+          {
+            "name": "kit_log_summary",
+            "about": "Read-only: counts for the app's current log session: entries by level, by extension and by source, plus"
+          },
+          {
+            "name": "kit_logs",
+            "about": "Read-only: the newest entries of the Isaac Sim or USD Composer log file (app 'current' follows the scene"
+          },
+          {
+            "name": "learning_cheatsheet",
+            "about": "Return the current cheat sheet for scene and learning commands."
+          },
+          {
+            "name": "learning_composition_puzzle",
+            "about": "A LIVERPS strength-ordering puzzle (easy, medium or hard): small USDA layers and a 'which value wins?'"
+          },
+          {
+            "name": "learning_composition_puzzle_answer",
+            "about": "Check a composition puzzle answer (option text, number or letter A-E) by really composing its layers with"
+          },
+          {
+            "name": "learning_drill_answer",
+            "about": "Grade a whole drill in one go and SAVE the answers to your NCP-OUSD exam progress (flash prompts are not"
+          },
+          {
+            "name": "learning_drill_focuses",
+            "about": "Read-only: the kinds of timed NCP-OUSD drill you can start (weak, mistakes, mixed, objective, domain,"
+          },
+          {
+            "name": "learning_drill_start",
+            "about": "Start a short TIMED NCP-OUSD drill (default 10 questions, 45 seconds each) and return the questions without"
+          },
+          {
+            "name": "learning_drill_status",
+            "about": "Read-only: time left and the questions again for an open drill, or the saved result of an answered one."
+          },
+          {
+            "name": "learning_exam_answer",
+            "about": "Grade one practice question and save the result to your exam progress (spaced-repetition card, domain and"
+          },
+          {
+            "name": "learning_exam_blueprint",
+            "about": "NCP-OUSD exam blueprint: exam facts, the 8 weighted domains and their objectives (study-guide numbering),"
+          },
+          {
+            "name": "learning_exam_dashboard",
+            "about": "Your NCP-OUSD progress dashboard as data: accuracy and status per weighted domain, weighted accuracy,"
+          },
+          {
+            "name": "learning_exam_day",
+            "about": "One day of your NCP-OUSD study plan as a lesson: objectives with plain explanations, offline doc hits,"
+          },
+          {
+            "name": "learning_exam_day_complete",
+            "about": "Mark one study-plan day complete (calling it again changes nothing) and report the day streak, how many"
+          },
+          {
+            "name": "learning_exam_plan",
+            "about": "Weighted NCP-OUSD study plan from the domain weights and your saved exam progress (weak or untested domains"
+          },
+          {
+            "name": "learning_exam_progress",
+            "about": "Your saved NCP-OUSD progress: totals, accuracy per domain, weakest objectives, reviews due, study streak,"
+          },
+          {
+            "name": "learning_exam_quiz",
+            "about": "Original NCP-OUSD practice questions with answers withheld, optionally filtered by domain (name, number or"
+          },
+          {
+            "name": "learning_exam_reset",
+            "about": "Clear ALL saved NCP-OUSD exam progress. Does nothing unless confirm=True; an existing progress.json is"
+          },
+          {
+            "name": "learning_exam_review",
+            "about": "Spaced-repetition cards due now, most overdue first, each with its question (answers withheld) or its"
+          },
+          {
+            "name": "learning_exam_set_date",
+            "about": "Re-plan the daily lessons from today: give exam_date ('YYYY-MM-DD') or days_until_exam (neither means 30"
+          },
+          {
+            "name": "learning_glossary",
+            "about": "Look up an OpenUSD glossary term (e.g. 'LIVERPS', 'payload', 'variant set') in the bundled Learn OpenUSD"
+          },
+          {
+            "name": "learning_history",
+            "about": "Show recent learning actions and progress."
+          },
+          {
+            "name": "learning_mock_exam_abandon",
+            "about": "Close an open mock exam without scoring it or saving anything to progress, so a new one can start."
+          },
+          {
+            "name": "learning_mock_exam_answer",
+            "about": "Record or change one mock-exam answer while the clock runs. question_id is the id or the 1-based question"
+          },
+          {
+            "name": "learning_mock_exam_finish",
+            "about": "Finish and score a mock exam: overall and per-domain percentages, time used, every wrong or unanswered"
+          },
+          {
+            "name": "learning_mock_exam_flag",
+            "about": "Flag a mock-exam question to revisit before finishing (flagged=False removes the flag)."
+          },
+          {
+            "name": "learning_mock_exam_questions",
+            "about": "Page through a mock exam's questions (answers withheld), each with your current choice and flag."
+          },
+          {
+            "name": "learning_mock_exam_start",
+            "about": "Start a TIMED NCP-OUSD mock exam: the clock starts now. Questions are drawn per domain at the official"
+          },
+          {
+            "name": "learning_mock_exam_status",
+            "about": "Time left, answered and unanswered questions, flags and per-domain counts of a mock (session_id=None is"
+          },
+          {
+            "name": "learning_practice",
+            "about": "Get a practical, scene-aware drill you can do in USD Composer."
+          },
+          {
+            "name": "learning_practice_next",
+            "about": "Advance the current practice session to the next step."
+          },
+          {
+            "name": "learning_practice_start",
+            "about": "Start an interactive practice session you can step through one command at a time."
+          },
+          {
+            "name": "learning_reminder_setup",
+            "about": "Read-only, creates NOTHING: returns the PowerShell commands YOU can copy to create (and later remove) a daily"
+          },
+          {
+            "name": "learning_roadmap",
+            "about": "Return a simple study roadmap based on what you have already practiced."
+          },
+          {
+            "name": "learning_scene_quiz",
+            "about": "Generate a quiz from the currently selected prim or the current scene."
+          },
+          {
+            "name": "learning_study_mode",
+            "about": "Get a study recommendation based on the current scene."
+          },
+          {
+            "name": "learning_today",
+            "about": "Read-only: 'what should I do today?' A short study brief from your saved NCP-OUSD progress: today's plan"
+          },
+          {
+            "name": "learning_translate",
+            "about": "Translate natural language into the most likely Omniverse scene action."
+          },
+          {
+            "name": "learning_tutor",
+            "about": "Get a small USD learning lesson, cheat sheet, or quiz."
+          },
+          {
+            "name": "omni_ui_knowledge",
+            "about": "Query the OmniUI knowledge backend directly."
+          },
+          {
+            "name": "project_create",
+            "about": "DRY RUN BY DEFAULT: plan a NEW project folder <workspace>/<name> from a template and show the preview to"
+          },
+          {
+            "name": "project_list",
+            "about": "Read-only: the project folders directly inside the workspace (those with a PROJECT_CONTEXT.md), each with"
+          },
+          {
+            "name": "project_plan",
+            "about": "Read-only, writes NOTHING: the folder a new project would get inside the workspace (root.usda with one"
+          },
+          {
+            "name": "project_report",
+            "about": "A portfolio report (Markdown and self-contained HTML) of a project: goal and next steps from its"
+          },
+          {
+            "name": "project_templates",
+            "about": "Read-only: the project templates you can start from (blank, warehouse, digital_twin, configurator,"
+          },
+          {
+            "name": "python_practice_get",
+            "about": "Read-only: one Python practice exercise: goal, starter code, hints, what is checked and the starting"
+          },
+          {
+            "name": "python_practice_list",
+            "about": "Read-only: the OpenUSD Python practice exercises in suggested order (level 'beginner' or 'intermediate'"
+          },
+          {
+            "name": "python_practice_run",
+            "about": "Run YOUR answer to a Python practice exercise and check it. The code runs in a separate Python process on"
+          },
+          {
+            "name": "python_show",
+            "about": "Read-only, runs nothing: \"show me the Python\" for one OpenUSD task, e.g. action='move' with"
+          },
+          {
+            "name": "python_topics",
+            "about": "Read-only: every task python_show can explain (inspect, create, move/rotate/scale, attributes, lights,"
+          },
+          {
+            "name": "render_cancel",
+            "about": "Preview or cancel an MCP-owned sequence; retain completed captures and restore time during cleanup."
+          },
+          {
+            "name": "render_capture",
+            "about": "Preview or schedule an active-viewport PNG in a fresh directory using the existing capture helper."
+          },
+          {
+            "name": "render_compare",
+            "about": "Compare at most one megapixel of 8-bit RGB/RGBA PNGs, with pixel-change percent and a 4x4 region summary."
+          },
+          {
+            "name": "render_job_status",
+            "about": "Read the status of one capture sequence in this bridge process."
+          },
+          {
+            "name": "render_plan",
+            "about": "Plan a new capture folder. Optional size resizes a copy; it does not increase rendered detail."
+          },
+          {
+            "name": "render_sequence",
+            "about": "Preview or asynchronously capture a bounded frame range, restoring the stopped timeline's original time."
+          },
+          {
+            "name": "render_sequence_plan",
+            "about": "Plan up to 60 viewport captures at frame/fps seconds, into a new directory; no timeline changes."
+          },
+          {
+            "name": "render_turntable_plan",
+            "about": "Combine an object-spin preview with a sequence plan; does not orbit or modify the viewport camera."
+          },
+          {
+            "name": "robot_add_ready",
+            "about": "Plan (dry_run=True, default) or author an Xform at prim_path that references a robot USD. Pure pxr."
+          },
+          {
+            "name": "robot_apply_pose",
+            "about": "Plan (dry_run=True) or author a named pose's drive targets: set_drive_targets with pose_targets(name)."
+          },
+          {
+            "name": "robot_catalog",
+            "about": "Isaac Sim's ready-made robot USDs (from the local asset pack) with plain descriptions. Read-only."
+          },
+          {
+            "name": "robot_drive_gains",
+            "about": "Plan (dry_run=True) or author drive stiffness and/or damping (USD units: per degree for hinges)."
+          },
+          {
+            "name": "robot_drive_targets",
+            "about": "Plan (dry_run=True, the default) or author drive targetPosition values: {joint name or path: value}."
+          },
+          {
+            "name": "robot_import",
+            "about": "Kit-only: run Isaac's URDF/MJCF importer into <project>/assets/robots/<name>/, then inspect the result."
+          },
+          {
+            "name": "robot_import_plan",
+            "about": "Dry run of a robot import: which method, the exact importer config, where the USD goes, steps, Script Editor"
+          },
+          {
+            "name": "robot_importer_info",
+            "about": "The URDF / MJCF importer APIs as verified (read-only) in this workspace's Isaac Sim 6.1.0 install."
+          },
+          {
+            "name": "robot_inspect",
+            "about": "Read-only: explain a robot for a beginner: every articulation (robot) with its links (rigid parts, mass,"
+          },
+          {
+            "name": "robot_joint_state",
+            "about": "KIT-ONLY, READ-ONLY. Current joint positions, velocities and efforts of a simulating robot."
+          },
+          {
+            "name": "robot_joint_table",
+            "about": "READ-ONLY. One row per hinge (revolute) or slider (prismatic) of the robot at robot_root, in tree order."
+          },
+          {
+            "name": "robot_live_move",
+            "about": "KIT-ONLY, SIMULATION STATE. Plan (dry_run=True) or send PhysX drive position targets to a simulating robot."
+          },
+          {
+            "name": "robot_pick_place_check",
+            "about": "Is this stage ready for a Franka pick-and-place? Pure pxr, read-only: nothing is edited or saved."
+          },
+          {
+            "name": "robot_pick_place_lesson",
+            "about": "The pick-and-place lesson, one concept per step, in the order to do them. Read-only, no pxr needed."
+          },
+          {
+            "name": "robot_pick_place_script",
+            "about": "A beginner-commented Franka pick-and-place script for Isaac Sim 6.1. Nothing is run or written."
+          },
+          {
+            "name": "robot_pose_targets",
+            "about": "READ-ONLY. The {joint: value} targets of a built-in or saved pose (degrees for hinges, metres for sliders)."
+          },
+          {
+            "name": "robot_poses",
+            "about": "READ-ONLY. Built-in poses plus the ones saved in <project_dir>/robots/poses.json (when project_dir is given)."
+          },
+          {
+            "name": "robot_save_pose",
+            "about": "WRITE (a JSON file only): save a named pose to <project_dir>/robots/poses.json."
+          },
+          {
+            "name": "robot_urdf_summary",
+            "about": "Pure Python, read-only: what a URDF contains and what will go wrong when importing it."
+          },
+          {
+            "name": "ros2_environment",
+            "about": "Read-only ROS 2 readiness check of this PC. Only safe values are echoed (distro, RMW name, domain id); path"
+          },
+          {
+            "name": "ros2_graph_check",
+            "about": "Read-only check of the ROS 2 bridge nodes saved in OmniGraph prims of a USD stage (pure pxr, no Kit)."
+          },
+          {
+            "name": "ros2_info",
+            "about": "The verified ROS 2 facts for Isaac Sim 6.1 on Windows, with the source file of each. check_disk only tests that"
+          },
+          {
+            "name": "ros2_setup_plan",
+            "about": "Text-only plan for one ROS 2 goal: steps, an og.Controller.edit script (verified node ids), the official"
+          },
+          {
+            "name": "router_call_tool",
+            "about": "Call a hidden tool with normal validation. Edits preview unless arguments explicitly set dry_run=False."
+          },
+          {
+            "name": "router_dispatch",
+            "about": "Route a natural-language or command-style request to the right Omniverse MCP backend. show_python=True"
+          },
+          {
+            "name": "router_enable_tools",
+            "about": "Expose more tools by profile, exact tool name, or pattern; no scene edits or configuration writes."
+          },
+          {
+            "name": "router_health",
+            "about": "Read-only health check: scene backend choice, 300 ms TCP probes, router PID and redacted stderr tail."
+          },
+          {
+            "name": "router_help",
+            "about": "Plain-English guide to every tool, grouped by task (scene, edits, insight, lights/cameras/materials, undo,"
+          },
+          {
+            "name": "router_list_tools",
+            "about": "List tool names and short descriptions, including tools hidden by the current profile."
+          },
+          {
+            "name": "router_route",
+            "about": "Inspect how the router would classify a request before executing it."
+          },
+          {
+            "name": "router_scene_targets",
+            "about": "Read-only: the scene apps the router can talk to (isaac on 9911, composer on 9910, the in-memory fake"
+          },
+          {
+            "name": "router_set_scene_target",
+            "about": "Point the scene tools at another app without restarting the router: 'isaac' (Isaac Sim bridge, 9911),"
+          },
+          {
+            "name": "router_status",
+            "about": "Summarize which Omniverse backends are configured."
+          },
+          {
+            "name": "rubric_check",
+            "about": "Score at most 100 declarative rules on a USD stage, with a traversal cap and time budget; never author."
+          },
+          {
+            "name": "rubric_template",
+            "about": "Return an editable example rubric; structural checks do not certify visual appearance or exam grading."
+          },
+          {
+            "name": "scene_add_asset",
+            "about": "DRY RUN BY DEFAULT: plan adding an asset file (find one with asset_search) to the open scene as a new Xform"
+          },
+          {
+            "name": "scene_add_physics_scene",
+            "about": "DRY RUN BY DEFAULT: plan a UsdPhysics PhysicsScene (nothing simulates without one) in the open scene and"
+          },
+          {
+            "name": "scene_add_sublayer",
+            "about": "DRY RUN BY DEFAULT: plan inserting a sublayer (a .usd/.usda/.usdc file, relative to the root layer's"
+          },
+          {
+            "name": "scene_aim",
+            "about": "DRY RUN BY DEFAULT: plan rotating a light, camera or other prim in the LIVE open scene so its -Z axis faces"
+          },
+          {
+            "name": "scene_animation_actions",
+            "about": "List the named ZAZ-965 animation actions available in the live Composer scene."
+          },
+          {
+            "name": "scene_animation_play",
+            "about": "Play or pose one named ZAZ-965 action such as open_everything or wheel_spin."
+          },
+          {
+            "name": "scene_animation_stop",
+            "about": "Stop the active Composer timeline animation and keep the current pose."
+          },
+          {
+            "name": "scene_bind_material",
+            "about": "DRY RUN BY DEFAULT: plan binding a material to a prim (MaterialBindingAPI, material:binding) in the open"
+          },
+          {
+            "name": "scene_bounds",
+            "about": "Read-only: world/local bounds, authored vs computed extent, visibility and purpose for one prim. mode"
+          },
+          {
+            "name": "scene_capabilities",
+            "about": "What the connected scene bridge can do beyond basic scene commands: live insight queries, light/camera"
+          },
+          {
+            "name": "scene_capture_status",
+            "about": "Read-only: whether a scene_capture_viewport PNG has been written yet (ready, size, and the resized copy when"
+          },
+          {
+            "name": "scene_capture_viewport",
+            "about": "Screenshot of the live app's ACTIVE viewport, saved as a new PNG (never overwriting one) in output_dir"
+          },
+          {
+            "name": "scene_checkpoint",
+            "about": "DRY RUN BY DEFAULT: plan a checkpoint (a restorable copy of the SAVED scene file and the local layers it"
+          },
+          {
+            "name": "scene_checkpoints",
+            "about": "Read-only: the checkpoints of a scene (default: the live scene's saved file), oldest first, with their"
+          },
+          {
+            "name": "scene_children",
+            "about": "List the immediate children of a prim."
+          },
+          {
+            "name": "scene_composition",
+            "about": "Read-only: how one prim is composed (arcs with their LIVERPS letter, variant selections, instancing,"
+          },
+          {
+            "name": "scene_create",
+            "about": "Create a prim, optionally in dry-run mode."
+          },
+          {
+            "name": "scene_create_camera",
+            "about": "DRY RUN BY DEFAULT: plan a camera at path in the LIVE open scene and show the preview to the user first."
+          },
+          {
+            "name": "scene_create_light",
+            "about": "DRY RUN BY DEFAULT: plan a UsdLux light (rect, sphere, disk, distant, cylinder or dome) at path in the"
+          },
+          {
+            "name": "scene_create_material",
+            "about": "DRY RUN BY DEFAULT: plan a UsdPreviewSurface material at path (a Material with a PreviewSurface shader"
+          },
+          {
+            "name": "scene_delete",
+            "about": "Delete a prim, optionally in dry-run mode."
+          },
+          {
+            "name": "scene_diff",
+            "about": "Read-only: what changed between two versions of a scene's saved files, in plain English (prims added,"
+          },
+          {
+            "name": "scene_duplicate",
+            "about": "Duplicate one prim to another path."
+          },
+          {
+            "name": "scene_explain",
+            "about": "Read-only: explain my scene in plain language for a beginner: groups, geometry (size and where it sits),"
+          },
+          {
+            "name": "scene_explain_value",
+            "about": "Read-only: resolve one attribute and explain which opinion wins and why (LIVERPS, layer order, offsets,"
+          },
+          {
+            "name": "scene_find",
+            "about": "Search for prims by path, type, or material text."
+          },
+          {
+            "name": "scene_flatten_preview",
+            "about": "Read-only: what ONE prim looks like with every layer and composition arc baked into a single layer, as"
+          },
+          {
+            "name": "scene_frame_stats",
+            "about": "Kit only: viewport FPS / frame time, GPU memory and the app loop rate. Read-only; never changes settings."
+          },
+          {
+            "name": "scene_inspect",
+            "about": "Inspect a prim by path."
+          },
+          {
+            "name": "scene_journal",
+            "about": "Read-only: the change journal, newest first: every scene edit the router actually APPLIED (previews are"
+          },
+          {
+            "name": "scene_journal_clear",
+            "about": "Empty the change journal (only the journal file; scenes are never touched). Nothing happens unless"
+          },
+          {
+            "name": "scene_journal_explain",
+            "about": "Read-only: 'what did you change?' in plain sentences, newest first, such as '14:02 - You moved /World/Cube"
+          },
+          {
+            "name": "scene_journal_summary",
+            "about": "Read-only: the story of one day of scene changes (default today; 'yesterday' or 'YYYY-MM-DD'): how many"
+          },
+          {
+            "name": "scene_journal_to_script",
+            "about": "Read-only: turn what you did into ONE commented OpenUSD Python script that replays the edits the change"
+          },
+          {
+            "name": "scene_layers",
+            "about": "Read-only: the layer stack, strongest first (session layer, root layer, then its sublayers depth-first),"
+          },
+          {
+            "name": "scene_layout_align",
+            "about": "DRY RUN BY DEFAULT: plan lining prims up along one world axis by their bounding-box min sides ('min'),"
+          },
+          {
+            "name": "scene_layout_distribute",
+            "about": "DRY RUN BY DEFAULT: plan spreading prims evenly along the long side of a shelf or table top (surface_path),"
+          },
+          {
+            "name": "scene_layout_snap",
+            "about": "DRY RUN BY DEFAULT: plan dropping (or lifting) prims straight down the up axis so the bottom of each one"
+          },
+          {
+            "name": "scene_layout_space",
+            "about": "DRY RUN BY DEFAULT: plan making the gaps between prims equal along one world axis ('x', 'y' or 'z'), and"
+          },
+          {
+            "name": "scene_layout_stack",
+            "about": "DRY RUN BY DEFAULT: plan stacking prims in rows like a pyramid or wall (rows bottom first; default"
+          },
+          {
+            "name": "scene_make_collider",
+            "about": "DRY RUN BY DEFAULT: plan adding collision (CollisionAPI) to a gprim, or to every gprim below a group prim,"
+          },
+          {
+            "name": "scene_make_instanceable",
+            "about": "Plan (dry_run=True, the default) or author instanceable = true on prims that reference / payload an asset."
+          },
+          {
+            "name": "scene_make_rigid_body",
+            "about": "DRY RUN BY DEFAULT: plan making a prim a rigid body (RigidBodyAPI, optional MassAPI with mass in kg or"
+          },
+          {
+            "name": "scene_material",
+            "about": "Bind a material to a prim."
+          },
+          {
+            "name": "scene_move",
+            "about": "Apply transform updates to a prim."
+          },
+          {
+            "name": "scene_move_opinions",
+            "about": "DRY RUN BY DEFAULT: plan moving a prim's opinions (its whole spec, or only properties=[...]) from one"
+          },
+          {
+            "name": "scene_mute_layer",
+            "about": "DRY RUN BY DEFAULT: plan muting a layer so the stage ignores its opinions (and its sublayers') and show the"
+          },
+          {
+            "name": "scene_payload_plan",
+            "about": "PLAN ONLY: how to turn the references on these prims into payloads (steps + a Python snippet). Writes nothing."
+          },
+          {
+            "name": "scene_performance",
+            "about": "Read-only performance report for an opened Usd.Stage (or the subtree at root_path). Never authors anything."
+          },
+          {
+            "name": "scene_physics_report",
+            "about": "Read-only: the physics setup of the open scene (or one subtree): PhysicsScene prims and gravity, rigid"
+          },
+          {
+            "name": "scene_properties",
+            "about": "Read-only: a prim's attributes (types, values, time samples, primvars), relationships and metadata. mode"
+          },
+          {
+            "name": "scene_prune_checkpoints",
+            "about": "DRY RUN BY DEFAULT: plan deleting all but the newest `keep` checkpoints of a scene (keep >= 1, so the"
+          },
+          {
+            "name": "scene_remove_physics",
+            "about": "DRY RUN BY DEFAULT: plan removing the RigidBody, Collision, MeshCollision and Mass APIs (and their physics"
+          },
+          {
+            "name": "scene_remove_sublayer",
+            "about": "DRY RUN BY DEFAULT: plan taking a sublayer (by file name, path or identifier) out of its parent's sublayer"
+          },
+          {
+            "name": "scene_rename",
+            "about": "Rename a prim and keep its subtree intact."
+          },
+          {
+            "name": "scene_reparent",
+            "about": "Reparent a prim under a new parent."
+          },
+          {
+            "name": "scene_restore_checkpoint",
+            "about": "DRY RUN BY DEFAULT: plan putting a checkpoint's files back over the saved scene files and show the preview"
+          },
+          {
+            "name": "scene_save",
+            "about": "Save the current live scene to a USD file; dry_run previews in-place save versus Save As."
+          },
+          {
+            "name": "scene_select",
+            "about": "Select one or more prim paths in the active scene."
+          },
+          {
+            "name": "scene_set_attribute",
+            "about": "DRY RUN BY DEFAULT: plan setting one attribute (e.g. inputs:intensity on a light, focalLength on a camera,"
+          },
+          {
+            "name": "scene_set_edit_target",
+            "about": "DRY RUN BY DEFAULT: plan making one layer of the layer stack the edit target (where new edits are"
+          },
+          {
+            "name": "scene_stage_info",
+            "about": "Read-only stage overview: layer stack, default prim, upAxis, metersPerUnit, time codes, prim census, model"
+          },
+          {
+            "name": "scene_summary",
+            "about": "Return a compact summary of the current scene."
+          },
+          {
+            "name": "scene_undo_history",
+            "about": "Read-only: the recent scene changes made through the router that scene_undo_last can undo, newest first"
+          },
+          {
+            "name": "scene_undo_last",
+            "about": "DRY RUN BY DEFAULT: preview which scene change made through the router (the most recent one) would be"
+          },
+          {
+            "name": "scene_unmute_layer",
+            "about": "DRY RUN BY DEFAULT: plan unmuting a muted layer so its opinions count again and show the preview to the"
+          },
+          {
+            "name": "scene_variant_set",
+            "about": "Select a native USD variant on a prim."
+          },
+          {
+            "name": "scene_variants",
+            "about": "List native USD variant selections on a prim."
+          },
+          {
+            "name": "scene_where_is",
+            "about": "Read-only: every layer that holds an opinion on a prim (or one attribute: attribute='size', or"
+          },
+          {
+            "name": "sdg_cancel",
+            "about": "Cancel only an MCP-owned Replicator task; preserve any partial output for inspection."
+          },
+          {
+            "name": "sdg_plan",
+            "about": "Plan a small RGB/label dataset in a new folder; existing camera and semantic labels are prerequisites."
+          },
+          {
+            "name": "sdg_script",
+            "about": "Generate a Script Editor example; return text only, with DRY_RUN=True until the user changes it."
+          },
+          {
+            "name": "sdg_start",
+            "about": "Preview or schedule at most 100 Replicator frames; detach writer/destroy render product on completion or failure."
+          },
+          {
+            "name": "sdg_status",
+            "about": "Read this bridge's bounded job status; completed steps do not replace dataset validation."
+          },
+          {
+            "name": "semantic_audit",
+            "about": "Read class labels and unlabelled geometry, including inherited parent labels; bounded, no authoring."
+          },
+          {
+            "name": "semantic_labels",
+            "about": "Preview or apply class labels in one snapshot transaction with rollback and optional MCP undo."
+          },
+          {
+            "name": "sensor_add_camera",
+            "about": "Plan (dry_run=True, the default) or author a UsdGeom.Camera under a robot link with plain pxr."
+          },
+          {
+            "name": "sensor_add_physics",
+            "about": "Plan (default) or author an IsaacImuSensor / IsaacContactSensor prim with plain pxr (typeName + attributes)."
+          },
+          {
+            "name": "sensor_catalog",
+            "about": "What each sensor kind measures, typical uses, the verified Isaac Sim 6.1 API and the old -> new names."
+          },
+          {
+            "name": "sensor_create",
+            "about": "Kit-only: create a sensor on the LIVE Isaac Sim stage with the verified 6.1 API (dry_run=True by default)."
+          },
+          {
+            "name": "sensor_list",
+            "about": "Read-only: every camera and Isaac/RTX sensor prim under root_path and which robot link carries it."
+          },
+          {
+            "name": "sensor_plan",
+            "about": "Plan a sensor without writing anything: prim path/type, attributes, transform, Script Editor python,"
+          },
+          {
+            "name": "sensor_read",
+            "about": "Kit-only: a SUMMARY of a sensor's latest data (never the raw arrays)."
+          },
+          {
+            "name": "sensor_release",
+            "about": "Forget the cached live readers (all, or those for prim_path) so their render products can be freed."
+          },
+          {
+            "name": "sim_pause",
+            "about": "CHANGES THE SIMULATION STATE (not authored scene data): pauses the live app's timeline at the current time;"
+          },
+          {
+            "name": "sim_play",
+            "about": "CHANGES THE SIMULATION STATE (not authored scene data): plays the live app's timeline, so physics simulates"
+          },
+          {
+            "name": "sim_status",
+            "about": "Read-only: whether the live app's simulation (timeline and physics) is playing, paused or stopped, the"
+          },
+          {
+            "name": "sim_step",
+            "about": "CHANGES THE SIMULATION STATE (not authored scene data): advances a paused (or stopped) simulation by frames"
+          },
+          {
+            "name": "sim_stop",
+            "about": "CHANGES THE SIMULATION STATE (not authored scene data): stops the live app's timeline, RESETS it to the"
+          },
+          {
+            "name": "usd_asset_health",
+            "about": "Read-only: is this asset OK to use? A 0-100 health score and grade with plain-language checks (missing or"
+          },
+          {
+            "name": "usd_docs_search",
+            "about": "Search the bundled offline OpenUSD docs (USD 25.11 API atlas, openusd.org pages, Learn OpenUSD, workspace"
+          },
+          {
+            "name": "usd_health_checks",
+            "about": "Read-only: every check usd_asset_health runs, with its title, the matching NVIDIA Asset Validator rule in"
+          },
+          {
+            "name": "usd_knowledge",
+            "about": "Query the USD/OpenUSD knowledge backend directly; when the USD docs MCP is not running, the answer comes"
+          },
+          {
+            "name": "usd_playground_compose",
+            "about": "Compose your own USDA layer text in a throwaway temp folder (never your scene files) and explain it:"
+          },
+          {
+            "name": "usd_validate",
+            "about": "Read-only lint: profile 'exam' (checks tied to NCP-OUSD objectives), 'usd' (OpenUSD validators) or 'all';"
+          },
+          {
+            "name": "variant_check",
+            "about": "Switch every variant (on a masked copy of the stage) and report problems."
+          },
+          {
+            "name": "variant_compare",
+            "about": "Differences between two variants: in their authored opinions and in the composed result under the prim."
+          },
+          {
+            "name": "variant_contents",
+            "about": "What one variant changes: every opinion inside its variant spec(s) -- attribute values, relationships and"
+          },
+          {
+            "name": "variant_create_set",
+            "about": "Plan (dry_run=True, the default) or add a new variant set with empty variants to a prim."
+          },
+          {
+            "name": "variant_duplicate",
+            "about": "Plan (dry_run=True, the default) or copy a variant to a new variant, then apply overrides inside the copy."
+          },
+          {
+            "name": "variant_list",
+            "about": "Every prim (under root_path, default the whole stage) with variant sets: the sets, their variants, the current"
+          },
+          {
+            "name": "variant_remove",
+            "about": "Plan (dry_run=True, the default) or delete a variant (and all its opinions) from every local layer."
+          },
+          {
+            "name": "variant_rename",
+            "about": "Plan (dry_run=True, the default) or rename a variant in every local layer that holds it."
+          },
+          {
+            "name": "variant_select",
+            "about": "Plan (dry_run=True, the default) or author a variant selection in one local layer (default: the edit target)."
+          },
+          {
+            "name": "workspace_context",
+            "about": "Return shared Omniverse setup and reusable lessons for any project in this workspace."
+          },
+          {
+            "name": "workspace_document",
+            "about": "Return an allowlisted shared document: new_project_template or mcp_cheatsheet."
+          },
+          {
+            "name": "workspace_learning_index",
+            "about": "List reusable learning documents and explain which context belongs to an existing demo."
+          }
+        ]
+      }
+    },
+    {
+      "tool": "scene_summary",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "stage_name": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 30,
+        "top_level_prims": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras"
+        ]
+      }
+    },
+    {
+      "tool": "scene_capabilities",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "backend": {
+          "mode": "http_env",
+          "bridge": "HttpSceneBridge",
+          "endpoint": "http://127.0.0.1:9911",
+          "reason": "OMNIVERSE_SCENE_HTTP_ENDPOINT is set",
+          "warnings": [],
+          "target": null
+        },
+        "rpc_version": "tier8-1",
+        "expected_rpc_version": "tier8-1",
+        "live_insight": {
+          "available": true,
+          "needs_bridge_update": false,
+          "reason": null,
+          "queries": [
+            "stage_info",
+            "composition",
+            "explain_value",
+            "properties",
+            "bounds",
+            "validate"
+          ]
+        },
+        "live_authoring": {
+          "available": true,
+          "reason": null,
+          "dry_run_default": true
+        },
+        "scene_edits": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "set_attribute",
+            "create_material",
+            "bind_material"
+          ],
+          "dry_run_default": true
+        },
+        "undo": {
+          "available": true,
+          "reason": null,
+          "kit_ctrl_z": true,
+          "methods": [
+            "undo_last",
+            "undo_history"
+          ],
+          "dry_run_default": true
+        },
+        "assets": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "add_reference"
+          ],
+          "dry_run_default": true
+        },
+        "physics": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "physics_report",
+            "add_physics_scene",
+            "make_rigid_body",
+            "make_collider",
+            "remove_physics"
+          ],
+          "dry_run_default": true
+        },
+        "viewport_capture": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "capture_viewport",
+            "capture_status"
+          ],
+          "dry_run_default": null
+        },
+        "simulation": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "simulation_status",
+            "simulation_play",
+            "simulation_pause",
+            "simulation_stop",
+            "simulation_step"
+          ],
+          "dry_run_default": null
+        },
+        "homework": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "assignment_check",
+            "scene_tour"
+          ],
+          "dry_run_default": null
+        },
+        "layout": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "layout_snap",
+            "layout_stack",
+            "layout_distribute",
+            "layout_space",
+            "layout_align"
+          ],
+          "dry_run_default": true
+        },
+        "robots": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "robot_inspect"
+          ],
+          "dry_run_default": null
+        },
+        "layers": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "layer_stack",
+            "layer_where_is",
+            "layer_flatten_preview",
+            "layer_add_sublayer",
+            "layer_remove_sublayer",
+            "layer_set_edit_target",
+            "layer_mute",
+            "layer_unmute",
+            "layer_move_opinions"
+          ],
+          "dry_run_default": true
+        },
+        "health": {
+          "available": true,
+          "reason": null,
+          "methods": [
+            "asset_health"
+          ],
+          "dry_run_default": null
+        },
+        "missing_live_methods": [],
+        "needs_bridge_update": false,
+        "message": "Live insight, light/camera authoring, attribute/material edits, undo, assets, physics, viewport capture, simulation controls, the homework check, the scene tour, smart layout, the robot inspector, the layer manager and the asset health check are available on the open stage.",
+        "capabilities": {
+          "ok": true,
+          "bridge": "LiveKitSceneBridge",
+          "version": "tier8-1",
+          "methods": [
+            "ping",
+            "selection",
+            "select",
+            "snapshot",
+            "summary",
+            "inspect",
+            "children",
+            "create",
+            "delete",
+            "duplicate",
+            "reparent",
+            "rename",
+            "move",
+            "material",
+            "variants",
+            "variant_set",
+            "timeline",
+            "timeline_set",
+            "timeline_play",
+            "timeline_stop",
+            "make_red",
+            "find",
+            "save",
+            "feature_call",
+            "capabilities",
+            "insight",
+            "create_light",
+            "create_camera",
+            "aim",
+            "set_attribute",
+            "create_material",
+            "bind_material",
+            "undo_last",
+            "undo_history",
+            "add_reference",
+            "physics_report",
+            "add_physics_scene",
+            "make_rigid_body",
+            "make_collider",
+            "remove_physics",
+            "capture_viewport",
+            "capture_status",
+            "simulation_status",
+            "simulation_play",
+            "simulation_pause",
+            "simulation_stop",
+            "simulation_step",
+            "assignment_check",
+            "scene_tour",
+            "layout_snap",
+            "layout_stack",
+            "layout_distribute",
+            "layout_space",
+            "layout_align",
+            "robot_inspect",
+            "layer_stack",
+            "layer_where_is",
+            "layer_flatten_preview",
+            "layer_add_sublayer",
+            "layer_remove_sublayer",
+            "layer_set_edit_target",
+            "layer_mute",
+            "layer_unmute",
+            "layer_move_opinions",
+            "asset_health"
+          ],
+          "insight_queries": [
+            "stage_info",
+            "composition",
+            "explain_value",
+            "properties",
+            "bounds",
+            "validate"
+          ],
+          "insight_args": {
+            "stage_info": [],
+            "composition": [
+              "prim_path"
+            ],
+            "explain_value": [
+              "prim_path",
+              "attribute",
+              "time"
+            ],
+            "properties": [
+              "prim_path",
+              "include_values",
+              "time",
+              "authored_only"
+            ],
+            "bounds": [
+              "prim_path",
+              "purposes",
+              "time",
+              "use_extents_hint"
+            ],
+            "validate": [
+              "profile",
+              "max_issues",
+              "max_prims"
+            ]
+          },
+          "authoring": {
+            "available": true
+          },
+          "edits": {
+            "available": true,
+            "methods": [
+              "set_attribute",
+              "create_material",
+              "bind_material"
+            ],
+            "dry_run_default": true
+          },
+          "undo": {
+            "available": true,
+            "kit_ctrl_z": true,
+            "methods": [
+              "undo_last",
+              "undo_history"
+            ],
+            "recorded": 0,
+            "max_entries": 50,
+            "dry_run_default": true,
+            "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state."
+          },
+          "assets": {
+            "available": true,
+            "methods": [
+              "add_reference"
+            ],
+            "dry_run_default": true
+          },
+          "physics": {
+            "available": true,
+            "methods": [
+              "physics_report",
+              "add_physics_scene",
+              "make_rigid_body",
+              "make_collider",
+              "remove_physics"
+            ],
+            "dry_run_default": true
+          },
+          "capture": {
+            "available": true,
+            "methods": [
+              "capture_viewport",
+              "capture_status"
+            ]
+          },
+          "simulation": {
+            "available": true,
+            "methods": [
+              "simulation_status",
+              "simulation_play",
+              "simulation_pause",
+              "simulation_stop",
+              "simulation_step"
+            ]
+          },
+          "homework": {
+            "available": true,
+            "methods": [
+              "assignment_check",
+              "scene_tour"
+            ]
+          },
+          "layout": {
+            "available": true,
+            "methods": [
+              "layout_snap",
+              "layout_stack",
+              "layout_distribute",
+              "layout_space",
+              "layout_align"
+            ],
+            "dry_run_default": true
+          },
+          "robots": {
+            "available": true,
+            "methods": [
+              "robot_inspect"
+            ]
+          },
+          "layers": {
+            "available": true,
+            "methods": [
+              "layer_stack",
+              "layer_where_is",
+              "layer_flatten_preview",
+              "layer_add_sublayer",
+              "layer_remove_sublayer",
+              "layer_set_edit_target",
+              "layer_mute",
+              "layer_unmute",
+              "layer_move_opinions"
+            ],
+            "dry_run_default": true
+          },
+          "health": {
+            "available": true,
+            "methods": [
+              "asset_health"
+            ]
+          },
+          "dry_run_default": true,
+          "stage_open": true,
+          "insight_budget_ms": {
+            "default": 3000.0,
+            "max": 10000.0
+          },
+          "edit_methods": [
+            "set_attribute",
+            "create_material",
+            "bind_material"
+          ],
+          "undo_methods": [
+            "undo_last",
+            "undo_history"
+          ],
+          "asset_methods": [
+            "add_reference"
+          ],
+          "physics_methods": [
+            "physics_report",
+            "add_physics_scene",
+            "make_rigid_body",
+            "make_collider",
+            "remove_physics"
+          ],
+          "capture_methods": [
+            "capture_viewport",
+            "capture_status"
+          ],
+          "simulation_methods": [
+            "simulation_status",
+            "simulation_play",
+            "simulation_pause",
+            "simulation_stop",
+            "simulation_step"
+          ],
+          "homework_methods": [
+            "assignment_check",
+            "scene_tour"
+          ],
+          "layout_methods": [
+            "layout_snap",
+            "layout_stack",
+            "layout_distribute",
+            "layout_space",
+            "layout_align"
+          ],
+          "robot_methods": [
+            "robot_inspect"
+          ],
+          "layer_read_methods": [
+            "layer_stack",
+            "layer_where_is",
+            "layer_flatten_preview"
+          ],
+          "layer_write_methods": [
+            "layer_add_sublayer",
+            "layer_remove_sublayer",
+            "layer_set_edit_target",
+            "layer_mute",
+            "layer_unmute",
+            "layer_move_opinions"
+          ],
+          "health_methods": [
+            "asset_health"
+          ],
+          "endpoint": "http://127.0.0.1:9911"
+        }
+      }
+    },
+    {
+      "tool": "rubric_template",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "rubric": {
+          "title": "Mini inspection project",
+          "rules": [
+            {
+              "id": "world",
+              "kind": "prim",
+              "path": "/World",
+              "type": "Xform",
+              "weight": 1
+            },
+            {
+              "id": "camera",
+              "kind": "prim",
+              "path": "/World/Camera",
+              "type": "Camera",
+              "weight": 1
+            },
+            {
+              "id": "units",
+              "kind": "metadata",
+              "name": "metersPerUnit",
+              "equals": 1.0,
+              "weight": 1
+            },
+            {
+              "id": "cubes",
+              "kind": "count",
+              "path": "/World",
+              "type": "Cube",
+              "gte": 1,
+              "weight": 2
+            }
+          ]
+        },
+        "note": "Supported comparisons: equals, gte, lte. Rubrics contain data, never executable code."
+      }
+    },
+    {
+      "tool": "robot_catalog",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "read_only": true,
+        "content_root": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1",
+        "count": 26,
+        "available_count": 26,
+        "robots": [
+          {
+            "name": "franka",
+            "prim_name": "Franka",
+            "kind": "arm",
+            "kind_plain": "robot arm (manipulator): bolted down, moves a tool with hinge joints",
+            "description": "Franka Emika Panda: 7-joint research arm with a 2-finger gripper; the classic pick-and-place teaching robot.",
+            "aliases": [
+              "panda",
+              "franka_panda"
+            ],
+            "relative_path": "Isaac/Robots/FrankaRobotics/FrankaPanda/franka.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/FrankaRobotics/FrankaPanda/franka.usd",
+            "available": true,
+            "default_prim": "panda",
+            "suggested_prim_path": "/World/Franka",
+            "fixed_base": true
+          },
+          {
+            "name": "fr3",
+            "prim_name": "FR3",
+            "kind": "arm",
+            "kind_plain": "robot arm (manipulator): bolted down, moves a tool with hinge joints",
+            "description": "Franka Research 3: the newer 7-joint Franka arm.",
+            "aliases": [
+              "franka_fr3"
+            ],
+            "relative_path": "Isaac/Robots/FrankaRobotics/FrankaFR3/fr3.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/FrankaRobotics/FrankaFR3/fr3.usd",
+            "available": true,
+            "default_prim": "fr3",
+            "suggested_prim_path": "/World/FR3",
+            "fixed_base": true
+          },
+          {
+            "name": "ur10",
+            "prim_name": "UR10",
+            "kind": "arm",
+            "kind_plain": "robot arm (manipulator): bolted down, moves a tool with hinge joints",
+            "description": "Universal Robots UR10: 6-joint industrial arm with a long reach (1.3 m), no gripper.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/UniversalRobots/ur10/ur10.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/UniversalRobots/ur10/ur10.usd",
+            "available": true,
+            "default_prim": "ur10",
+            "suggested_prim_path": "/World/UR10",
+            "fixed_base": true
+          },
+          {
+            "name": "ur10e",
+            "prim_name": "UR10e",
+            "kind": "arm",
+            "kind_plain": "robot arm (manipulator): bolted down, moves a tool with hinge joints",
+            "description": "Universal Robots UR10e: e-Series version of the UR10, 6 joints.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/UniversalRobots/ur10e/ur10e.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/UniversalRobots/ur10e/ur10e.usd",
+            "available": true,
+            "default_prim": "ur10e",
+            "suggested_prim_path": "/World/UR10e",
+            "fixed_base": true
+          },
+          {
+            "name": "ur5e",
+            "prim_name": "UR5e",
+            "kind": "arm",
+            "kind_plain": "robot arm (manipulator): bolted down, moves a tool with hinge joints",
+            "description": "Universal Robots UR5e: smaller 6-joint arm (0.85 m reach).",
+            "aliases": [
+              "ur5"
+            ],
+            "relative_path": "Isaac/Robots/UniversalRobots/ur5e/ur5e.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/UniversalRobots/ur5e/ur5e.usd",
+            "available": true,
+            "default_prim": "ur5e",
+            "suggested_prim_path": "/World/UR5e",
+            "fixed_base": true
+          },
+          {
+            "name": "kinova_gen3",
+            "prim_name": "KinovaGen3",
+            "kind": "arm",
+            "kind_plain": "robot arm (manipulator): bolted down, moves a tool with hinge joints",
+            "description": "Kinova Gen3: light 7-joint arm.",
+            "aliases": [
+              "gen3",
+              "kinova"
+            ],
+            "relative_path": "Isaac/Robots/Kinova/Gen3/gen3n7_instanceable.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/Kinova/Gen3/gen3n7_instanceable.usd",
+            "available": true,
+            "default_prim": "gen3",
+            "suggested_prim_path": "/World/KinovaGen3",
+            "fixed_base": true
+          },
+          {
+            "name": "kuka_iiwa",
+            "prim_name": "KukaIiwa",
+            "kind": "arm",
+            "kind_plain": "robot arm (manipulator): bolted down, moves a tool with hinge joints",
+            "description": "KUKA LBR iiwa: 7-joint collaborative arm.",
+            "aliases": [
+              "iiwa",
+              "kuka"
+            ],
+            "relative_path": "Isaac/Robots/Kuka/LBR_iiwa/kuka.usda",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/Kuka/LBR_iiwa/kuka.usda",
+            "available": true,
+            "default_prim": "Root",
+            "suggested_prim_path": "/World/KukaIiwa",
+            "fixed_base": true
+          },
+          {
+            "name": "xarm6",
+            "prim_name": "XArm6",
+            "kind": "arm",
+            "kind_plain": "robot arm (manipulator): bolted down, moves a tool with hinge joints",
+            "description": "UFactory xArm 6: 6-joint arm.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/Ufactory/xarm6/xarm6.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/Ufactory/xarm6/xarm6.usd",
+            "available": true,
+            "default_prim": "UF_ROBOT",
+            "suggested_prim_path": "/World/XArm6",
+            "fixed_base": true
+          },
+          {
+            "name": "robotiq_2f_85",
+            "prim_name": "Robotiq2F85",
+            "kind": "gripper",
+            "kind_plain": "gripper (end effector): fingers you mount on the end of an arm",
+            "description": "Robotiq 2F-85: 2-finger parallel gripper (85 mm stroke) to mount on an arm.",
+            "aliases": [
+              "2f85",
+              "robotiq"
+            ],
+            "relative_path": "Isaac/Robots/Robotiq/2F-85/Robotiq_2F_85_edit.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/Robotiq/2F-85/Robotiq_2F_85_edit.usd",
+            "available": true,
+            "default_prim": "Robotiq_2F_85",
+            "suggested_prim_path": "/World/Robotiq2F85",
+            "fixed_base": true
+          },
+          {
+            "name": "robotiq_2f_140",
+            "prim_name": "Robotiq2F140",
+            "kind": "gripper",
+            "kind_plain": "gripper (end effector): fingers you mount on the end of an arm",
+            "description": "Robotiq 2F-140: wider 2-finger parallel gripper (140 mm stroke).",
+            "aliases": [
+              "2f140"
+            ],
+            "relative_path": "Isaac/Robots/Robotiq/2F-140/2f140_instanceable.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/Robotiq/2F-140/2f140_instanceable.usd",
+            "available": true,
+            "default_prim": "robotiq_arg2f_140_model",
+            "suggested_prim_path": "/World/Robotiq2F140",
+            "fixed_base": true
+          },
+          {
+            "name": "jetbot",
+            "prim_name": "Jetbot",
+            "kind": "mobile",
+            "kind_plain": "mobile robot: drives around on wheels, free base",
+            "description": "NVIDIA JetBot: tiny 2-wheel differential-drive robot; the simplest robot to drive.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/NVIDIA/Jetbot/jetbot.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/NVIDIA/Jetbot/jetbot.usd",
+            "available": true,
+            "default_prim": "jetbot",
+            "suggested_prim_path": "/World/Jetbot",
+            "fixed_base": false
+          },
+          {
+            "name": "carter_v1",
+            "prim_name": "Carter",
+            "kind": "mobile",
+            "kind_plain": "mobile robot: drives around on wheels, free base",
+            "description": "NVIDIA Carter v1: 2-wheel differential-drive delivery robot with a caster.",
+            "aliases": [
+              "carter"
+            ],
+            "relative_path": "Isaac/Robots/NVIDIA/Carter/carter_v1.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/NVIDIA/Carter/carter_v1.usd",
+            "available": true,
+            "default_prim": "carter",
+            "suggested_prim_path": "/World/Carter",
+            "fixed_base": false
+          },
+          {
+            "name": "nova_carter",
+            "prim_name": "NovaCarter",
+            "kind": "mobile",
+            "kind_plain": "mobile robot: drives around on wheels, free base",
+            "description": "NVIDIA Nova Carter: warehouse AMR reference robot with sensors.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/NVIDIA/NovaCarter/nova_carter.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/NVIDIA/NovaCarter/nova_carter.usd",
+            "available": true,
+            "default_prim": "nova_carter",
+            "suggested_prim_path": "/World/NovaCarter",
+            "fixed_base": false
+          },
+          {
+            "name": "kaya",
+            "prim_name": "Kaya",
+            "kind": "mobile",
+            "kind_plain": "mobile robot: drives around on wheels, free base",
+            "description": "NVIDIA Kaya: 3 omni-wheel (holonomic) robot that can drive sideways.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/NVIDIA/Kaya/kaya.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/NVIDIA/Kaya/kaya.usd",
+            "available": true,
+            "default_prim": "kaya",
+            "suggested_prim_path": "/World/Kaya",
+            "fixed_base": false
+          },
+          {
+            "name": "turtlebot3",
+            "prim_name": "Turtlebot3",
+            "kind": "mobile",
+            "kind_plain": "mobile robot: drives around on wheels, free base",
+            "description": "TurtleBot3 Burger: small ROS teaching robot, 2-wheel differential drive.",
+            "aliases": [
+              "turtlebot",
+              "tb3"
+            ],
+            "relative_path": "Isaac/Robots/Turtlebot/Turtlebot3/tb3_burger_processed.usda",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/Turtlebot/Turtlebot3/tb3_burger_processed.usda",
+            "available": true,
+            "default_prim": "turtlebot3_burger",
+            "suggested_prim_path": "/World/Turtlebot3",
+            "fixed_base": false
+          },
+          {
+            "name": "create3",
+            "prim_name": "Create3",
+            "kind": "mobile",
+            "kind_plain": "mobile robot: drives around on wheels, free base",
+            "description": "iRobot Create 3: round 2-wheel educational robot (Roomba base).",
+            "aliases": [
+              "irobot"
+            ],
+            "relative_path": "Isaac/Robots/iRobot/Create3/create_3.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/iRobot/Create3/create_3.usd",
+            "available": true,
+            "default_prim": "create3",
+            "suggested_prim_path": "/World/Create3",
+            "fixed_base": false
+          },
+          {
+            "name": "jackal",
+            "prim_name": "Jackal",
+            "kind": "mobile",
+            "kind_plain": "mobile robot: drives around on wheels, free base",
+            "description": "Clearpath Jackal: 4-wheel skid-steer outdoor robot.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/Clearpath/Jackal/jackal.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/Clearpath/Jackal/jackal.usd",
+            "available": true,
+            "default_prim": "jackal",
+            "suggested_prim_path": "/World/Jackal",
+            "fixed_base": false
+          },
+          {
+            "name": "iw_hub",
+            "prim_name": "IwHub",
+            "kind": "mobile",
+            "kind_plain": "mobile robot: drives around on wheels, free base",
+            "description": "idealworks iw.hub: factory tugger / cart-lifting AMR.",
+            "aliases": [
+              "iwhub"
+            ],
+            "relative_path": "Isaac/Robots/Idealworks/iwhub/iw_hub.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/Idealworks/iwhub/iw_hub.usd",
+            "available": true,
+            "default_prim": "iw_hub",
+            "suggested_prim_path": "/World/IwHub",
+            "fixed_base": false
+          },
+          {
+            "name": "leatherback",
+            "prim_name": "Leatherback",
+            "kind": "mobile",
+            "kind_plain": "mobile robot: drives around on wheels, free base",
+            "description": "NVIDIA Leatherback: small car-like (Ackermann steering) robot.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/NVIDIA/Leatherback/leatherback.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/NVIDIA/Leatherback/leatherback.usd",
+            "available": true,
+            "default_prim": "Leatherback",
+            "suggested_prim_path": "/World/Leatherback",
+            "fixed_base": false
+          },
+          {
+            "name": "ridgeback_franka",
+            "prim_name": "RidgebackFranka",
+            "kind": "mobile manipulator",
+            "kind_plain": "mobile robot carrying an arm",
+            "description": "Clearpath Ridgeback base carrying a Franka arm.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/Clearpath/RidgebackFranka/ridgeback_franka.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/Clearpath/RidgebackFranka/ridgeback_franka.usd",
+            "available": true,
+            "default_prim": null,
+            "suggested_prim_path": "/World/RidgebackFranka",
+            "fixed_base": false
+          },
+          {
+            "name": "spot",
+            "prim_name": "Spot",
+            "kind": "legged",
+            "kind_plain": "legged robot: walks, free base, needs a walking controller",
+            "description": "Boston Dynamics Spot: 4-legged robot dog.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/BostonDynamics/spot/spot.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/BostonDynamics/spot/spot.usd",
+            "available": true,
+            "default_prim": "spot",
+            "suggested_prim_path": "/World/Spot",
+            "fixed_base": false
+          },
+          {
+            "name": "go2",
+            "prim_name": "Go2",
+            "kind": "legged",
+            "kind_plain": "legged robot: walks, free base, needs a walking controller",
+            "description": "Unitree Go2: small 4-legged robot dog.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/Unitree/Go2/go2.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/Unitree/Go2/go2.usd",
+            "available": true,
+            "default_prim": "go2_description",
+            "suggested_prim_path": "/World/Go2",
+            "fixed_base": false
+          },
+          {
+            "name": "h1",
+            "prim_name": "H1",
+            "kind": "humanoid",
+            "kind_plain": "humanoid: two legs and arms, free base, needs a balance controller",
+            "description": "Unitree H1: full-size humanoid.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/Unitree/H1/h1.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/Unitree/H1/h1.usd",
+            "available": true,
+            "default_prim": "h1",
+            "suggested_prim_path": "/World/H1",
+            "fixed_base": false
+          },
+          {
+            "name": "cartpole",
+            "prim_name": "Cartpole",
+            "kind": "teaching",
+            "kind_plain": "small teaching model for learning joints and drives",
+            "description": "Cart-pole: a cart on a rail with a free pole, the classic balancing exercise.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/IsaacSim/Cartpole/cartpole.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/IsaacSim/Cartpole/cartpole.usd",
+            "available": true,
+            "default_prim": "cartpole",
+            "suggested_prim_path": "/World/Cartpole",
+            "fixed_base": false
+          },
+          {
+            "name": "simple_articulation",
+            "prim_name": "SimpleArticulation",
+            "kind": "teaching",
+            "kind_plain": "small teaching model for learning joints and drives",
+            "description": "The smallest articulation: a few links and hinges for learning joints.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/IsaacSim/SimpleArticulation/simple_articulation.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/IsaacSim/SimpleArticulation/simple_articulation.usd",
+            "available": true,
+            "default_prim": "Articulation",
+            "suggested_prim_path": "/World/SimpleArticulation",
+            "fixed_base": false
+          },
+          {
+            "name": "differential_base",
+            "prim_name": "DifferentialBase",
+            "kind": "teaching",
+            "kind_plain": "small teaching model for learning joints and drives",
+            "description": "A bare 2-wheel differential-drive base for learning wheel drives.",
+            "aliases": [],
+            "relative_path": "Isaac/Robots/IsaacSim/DifferentialBase/differential_base.usd",
+            "path": "C:/Users/krngr/Omniverse/isaacsim-assets-6.1.0/Assets/Isaac/6.1/Isaac/Robots/IsaacSim/DifferentialBase/differential_base.usd",
+            "available": true,
+            "default_prim": "differential_base",
+            "suggested_prim_path": "/World/DifferentialBase",
+            "fixed_base": false
+          }
+        ],
+        "kinds": {
+          "arm": "robot arm (manipulator): bolted down, moves a tool with hinge joints",
+          "gripper": "gripper (end effector): fingers you mount on the end of an arm",
+          "mobile": "mobile robot: drives around on wheels, free base",
+          "mobile manipulator": "mobile robot carrying an arm",
+          "legged": "legged robot: walks, free base, needs a walking controller",
+          "humanoid": "humanoid: two legs and arms, free base, needs a balance controller",
+          "teaching": "small teaching model for learning joints and drives"
+        },
+        "how_to_use": "add_ready_robot(stage, '<name>', '/World/<Name>', position=(x, y, z), dry_run=False) references the robot; nothing is converted or copied."
+      }
+    },
+    {
+      "tool": "sensor_catalog",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "isaac_sim": "6.1.0-rc.26+release.49347.2d230af4 (isaacsim-6.1.0/VERSION)",
+        "sensors": [
+          {
+            "kind": "rgb_camera",
+            "title": "RGB camera",
+            "measures": "A colour picture of what is in front of the lens, one red/green/blue value per pixel.",
+            "typical_use": "Object detection, following a line, recording training images, teleoperation views.",
+            "prim_type": "Camera (UsdGeom.Camera); RtxCamera/CameraSensor add OmniSensorAPI when reading",
+            "data": "get_data('rgb') -> (H, W, 3) uint8 array (warp; .numpy() for numpy).",
+            "api_6_1": "isaacsim.sensors.experimental.rtx: RtxCamera, CameraSensor",
+            "needs": "Nothing physical; it just has to be under the link it should move with and not inside a mesh.",
+            "params": [
+              "focal_length",
+              "horizontal_aperture",
+              "resolution",
+              "clipping_range_m"
+            ]
+          },
+          {
+            "kind": "depth_camera",
+            "title": "Depth camera",
+            "measures": "How far away things are: one distance per pixel, measured from the camera's image plane.",
+            "typical_use": "Obstacle avoidance, grasping, measuring distances, building 3D maps.",
+            "prim_type": "Camera (UsdGeom.Camera) read with the 'distance_to_image_plane' annotator",
+            "data": "get_data('distance_to_image_plane') -> (H, W, 1) float32 in stage units; inf where nothing is hit.",
+            "api_6_1": "isaacsim.sensors.experimental.rtx: RtxCamera, CameraSensor (or SingleViewDepthCameraSensor for stereo-style depth)",
+            "needs": "Same as the RGB camera; set the near clipping distance below the closest thing it must see.",
+            "params": [
+              "focal_length",
+              "horizontal_aperture",
+              "resolution",
+              "clipping_range_m"
+            ]
+          },
+          {
+            "kind": "lidar",
+            "title": "RTX lidar",
+            "measures": "Laser distance points all around (or in front of) the sensor: a 3D point cloud each scan.",
+            "typical_use": "Mapping (SLAM), localisation, obstacle detection for mobile robots.",
+            "prim_type": "OmniLidar (omni.usd.schema.omni_sensors), loaded from a lidar USD asset",
+            "data": "LidarSensor(..., annotators=['generic-model-output']); parse_generic_model_output_data(data).numElements points.",
+            "api_6_1": "isaacsim.sensors.experimental.rtx: Lidar.create(config=...), LidarSensor",
+            "needs": "A config/asset name (e.g. 'Example_Rotary'); the asset loads from the Isaac assets root.",
+            "params": [
+              "config",
+              "variant",
+              "usd_path"
+            ]
+          },
+          {
+            "kind": "imu",
+            "title": "IMU (inertial measurement unit)",
+            "measures": "Acceleration (m/s^2 on a metre stage), turning speed (rad/s) and orientation of the body it sits on.",
+            "typical_use": "Balance and tilt for legged robots and drones, odometry, detecting bumps and falls.",
+            "prim_type": "IsaacImuSensor (isaacsim.robot.schema)",
+            "data": "IMUSensor(path).get_data() -> linear_acceleration [x,y,z], angular_velocity [x,y,z], orientation [w,x,y,z].",
+            "api_6_1": "isaacsim.sensors.experimental.physics: IMU.create, IMUSensor",
+            "needs": "An enabled rigid-body ancestor (a robot link with Rigid Body); press Play to get readings.",
+            "params": [
+              "linear_acceleration_filter_size",
+              "angular_velocity_filter_size",
+              "orientation_filter_size"
+            ]
+          },
+          {
+            "kind": "contact",
+            "title": "Contact sensor",
+            "measures": "Whether the body is touching something and how hard (force in newtons on a metre/kg stage).",
+            "typical_use": "Foot contact for walking robots, bumpers, detecting a successful grasp.",
+            "prim_type": "IsaacContactSensor (isaacsim.robot.schema)",
+            "data": "ContactSensor(path).get_data() -> in_contact, force, number_of_contacts, time.",
+            "api_6_1": "isaacsim.sensors.experimental.physics: Contact.create, ContactSensor",
+            "needs": "An enabled rigid-body ancestor with colliders; on PhysX that body gets PhysxContactReportAPI.",
+            "params": [
+              "min_threshold",
+              "max_threshold",
+              "radius",
+              "color",
+              "apply_contact_report"
+            ]
+          }
+        ],
+        "lidar_configs": [
+          "HESAI_XT32_SD10",
+          "Example_Rotary_2D",
+          "Example_Rotary",
+          "Example_Solid_State",
+          "Simple_Example_Solid_State",
+          "OS0",
+          "OS1",
+          "OS2",
+          "Ouster_VLS_128",
+          "SICK_LMS4000",
+          "SICK_LMS5xx",
+          "SICK_LRS4000",
+          "SICK_microScan3",
+          "SICK_MRS1000",
+          "SICK_multiScan100",
+          "SICK_nanoScan3",
+          "SICK_picoScan100",
+          "Slamtec_RPLIDAR_S2E",
+          "ZVISION_ML30S",
+          "ZVISION_MLXS"
+        ],
+        "default_lidar_config": "Example_Rotary",
+        "old_to_new": [
+          {
+            "old": "omni.isaac.sensor (Isaac Sim 2023/4.0 extension)",
+            "new": "isaacsim.sensors.experimental.rtx (cameras, RTX lidar) + isaacsim.sensors.experimental.physics (IMU, contact)",
+            "note": "4.5-5.x split it into isaacsim.sensors.camera / .rtx / .physics; those are deprecated since 6.0."
+          },
+          {
+            "old": "from omni.isaac.sensor import Camera  /  from isaacsim.sensors.camera import Camera",
+            "new": "from isaacsim.sensors.experimental.rtx import RtxCamera, CameraSensor",
+            "note": "Camera(prim_path=..., resolution=(w, h)) -> CameraSensor(RtxCamera(path), resolution=(h, w), annotators=[...])."
+          },
+          {
+            "old": "camera.initialize(); camera.get_rgba() / camera.get_current_frame()['rgba']",
+            "new": "rgb, info = sensor.get_data('rgb')",
+            "note": "Returns a warp array (H, W, 3); .numpy() converts it."
+          },
+          {
+            "old": "camera.add_distance_to_image_plane_to_frame() / camera.get_depth()",
+            "new": "CameraSensor(..., annotators=['distance_to_image_plane']); sensor.get_data('distance_to_image_plane')",
+            "note": "Annotators are chosen when the CameraSensor is made (or with attach_annotators)."
+          },
+          {
+            "old": "camera.add_semantic_segmentation_to_frame()",
+            "new": "annotators=['semantic_segmentation']",
+            "note": "Prims need semantic labels to show up."
+          },
+          {
+            "old": "omni.kit.commands.execute('IsaacSensorCreateRtxLidar', path=..., parent=..., config='Example_Rotary')",
+            "new": "Lidar.create(path, config='Example_Rotary') from isaacsim.sensors.experimental.rtx",
+            "note": "The command still exists in the deprecated isaacsim.sensors.rtx (enabled by default in 6.1)."
+          },
+          {
+            "old": "from isaacsim.sensors.rtx import LidarRtx; lidar.attach_annotator('IsaacCreateRTXLidarScanBuffer')",
+            "new": "LidarSensor(lidar, annotators=['generic-model-output']); parse_generic_model_output_data(data)",
+            "note": "Point count: gmo.numElements."
+          },
+          {
+            "old": "Old RTX lidar .json configs (e.g. 'Example_Rotary' json in omni.isaac.sensor/data/lidar_configs)",
+            "new": "USD lidar assets, e.g. /Isaac/Sensors/NVIDIA/Example_Rotary.usda (SUPPORTED_LIDAR_CONFIGS)",
+            "note": "Lidar.create(config=...) accepts the file stem, e.g. 'Example_Rotary' or 'OS1' + variant."
+          },
+          {
+            "old": "omni.kit.commands.execute('IsaacSensorCreateImuSensor', path='/Imu_Sensor', parent=...)",
+            "new": "IMU.create('/World/robot/link/imu', translations=[[x, y, z]]) from isaacsim.sensors.experimental.physics",
+            "note": "The command lives only in the deprecated isaacsim.sensors.physics, which 6.1 does not enable by default."
+          },
+          {
+            "old": "omni.kit.commands.execute('IsaacSensorCreateContactSensor', path='/Contact_Sensor', parent=...)",
+            "new": "Contact.create('/World/robot/foot/contact_sensor', min_threshold=..., max_threshold=..., radius=...)",
+            "note": "Same as the IMU: the command is only in the deprecated, not-enabled isaacsim.sensors.physics."
+          },
+          {
+            "old": "from omni.isaac.sensor import IMUSensor; IMUSensor(prim_path=..., name=...)",
+            "new": "IMUSensor(IMU.create(path, ...)) or IMUSensor(existing_path)",
+            "note": "isaacsim.sensors.experimental.physics 3.0.0 split authoring (IMU/Contact) from runtime; 'name' was dropped."
+          },
+          {
+            "old": "imu.get_current_frame() / contact.get_current_frame()",
+            "new": "imu_sensor.get_data() / contact_sensor.get_data()",
+            "note": "Keys: linear_acceleration, angular_velocity, orientation, time, physics_step / in_contact, force, number_of_contacts."
+          },
+          {
+            "old": "omni.isaac.range_sensor (PhysX lidar, 'RangeSensorCreateLidar')",
+            "new": "isaacsim.sensors.experimental.physics Raycast/RaycastSensor (IsaacRaycastSensor) or RTX Lidar",
+            "note": "The PhysX lidar now lives in the deprecated isaacsim.sensors.physx."
+          },
+          {
+            "old": "omni.isaac.isaac_sensor",
+            "new": "isaacsim.sensors.rtx (deprecated) -> isaacsim.sensors.experimental.rtx",
+            "note": "From isaacsim.core.deprecation_manager's rename table."
+          }
+        ],
+        "verified": {
+          "isaac_sim": "6.1.0-rc.26+release.49347.2d230af4 (isaacsim-6.1.0/VERSION)",
+          "checked_on": "2026-10-22, read-only inspection of the installed files",
+          "extensions": {
+            "isaacsim.sensors.experimental.rtx": "1.9.0 - RtxCamera/CameraSensor, Lidar/LidarSensor (current API)",
+            "isaacsim.sensors.experimental.physics": "3.3.0 - IMU/IMUSensor, Contact/ContactSensor (current API)",
+            "isaacsim.robot.schema": "7.0.2 - IsaacImuSensor / IsaacContactSensor prim schemas",
+            "omni.usd.schema.omni_sensors": "OmniLidar prim type (extscache, build 00c488ae)",
+            "omni.replicator.core": "1.13.36 - annotators behind CameraSensor/LidarSensor",
+            "isaacsim.sensors.camera": "1.7.13 - DEPRECATED since 6.0, still enabled by apps/isaacsim.exp.base.kit",
+            "isaacsim.sensors.rtx": "15.17.5 - DEPRECATED since 6.0 (IsaacSensorCreateRtxLidar), enabled by base.kit",
+            "isaacsim.sensors.physics": "1.1.10 - DEPRECATED since 6.0 (IsaacSensorCreateImu/ContactSensor), NOT enabled by default"
+          },
+          "sources": [
+            "isaacsim-6.1.0/exts/isaacsim.sensors.experimental.rtx/docs/Overview.md",
+            "isaacsim-6.1.0/exts/isaacsim.sensors.experimental.rtx/isaacsim/sensors/experimental/rtx/impl/lidar.py",
+            "isaacsim-6.1.0/exts/isaacsim.sensors.experimental.rtx/isaacsim/sensors/experimental/rtx/impl/rtx_lidar_configs.py",
+            "isaacsim-6.1.0/exts/isaacsim.sensors.experimental.rtx/isaacsim/sensors/experimental/rtx/impl/camera_sensor.py",
+            "isaacsim-6.1.0/exts/isaacsim.sensors.experimental.rtx/isaacsim/sensors/experimental/rtx/impl/utils.py",
+            "isaacsim-6.1.0/exts/isaacsim.sensors.experimental.physics/docs/Overview.md",
+            "isaacsim-6.1.0/exts/isaacsim.sensors.experimental.physics/isaacsim/sensors/experimental/physics/impl/imu.py",
+            "isaacsim-6.1.0/exts/isaacsim.sensors.experimental.physics/isaacsim/sensors/experimental/physics/impl/contact.py",
+            "isaacsim-6.1.0/exts/isaacsim.sensors.experimental.physics/include/isaacsim/sensors/experimental/physics/IImuSensor.hpp",
+            "isaacsim-6.1.0/exts/isaacsim.robot.schema/pip_prebundle/usd/schema/isaac/sensor_schema/generatedSchema.usda",
+            "isaacsim-6.1.0/extscache/omni.usd.schema.omni_sensors-0.0.0+00c488ae.wx64.r.cp312/usd_plugins/generatedSchema.usda",
+            "isaacsim-6.1.0/extsDeprecated/isaacsim.sensors.physics/isaacsim/sensors/physics/impl/commands.py",
+            "isaacsim-6.1.0/extsDeprecated/isaacsim.sensors.rtx/isaacsim/sensors/rtx/impl/commands.py",
+            "isaacsim-6.1.0/exts/isaacsim.core.deprecation_manager/config/extension.toml",
+            "isaacsim-6.1.0/apps/isaacsim.exp.base.kit"
+          ]
+        },
+        "how_sensors_attach": "A sensor is a child prim of a robot link, so it moves with that link. The 'offset' is its position in the link's own frame; rotation turns it relative to the link. USD cameras look along their local -Z axis with +Y up; Isaac robots usually drive forward along +X with +Z up."
+      }
+    },
+    {
+      "tool": "graph_recipes",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "recipes": [
+          {
+            "name": "key_sets_variant",
+            "summary": "Pressing a key selects one variant (for example J sets Leather = Black).",
+            "params": {
+              "key": "keyboard key name such as 'J'",
+              "prim": "prim path that holds the variant set",
+              "variant_set": "variant set name such as 'Leather'",
+              "variant": "variant name such as 'Black'",
+              "graph_path": "optional new graph path"
+            },
+            "required": [
+              "key",
+              "prim",
+              "variant_set",
+              "variant"
+            ]
+          },
+          {
+            "name": "event_sets_variant",
+            "summary": "The configurator pattern: a message bus event (such as setColor with payload colors='Black') selects the variant named in its payload; optionally a test key sends that event.",
+            "params": {
+              "event_name": "message bus event name such as 'setColor'",
+              "payload": "payload attribute name such as 'colors' (default 'colors')",
+              "prim": "prim path that holds the variant set",
+              "variant_set": "variant set name such as 'Leather'",
+              "test_key": "optional key that sends the event (such as 'J')",
+              "test_variant": "variant the test key sends (such as 'Black')",
+              "graph_path": "optional new graph path"
+            },
+            "required": [
+              "event_name",
+              "prim",
+              "variant_set"
+            ]
+          },
+          {
+            "name": "on_tick_rotate",
+            "summary": "A prim spins around one axis at a steady speed, driven by On Tick.",
+            "params": {
+              "prim": "prim path with an xformOp:rotateXYZ",
+              "degrees_per_second": "spin speed (number)",
+              "axis": "'X', 'Y' or 'Z' (default: the stage up axis)",
+              "only_on_play": "spin only while Play runs (default True)",
+              "graph_path": "optional new graph path"
+            },
+            "required": [
+              "prim",
+              "degrees_per_second"
+            ]
+          },
+          {
+            "name": "print_on_play",
+            "summary": "Pressing Play prints a message (to the screen and the log).",
+            "params": {
+              "text": "message to print (default 'Hello from Action Graph!')",
+              "to_screen": "default True",
+              "graph_path": "optional new graph path"
+            },
+            "required": []
+          }
+        ]
+      }
+    },
+    {
+      "tool": "asset_import_formats",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "verified_on": "2026-10-22",
+        "how_verified": "Read the installed extension sources (read-only) under C:/Users/krngr/Omniverse/isaacsim-6.1.0/extscache and kit-app-template/_build/windows-x86_64/release/extscache; no converter was run.",
+        "converters": {
+          "omni.kit.asset_converter": {
+            "title": "Asset Converter (Assimp/FBX SDK based mesh importer)",
+            "versions": {
+              "isaacsim-6.1.0": "6.0.5",
+              "composer_build": "6.0.1"
+            },
+            "module": "omni.kit.asset_converter",
+            "api": "get_instance().create_converter_task(import_path, output_path, progress_callback, asset_converter_context, material_loader=None, close_stage_and_reopen_if_opened=False) -> task; success = await task.wait_until_finished(); task.get_status(), task.get_error_message()",
+            "options": "AssetConverterContext attributes: ignore_materials, ignore_animations, ignore_camera, ignore_light, single_mesh, smooth_normals, export_preview_surface, support_point_instancer, embed_mdl_in_usd, use_meter_as_world_unit, create_world_as_default_root_prim, embed_textures, convert_fbx_to_y_up, convert_fbx_to_z_up, keep_all_materials, merge_all_meshes, use_double_precision_to_usd_transform_op, ignore_pivots, disabling_instancing, export_hidden_props, baking_scales, ignore_flip_rotations, ignore_unbound_bones, bake_mdl_material, export_separate_gltf, export_mdl_gltf_extension, convert_stage_up_y, convert_stage_up_z",
+            "formats": [
+              "fbx",
+              "obj",
+              "gltf",
+              "glb",
+              "stl",
+              "ply",
+              "bvh",
+              "lxo",
+              "md5"
+            ],
+            "enabled_in": [
+              "isaacsim.exp.full.kit / isaacsim.exp.base.kit",
+              "my_company.my_usd_composer.kit"
+            ],
+            "sources": [
+              "isaacsim-6.1.0/extscache/omni.kit.asset_converter-6.0.5+110.1.1.wx64.r.cp312.u7f4/omni/kit/asset_converter/impl/extension.py",
+              "isaacsim-6.1.0/extscache/omni.kit.asset_converter-6.0.5+110.1.1.wx64.r.cp312.u7f4/omni/kit/asset_converter/impl/context.py",
+              "isaacsim-6.1.0/extscache/omni.kit.asset_converter-6.0.5+110.1.1.wx64.r.cp312.u7f4/omni/kit/asset_converter/impl/task_manager.py",
+              "isaacsim-6.1.0/extscache/omni.kit.tool.asset_importer-6.0.2+110.1.1/omni/kit/tool/asset_importer/importer_delegate.py",
+              "kit-app-template/_build/windows-x86_64/release/extscache/omni.kit.asset_converter-6.0.1+110.1.1.wx64.r.cp312.u7f4/omni/kit/asset_converter/impl/context.py"
+            ],
+            "notes": [
+              "Format list = the 6.0.5 docstring (fbx, obj, glTF/glb, stl, ply, bvh, lxo, md5, USD) and the File > Import filter list of omni.kit.tool.asset_importer (6.0.2 Isaac / 6.0.1 Composer).",
+              "The 6.0.1 docstring (Composer build) only promises fbx/obj/glTF as fully verified.",
+              "create_converter_task fails when the output file is the stage currently open, unless close_stage_and_reopen_if_opened=True.",
+              "AssetConverterContext.export_separate_gltf is passed to the native converter as export_embedded_gltf."
+            ]
+          },
+          "omni.kit.converter.hoops_core": {
+            "title": "CAD Converter - HOOPS Exchange (part of omni.kit.converter.cad)",
+            "versions": {
+              "isaacsim-6.1.0": "512.0.0 (bundle omni.kit.converter.cad 209.5.2)",
+              "composer_build": "511.3.2 (bundle omni.kit.converter.cad 209.4.0)"
+            },
+            "module": "omni.kit.converter.hoops_core",
+            "api": "get_instance().create_converter_task(input_path, output_path, file_format_args: dict[str, str]) -> coroutine returning (output_url, ConverterStatus(error_code, error_msg)); '' url = failed",
+            "options": "file_format_args keys of HoopsOptions, e.g. instancing, convertHidden, convertMetadata, tessLOD, useMaterials, upAxis (0 file default, 1 Y, 2 Z). Unit/up overrides are named sceneOpMetersPerUnit/sceneOpUpAxis in 512.0.0 but dMetersPerUnit/iUpAxis in 511.3.2, so this helper leaves them unset and fixes units in the wrapper instead.",
+            "formats": [
+              "catpart",
+              "catproduct",
+              "cgr",
+              "3dxml",
+              "ifc",
+              "ifczip",
+              "prt",
+              "asm",
+              "xmt",
+              "x_t",
+              "x_b",
+              "xmt_txt",
+              "sldprt",
+              "sldasm",
+              "stl",
+              "ipt",
+              "iam",
+              "dwg",
+              "dxf",
+              "rvt",
+              "rfa",
+              "par",
+              "pwd",
+              "psm",
+              "step",
+              "stp",
+              "iges",
+              "igs",
+              "3dm",
+              "dae",
+              "fbx",
+              "obj",
+              "3ds",
+              "3mf",
+              "gltf",
+              "glb",
+              "sat",
+              "sab",
+              "jt",
+              "dgn"
+            ],
+            "enabled_in": [
+              "isaacsim.exp.full.kit (omni.kit.converter.cad ~209.5)",
+              "my_company.my_usd_composer.kit"
+            ],
+            "sources": [
+              "isaacsim-6.1.0/extscache/omni.kit.converter.hoops_core-512.0.0+110.1.2.wx64.r.cp312.u7f4/omni/kit/converter/hoops_core/impl/filters.py",
+              "isaacsim-6.1.0/extscache/omni.kit.converter.hoops_core-512.0.0+110.1.2.wx64.r.cp312.u7f4/omni/kit/converter/hoops_core/impl/extension.py",
+              "isaacsim-6.1.0/extscache/omni.kit.converter.hoops_core-512.0.0+110.1.2.wx64.r.cp312.u7f4/omni/kit/converter/hoops_core/impl/options.py",
+              "isaacsim-6.1.0/extscache/omni.kit.converter.cad-209.5.2+110.1.2.wx64.r.cp312.u7f4/docs/Overview.md",
+              "kit-app-template/_build/windows-x86_64/release/extscache/omni.kit.converter.hoops_core-511.3.2+110.1.2.wx64.r.cp312.u7f4/omni/kit/converter/hoops_core/impl/filters.py"
+            ],
+            "notes": [
+              "NVIDIA recommends at least 16 GB RAM (complex files up to 32 GB) for CAD conversion.",
+              "Creo files may carry a version suffix (part.prt.3); .prt is both Siemens NX and Creo.",
+              "Overview.md also lists ply/lxo/md5/e57/pts as Asset Converter formats; e57/pts were not found in the installed Asset Converter filters, so they are not offered here."
+            ]
+          },
+          "omni.kit.converter.jt_core": {
+            "title": "CAD Converter - JT (priority 1 over HOOPS for .jt)",
+            "versions": {
+              "isaacsim-6.1.0": "511.0.0",
+              "composer_build": "510.1.1"
+            },
+            "module": "omni.kit.converter.jt_core",
+            "api": "get_instance().create_converter_task(input_path, output_path, file_format_args) -> coroutine",
+            "options": "file_format_args (JT options); left empty by this helper.",
+            "formats": [
+              "jt"
+            ],
+            "enabled_in": [
+              "via omni.kit.converter.cad"
+            ],
+            "sources": [
+              "isaacsim-6.1.0/extscache/omni.kit.converter.jt_core-511.0.0+110.1.2.wx64.r.cp312.u7f4/omni/kit/converter/jt_core/impl/filters.py",
+              "isaacsim-6.1.0/extscache/omni.kit.converter.jt_core-511.0.0+110.1.2.wx64.r.cp312.u7f4/omni/kit/converter/jt_core/impl/extension.py"
+            ],
+            "notes": []
+          },
+          "omni.kit.converter.dgn_core": {
+            "title": "CAD Converter - DGN (ODA SDK; priority 1 over HOOPS for .dgn)",
+            "versions": {
+              "isaacsim-6.1.0": "513.0.0",
+              "composer_build": "512.3.3"
+            },
+            "module": "omni.kit.converter.dgn_core",
+            "api": "get_instance().create_converter_task(input_path, output_path, file_format_args) -> coroutine",
+            "options": "file_format_args (DGN options); left empty by this helper.",
+            "formats": [
+              "dgn"
+            ],
+            "enabled_in": [
+              "via omni.kit.converter.cad"
+            ],
+            "sources": [
+              "isaacsim-6.1.0/extscache/omni.kit.converter.dgn_core-513.0.0+110.1.2.wx64.r.cp312.u7f4/omni/kit/converter/dgn_core/impl/filters.py",
+              "isaacsim-6.1.0/extscache/omni.kit.converter.dgn_core-513.0.0+110.1.2.wx64.r.cp312.u7f4/omni/kit/converter/dgn_core/impl/extension.py"
+            ],
+            "notes": []
+          }
+        },
+        "formats": {
+          "3dm": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "3ds": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "3dxml": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "3mf": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "asm": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "bvh": {
+            "converter": "omni.kit.asset_converter",
+            "alternatives": [],
+            "category": "mesh",
+            "typical_source_units": null,
+            "typical_source_up_axis": null,
+            "why": "unknown"
+          },
+          "catpart": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "catproduct": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "cgr": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "dae": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "dgn": {
+            "converter": "omni.kit.converter.dgn_core",
+            "alternatives": [
+              "omni.kit.converter.hoops_core"
+            ],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "dwg": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "dxf": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "fbx": {
+            "converter": "omni.kit.asset_converter",
+            "alternatives": [
+              "omni.kit.converter.hoops_core"
+            ],
+            "category": "mesh",
+            "typical_source_units": "centimetres (0.01)",
+            "typical_source_up_axis": "Y",
+            "why": "FBX stores its own unit and up axis; exports from Maya/3ds Max/Blender are often centimetres, Y-up"
+          },
+          "glb": {
+            "converter": "omni.kit.asset_converter",
+            "alternatives": [
+              "omni.kit.converter.hoops_core"
+            ],
+            "category": "mesh",
+            "typical_source_units": "metres (1)",
+            "typical_source_up_axis": "Y",
+            "why": "the glTF specification fixes metres and Y-up"
+          },
+          "gltf": {
+            "converter": "omni.kit.asset_converter",
+            "alternatives": [
+              "omni.kit.converter.hoops_core"
+            ],
+            "category": "mesh",
+            "typical_source_units": "metres (1)",
+            "typical_source_up_axis": "Y",
+            "why": "the glTF specification fixes metres and Y-up"
+          },
+          "iam": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "ifc": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "ifczip": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "iges": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "igs": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "ipt": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "jt": {
+            "converter": "omni.kit.converter.jt_core",
+            "alternatives": [
+              "omni.kit.converter.hoops_core"
+            ],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "lxo": {
+            "converter": "omni.kit.asset_converter",
+            "alternatives": [],
+            "category": "mesh",
+            "typical_source_units": null,
+            "typical_source_up_axis": null,
+            "why": "unknown"
+          },
+          "md5": {
+            "converter": "omni.kit.asset_converter",
+            "alternatives": [],
+            "category": "mesh",
+            "typical_source_units": null,
+            "typical_source_up_axis": null,
+            "why": "unknown"
+          },
+          "obj": {
+            "converter": "omni.kit.asset_converter",
+            "alternatives": [
+              "omni.kit.converter.hoops_core"
+            ],
+            "category": "mesh",
+            "typical_source_units": null,
+            "typical_source_up_axis": "Y",
+            "why": "OBJ has no unit field; Y-up is the usual convention, the unit is whatever the author used"
+          },
+          "par": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "ply": {
+            "converter": "omni.kit.asset_converter",
+            "alternatives": [],
+            "category": "mesh",
+            "typical_source_units": null,
+            "typical_source_up_axis": null,
+            "why": "PLY has no unit or up-axis field"
+          },
+          "prt": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "psm": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "pwd": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "rfa": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "rvt": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "sab": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "sat": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "sldasm": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "sldprt": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "step": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "stl": {
+            "converter": "omni.kit.asset_converter",
+            "alternatives": [
+              "omni.kit.converter.hoops_core"
+            ],
+            "category": "mesh",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "STL has no unit field; CAD and 3D-printing exports are usually millimetres, Z-up"
+          },
+          "stp": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "x_b": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "x_t": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "xmt": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          },
+          "xmt_txt": {
+            "converter": "omni.kit.converter.hoops_core",
+            "alternatives": [],
+            "category": "cad",
+            "typical_source_units": "millimetres (0.001)",
+            "typical_source_up_axis": "Z",
+            "why": "CAD models are usually millimetres; most CAD tools are Z-up (SolidWorks is Y-up)"
+          }
+        },
+        "not_handled_here": {
+          "usd": "usd/usda/usdc/usdz need no conversion: use wrap_units(source, wrapper, ...) directly.",
+          "urdf": "robot description: use isaacsim.asset.importer.urdf 3.11.10 (bundles urdf_usd_converter 0.3.2) (isaacsim-6.1.0/exts/isaacsim.asset.importer.urdf/config/extension.toml)",
+          "mjcf": "robot description: use isaacsim.asset.importer.mjcf 3.12.1 (Newton bundles mujoco_usd_converter 0.5.0) (isaacsim-6.1.0/exts/isaacsim.asset.importer.mjcf/config/extension.toml)"
+        },
+        "units_note": "Converters keep the source's units and up axis. Fix them with the wrapper layer (wrap_units) instead of editing the converted file."
+      }
+    },
+    {
+      "tool": "ros2_environment",
+      "arguments": {
+        "probe_cli": false
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "ready": {
+          "isaac_side": true,
+          "ros_side": false,
+          "bridge_enabled_at_startup": false
+        },
+        "ros_cli_found": false,
+        "ros_cli_path": null,
+        "ros_cli_probe": null,
+        "pixi_found": false,
+        "ros_distro": {
+          "set": false,
+          "value": null
+        },
+        "rmw_implementation": {
+          "set": false,
+          "value": null
+        },
+        "ros_domain_id": {
+          "set": false,
+          "value": null,
+          "effective": 0,
+          "valid": true
+        },
+        "ros_localhost_only": {
+          "set": false,
+          "value": null
+        },
+        "ros_automatic_discovery_range": {
+          "set": false,
+          "value": null
+        },
+        "ros_version": {
+          "set": false,
+          "value": null
+        },
+        "ament_prefix_path": {
+          "set": false,
+          "entries": 0
+        },
+        "python": {
+          "router": "3.12",
+          "isaac_sim": "3.12",
+          "ros_python_version_env": null,
+          "note": "Isaac Sim's Python is 3.12: custom ROS message packages for Isaac's rclpy must be built for Python 3.12 (Jazzy Pixi on Windows uses its own Python environment)."
+        },
+        "isaac": {
+          "root": "C:/Users/krngr/Omniverse/isaacsim-6.1.0",
+          "found": true,
+          "version_file": "6.1.0-rc.26+release.49347.2d230af4.gl",
+          "extensions": {
+            "isaacsim.ros2.bridge": {
+              "present": true,
+              "version": "5.1.4"
+            },
+            "isaacsim.ros2.core": {
+              "present": true,
+              "version": "1.11.0"
+            },
+            "isaacsim.ros2.nodes": {
+              "present": true,
+              "version": "1.22.7"
+            },
+            "isaacsim.ros2.ui": {
+              "present": true,
+              "version": "1.9.2"
+            },
+            "isaacsim.ros2.examples": {
+              "present": true,
+              "version": "1.2.9"
+            },
+            "isaacsim.ros2.control": {
+              "present": true,
+              "version": "0.1.6"
+            },
+            "isaacsim.ros2.sim_control": {
+              "present": true,
+              "version": "1.6.8"
+            },
+            "isaacsim.ros2.tf_viewer": {
+              "present": true,
+              "version": "2.3.8"
+            },
+            "isaacsim.ros2.urdf": {
+              "present": true,
+              "version": "2.3.9"
+            }
+          },
+          "bridge_present": true,
+          "bundled_distros": [
+            "humble",
+            "jazzy"
+          ],
+          "bundled_rmw": {
+            "humble": [
+              "rmw_cyclonedds_cpp",
+              "rmw_fastrtps_cpp",
+              "rmw_zenoh_cpp"
+            ],
+            "jazzy": [
+              "rmw_cyclonedds_cpp",
+              "rmw_fastrtps_cpp",
+              "rmw_zenoh_cpp"
+            ]
+          },
+          "zenoh_router_bundled": false,
+          "setup_ros_env": {
+            "present": true,
+            "default_ros_distro": "jazzy",
+            "default_rmw": "rmw_zenoh_cpp"
+          },
+          "python": "3.12"
+        },
+        "kit_files": [
+          {
+            "file": "C:/Users/krngr/Omniverse/isaacsim-6.1.0/apps/isaacsim.exp.base.zero_delay.kit",
+            "startup_ros_bridge_extension": {},
+            "bridge_dependency_sections": [],
+            "bridge_settings": {
+              "publish_multithreading_disabled": "true",
+              "publish_with_queue_thread": "false"
+            },
+            "enables_bridge_on_windows": false
+          },
+          {
+            "file": "C:/Users/krngr/Omniverse/isaacsim-6.1.0/apps/isaacsim.exp.full.kit",
+            "startup_ros_bridge_extension": {
+              "windows-x86_64": "",
+              "linux-x86_64": "isaacsim.ros2.bridge",
+              "linux-aarch64": "isaacsim.ros2.bridge"
+            },
+            "bridge_dependency_sections": [],
+            "bridge_settings": {
+              "ros_distro": "\"system_default\""
+            },
+            "enables_bridge_on_windows": false
+          },
+          {
+            "file": "C:/Users/krngr/Omniverse/isaacsim-6.1.0/apps/isaacsim.exp.full.newton.kit",
+            "startup_ros_bridge_extension": {
+              "windows-x86_64": "",
+              "linux-x86_64": "isaacsim.ros2.bridge",
+              "linux-aarch64": "isaacsim.ros2.bridge"
+            },
+            "bridge_dependency_sections": [],
+            "bridge_settings": {
+              "ros_distro": "\"system_default\""
+            },
+            "enables_bridge_on_windows": false
+          }
+        ],
+        "autoload": {
+          "config_found": true,
+          "path": "C:/Users/krngr/AppData/Local/ov/data/Kit/Isaac-Sim Full/6.1/user.config.json",
+          "key": "/persistent/app/exts/enabled",
+          "bridge_autoload": false,
+          "ros_autoload_entries": []
+        },
+        "user_launcher": {
+          "found": true,
+          "path": "C:/Users/krngr/Omniverse/start-isaacsim.ps1",
+          "uses_isaac_sim_bat": true,
+          "passes_no_ros_env": false,
+          "enables_bridge": false
+        },
+        "enabled_in": [],
+        "isaac_will_use": {
+          "launcher": "isaac-sim.bat (via start-isaacsim.ps1)",
+          "ros_distro": "jazzy",
+          "rmw_implementation": "rmw_zenoh_cpp",
+          "uses_bundled_ros_libraries": true,
+          "domain_id": 0,
+          "note": "What Isaac Sim will most likely use when started from this environment. ROS_DISTRO/RMW set in this shell would override the launcher defaults."
+        },
+        "needs": [
+          {
+            "severity": "action",
+            "code": "bridge_not_enabled",
+            "what": "The ROS 2 Bridge is installed but not enabled at startup on Windows (the full .kit leaves it off).",
+            "how": "In Isaac Sim: Window > Extensions > search 'ROS 2 Bridge' > toggle on (tick AUTOLOAD to keep it), or launch with --enable isaacsim.ros2.bridge. Needs your approval: it changes how Isaac starts."
+          },
+          {
+            "severity": "action",
+            "code": "ros_cli_missing",
+            "what": "No 'ros2' command on PATH, so you cannot list or echo topics from this shell yet.",
+            "how": "Isaac Sim publishes without it. To verify topics on Windows, NVIDIA's route is a ROS 2 Jazzy Pixi workspace (skills/isaac-sim-ros-workspaces: setup_pixi_workspace.ps1; needs MSVC Build Tools 2022). This is a large install - only with your approval. Then run commands inside 'pixi shell'."
+          },
+          {
+            "severity": "info",
+            "code": "zenoh_router",
+            "what": "Isaac Sim will use rmw_zenoh_cpp (launcher default). ROS 2 tools must use the same RMW, and Zenoh needs a router running (none ships with Isaac Sim).",
+            "how": "In the ROS 2 shell: set RMW_IMPLEMENTATION=rmw_zenoh_cpp and run 'ros2 run rmw_zenoh_cpp rmw_zenohd' first - or set RMW_IMPLEMENTATION=rmw_fastrtps_cpp in BOTH shells before launching."
+          }
+        ],
+        "story": "Isaac Sim's ROS 2 Bridge is installed but not switched on at startup yet. Isaac will most likely use ROS 2 jazzy with rmw_zenoh_cpp on domain 0. There is no ros2 command on this PC yet, so topics can be published by Isaac but not checked from a terminal.",
+        "privacy": "Only ROS_DISTRO, RMW_IMPLEMENTATION, ROS_DOMAIN_ID and similar short, validated values are shown; path variables are counted, and secret-looking values are redacted."
+      }
+    },
+    {
+      "tool": "dataset_check",
+      "arguments": {
+        "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\sdg_retry_20261023_011555_a055a9",
+        "expected_frames": 2,
+        "width": 64,
+        "height": 64
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "passed": true,
+        "read_only": true,
+        "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\sdg_retry_20261023_011555_a055a9",
+        "scanned": 4,
+        "truncated": false,
+        "counts": {
+          "rgb": 2,
+          "semantic_segmentation": 0,
+          "bounding_box_2d_tight": 0
+        },
+        "issues": [],
+        "issue_count": 0,
+        "limitations": "Checks files and frame coverage; it does not assess label accuracy or dataset bias."
+      }
+    },
+    {
+      "tool": "sdg_plan",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+        "name": "mcp_audit_preview",
+        "camera": "/World/Cameras/Overview",
+        "frames": 2
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "written": false,
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_audit_preview",
+        "config": {
+          "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+          "name": "mcp_audit_preview",
+          "camera": "/World/Cameras/Overview",
+          "frames": 2,
+          "width": 320,
+          "height": 240,
+          "seed": 42,
+          "annotations": [
+            "rgb"
+          ]
+        },
+        "prerequisites": [
+          "Isaac/Kit Replicator extension already enabled",
+          "Existing camera on the active stage",
+          "Semantic class labels for segmentation and bounding boxes",
+          "Use a dedicated test stage"
+        ],
+        "note": "Fixed seed controls Replicator RNG; GPU images are not guaranteed bit-identical. No domain randomization is added."
+      }
+    },
+    {
+      "tool": "extension_create",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation",
+        "name": "mcp_audit_extension"
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "written": false,
+        "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\mcp_audit_extension",
+        "files": [
+          "config/extension.toml",
+          "study_extension/__init__.py",
+          "README.md"
+        ]
+      }
+    },
+    {
+      "tool": "semantic_audit",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "read_only": true,
+        "scanned": 30,
+        "truncated": false,
+        "labelled_prims": [],
+        "class_histogram": {},
+        "unlabelled_geometry": [
+          "/World/Environment/Floor",
+          "/World/Racks/Crate_01/Geom"
+        ],
+        "unlabelled_count": 2,
+        "ambiguous_geometry": [],
+        "note": "Multiple classes may be intentional; audit does not decide training-label correctness."
+      }
+    },
+    {
+      "tool": "variant_list",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "action": "list_variants",
+        "dry_run": false,
+        "applied": false,
+        "written": false,
+        "read_only": true,
+        "explanation": "No prim here has a variant set. Create one with create_variant_set.",
+        "warnings": [],
+        "prims": [],
+        "prim_count": 0,
+        "prims_scanned": 31,
+        "truncated": false,
+        "truncated_by_time": false
+      }
+    },
+    {
+      "tool": "graph_inspect",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "root_path": null,
+        "summary": "Found 1 graph(s) with 0 node(s) in total; no errors or warnings.",
+        "graphs": [
+          {
+            "path": "/Replicator/SDGPipeline",
+            "name": "SDGPipeline",
+            "evaluator": "execution",
+            "evaluator_plain": "an Action Graph: nothing runs until an event node (key press, tick, message) fires, then execution flows along the white execution wires from node to node",
+            "pipeline_stage": "simulation",
+            "pipeline_stage_plain": "simulation (the normal stage, evaluated every app update)",
+            "evaluation_mode": "Automatic",
+            "file_format_version": [
+              1,
+              9
+            ],
+            "variables": {
+              "globalSeed": null
+            },
+            "plain": "SDGPipeline is an Action Graph: nothing runs until an event node (key press, tick, message) fires, then execution flows along the white execution wires from node to node. It has 0 node(s).",
+            "node_count": 0,
+            "nodes": [],
+            "flow": [],
+            "problems": []
+          }
+        ],
+        "problems": [],
+        "counts": {
+          "graphs": 1,
+          "nodes": 0,
+          "prims_visited": 30,
+          "unknown_node_types": 0,
+          "error": 0,
+          "warning": 0,
+          "info": 0
+        },
+        "glossary": [
+          {
+            "term": "OmniGraph",
+            "meaning": "OmniGraph is Omniverse's visual programming system; each graph is saved in USD as an OmniGraph prim with node prims inside."
+          },
+          {
+            "term": "node",
+            "meaning": "A node is one box in the graph; its node:type says what it does (for example omni.graph.nodes.SetVariantSelection)."
+          },
+          {
+            "term": "event node",
+            "meaning": "An event node (On Keyboard Input, On Tick, On MessageBus Event, ...) starts a chain of execution."
+          },
+          {
+            "term": "execution wire",
+            "meaning": "An execution wire says what runs next: when one node finishes, the node its exec output is wired to runs."
+          },
+          {
+            "term": "data wire",
+            "meaning": "A data wire hands a value (a token, number, path ...) from one node's output to another node's input."
+          },
+          {
+            "term": "Action Graph",
+            "meaning": "An Action Graph (evaluator 'execution') does nothing until an event node fires; then execution flows from node to node."
+          }
+        ],
+        "truncated": false,
+        "truncated_by_time": false,
+        "node_types_source": {
+          "kit": "110.0 (extension builds tagged +110.0.0; omni.graph 1.142.5); Composer build kit-app-template/_build is 110.1.2",
+          "isaac_sim": "6.1.0-rc.26 (isaacsim-6.1.0/VERSION)"
+        }
+      }
+    },
+    {
+      "tool": "sensor_list",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "root_path": "/",
+        "count": 5,
+        "counts": {
+          "camera": 5
+        },
+        "sensors": [
+          {
+            "path": "/World/Cameras/Overview",
+            "kind": "camera",
+            "type": "Camera",
+            "parent": "/World/Cameras",
+            "attached_to_link": null,
+            "viewport_camera": false,
+            "lens": {
+              "focalLength": 18.0,
+              "horizontalAperture": 20.954999924,
+              "verticalAperture": 15.290800095,
+              "clippingRange": [
+                0.009999999776482582,
+                10000.0
+              ]
+            },
+            "world_translation": [
+              18.0,
+              -18.0,
+              12.0
+            ]
+          },
+          {
+            "path": "/OmniverseKit_Persp",
+            "kind": "camera",
+            "type": "Camera",
+            "parent": "/",
+            "attached_to_link": null,
+            "viewport_camera": true,
+            "lens": {
+              "focalLength": 18.147562027,
+              "horizontalAperture": 20.954999924,
+              "verticalAperture": 15.290800095,
+              "clippingRange": [
+                0.009999999776482582,
+                10000000.0
+              ]
+            },
+            "world_translation": [
+              6.032821553,
+              4.068294406,
+              4.898884038
+            ]
+          },
+          {
+            "path": "/OmniverseKit_Front",
+            "kind": "camera",
+            "type": "Camera",
+            "parent": "/",
+            "attached_to_link": null,
+            "viewport_camera": true,
+            "lens": {
+              "focalLength": 50.0,
+              "horizontalAperture": 50.0,
+              "verticalAperture": 50.0,
+              "clippingRange": [
+                1.0,
+                10000000.0
+              ]
+            },
+            "world_translation": [
+              5.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "path": "/OmniverseKit_Right",
+            "kind": "camera",
+            "type": "Camera",
+            "parent": "/",
+            "attached_to_link": null,
+            "viewport_camera": true,
+            "lens": {
+              "focalLength": 50.0,
+              "horizontalAperture": 50.0,
+              "verticalAperture": 50.0,
+              "clippingRange": [
+                1.0,
+                10000000.0
+              ]
+            },
+            "world_translation": [
+              0.0,
+              -5.0,
+              0.0
+            ]
+          },
+          {
+            "path": "/OmniverseKit_Top",
+            "kind": "camera",
+            "type": "Camera",
+            "parent": "/",
+            "attached_to_link": null,
+            "viewport_camera": true,
+            "lens": {
+              "focalLength": 50.0,
+              "horizontalAperture": 50.0,
+              "verticalAperture": 50.0,
+              "clippingRange": [
+                1.0,
+                10000000.0
+              ]
+            },
+            "world_translation": [
+              0.0,
+              0.0,
+              5.0
+            ]
+          }
+        ],
+        "scanned_prims": 31,
+        "truncated": false
+      }
+    },
+    {
+      "tool": "animation_info",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "action": "timeline_info",
+        "read_only": true,
+        "start_time_code": 0.0,
+        "end_time_code": 0.0,
+        "has_authored_time_range": false,
+        "time_codes_per_second": 24.0,
+        "frames_per_second": 24.0,
+        "duration_time_codes": 0.0,
+        "duration_seconds": 0.0,
+        "frame_count": null,
+        "interpolation": "linear",
+        "animated_attributes_count": 0,
+        "animated_prims_count": 0,
+        "animated_attributes": [],
+        "animated_attributes_truncated": 0,
+        "sample_time_range": null,
+        "time_metadata_layer": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "warnings": [
+          "The root layer has no startTimeCode/endTimeCode, so players show an empty (0 to 0) timeline; use set_timeline(start=..., end=...) to give it a range."
+        ],
+        "explanation": "The timeline runs from time code 0 to 0 (0 time codes = 0 s at 24 time codes per second; played at 24 frames per second). 0 attribute(s) on 0 prim(s) have time samples. A time code is a frame number on the stage timeline; seconds = time code / timeCodesPerSecond. framesPerSecond is only how fast players step through it. Keep them equal so one time code is one frame. Value resolution: the strongest layer with an opinion wins, and inside it time samples beat the default value at every frame (the default is only used at the Default time or when there are no samples). Between samples USD interpolates linearly (quaternions take the shortest arc); before the first and after the last sample it holds the nearest one.",
+        "preview": ""
+      }
+    },
+    {
+      "tool": "scene_frame_stats",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "viewport": {
+          "fps": 105.23,
+          "subframe_count": 1,
+          "effective_fps": 105.23,
+          "frame_time_ms": 9.5,
+          "resolution": [
+            640,
+            360
+          ]
+        },
+        "gpu_memory": [
+          {
+            "device": "NVIDIA GeForce RTX 3060 Laptop GPU",
+            "budget_bytes": 5481955328,
+            "used_bytes": 1361313792,
+            "available_bytes": 4120641536,
+            "used_fraction": 0.2483,
+            "rendering": true
+          }
+        ],
+        "app_loop": {
+          "update_number": 13979,
+          "seconds_since_start": 179.644,
+          "average_fps_since_start": 77.82,
+          "fps_since_last_call": 101.14,
+          "seconds_since_last_call": 43.394
+        },
+        "rate_limit": {
+          "enabled": true,
+          "frequency_hz": 120.0
+        },
+        "notes": [],
+        "sources": [
+          "omni.kit.viewport.utility.get_active_viewport().fps / frame_info",
+          "omni.hydra.engine.stats.get_device_info()",
+          "omni.kit.app.get_app().get_update_number() / get_time_since_start_s()",
+          "carb.settings /app/runLoops/main/rateLimitEnabled + rateLimitFrequency"
+        ],
+        "plain": "The viewport renders at 105.23 FPS (9.5 ms per frame). NVIDIA GeForce RTX 3060 Laptop GPU: 25% of GPU memory in use. The app loop ran at 101.14 updates/s since the last check."
+      }
+    },
+    {
+      "tool": "rubric_check",
+      "arguments": {
+        "rubric": {
+          "rules": [
+            {
+              "id": "world",
+              "kind": "prim",
+              "path": "/World",
+              "type": "Xform"
+            }
+          ]
+        }
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "passed": true,
+        "read_only": true,
+        "score_percent": 100.0,
+        "earned": 1,
+        "possible": 1,
+        "rules": [
+          {
+            "id": "world",
+            "passed": true,
+            "actual": true,
+            "weight": 1
+          }
+        ],
+        "note": "Checks declared USD structure only; visual quality and physical behavior require separate review."
+      }
+    },
+    {
+      "tool": "semantic_labels",
+      "arguments": {
+        "mapping": {
+          "/World/Racks/Crate_01/Geom": "crate"
+        }
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "applied": false,
+        "written": false,
+        "plan": {
+          "mapping": {
+            "/World/Racks/Crate_01/Geom": "crate"
+          },
+          "schema": "SemanticsLabelsAPI:class"
+        },
+        "explanation": "Would author class labels in the current edit layer; nothing has changed."
+      }
+    },
+    {
+      "tool": "render_sequence_plan",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+        "name": "mcp_sequence_preview",
+        "end": 1
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "written": false,
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sequence_preview",
+        "frames": [
+          0,
+          1
+        ],
+        "fps": 24,
+        "width": 320,
+        "height": 240,
+        "uncompressed_rgba_bytes": 614400,
+        "explanation": "Would sample the stopped timeline and capture the current viewport. Restore time afterward; never save scene edits.",
+        "warnings": [
+          "Changing capture dimensions resizes the output; it does not increase renderer detail."
+        ]
+      }
+    },
+    {
+      "tool": "render_capture",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+        "name": "mcp_capture_20261024_224502",
+        "dry_run": false
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "status": "pending",
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_capture_20261024_224502\\viewport_20261024_224502_337837.png",
+        "camera": "/OmniverseKit_Persp",
+        "resolution": [
+          640,
+          360
+        ],
+        "requested_resolution": null,
+        "renderer": "rtx",
+        "render_mode": "RealTimePathTracing",
+        "api": "omni.kit.viewport.utility.capture_viewport_to_file",
+        "note": "Poll scene_capture_status(path); it finishes the optional resized copy.",
+        "dry_run": false,
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_capture_20261024_224502"
+      }
+    },
+    {
+      "tool": "scene_capture_status",
+      "arguments": {
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_capture_20261024_224502\\viewport_20261024_224502_337837.png"
+      },
+      "passed": true,
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_capture_20261024_224502\\viewport_20261024_224502_337837.png",
+        "ready": false,
+        "size": 0,
+        "capture_done": true,
+        "note": "Not written yet; Kit saves it after the next rendered frame or two. Check again shortly.",
+        "mode": "live",
+        "action": "capture_status"
+      }
+    },
+    {
+      "tool": "scene_capture_status",
+      "arguments": {
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_capture_20261024_224502\\viewport_20261024_224502_337837.png"
+      },
+      "passed": true,
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_capture_20261024_224502\\viewport_20261024_224502_337837.png",
+        "ready": true,
+        "size": 119809,
+        "capture_done": true,
+        "mode": "live",
+        "action": "capture_status"
+      }
+    },
+    {
+      "tool": "semantic_audit",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "read_only": true,
+        "scanned": 30,
+        "truncated": false,
+        "labelled_prims": [],
+        "class_histogram": {},
+        "unlabelled_geometry": [
+          "/World/Environment/Floor",
+          "/World/Racks/Crate_01/Geom"
+        ],
+        "unlabelled_count": 2,
+        "ambiguous_geometry": [],
+        "note": "Multiple classes may be intentional; audit does not decide training-label correctness."
+      }
+    },
+    {
+      "tool": "semantic_labels",
+      "arguments": {
+        "mapping": {
+          "/World/Racks/Crate_01/Geom": "mcp_operability_probe"
+        },
+        "dry_run": false
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "action": "semantic_labels",
+        "dry_run": false,
+        "applied": true,
+        "written": true,
+        "explanation": "Authored semantic class labels.",
+        "warnings": [
+          "root.usda now has unsaved changes; save it to keep this edit."
+        ],
+        "undo": {
+          "recorded": true,
+          "label": "Set semantic class labels"
+        },
+        "plan": {
+          "mapping": {
+            "/World/Racks/Crate_01/Geom": "mcp_operability_probe"
+          },
+          "schema": "SemanticsLabelsAPI:class"
+        }
+      }
+    },
+    {
+      "tool": "semantic_audit",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "read_only": true,
+        "scanned": 30,
+        "truncated": false,
+        "labelled_prims": [
+          {
+            "path": "/World/Racks/Crate_01/Geom",
+            "labels": [
+              "mcp_operability_probe"
+            ]
+          }
+        ],
+        "class_histogram": {
+          "mcp_operability_probe": 1
+        },
+        "unlabelled_geometry": [
+          "/World/Environment/Floor"
+        ],
+        "unlabelled_count": 1,
+        "ambiguous_geometry": [],
+        "note": "Multiple classes may be intentional; audit does not decide training-label correctness."
+      }
+    },
+    {
+      "tool": "scene_undo_last",
+      "arguments": {
+        "dry_run": false
+      },
+      "passed": true,
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "dry_run": false,
+        "undone": {
+          "label": "Set semantic class labels",
+          "paths": [
+            "/World/Racks/Crate_01/Geom"
+          ],
+          "layer": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda"
+        },
+        "verified": true,
+        "remaining": 0,
+        "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state.",
+        "via": "mcp_snapshot",
+        "mode": "live",
+        "action": "undo_last",
+        "applied": true
+      }
+    },
+    {
+      "tool": "semantic_audit",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "ok": true,
+        "read_only": true,
+        "scanned": 30,
+        "truncated": false,
+        "labelled_prims": [],
+        "class_histogram": {},
+        "unlabelled_geometry": [
+          "/World/Environment/Floor",
+          "/World/Racks/Crate_01/Geom"
+        ],
+        "unlabelled_count": 2,
+        "ambiguous_geometry": [],
+        "note": "Multiple classes may be intentional; audit does not decide training-label correctness."
+      }
+    },
+    {
+      "tool": "event_listen",
+      "arguments": {
+        "event_name": "mcp_operability_8df2cc47629c4a1784f2c0dbd5693ccb",
+        "timeout_s": 10,
+        "dry_run": false
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "listener_id": "listener-63808-1",
+        "event_name": "mcp_operability_8df2cc47629c4a1784f2c0dbd5693ccb",
+        "timeout_s": 10.0,
+        "message": "Listening for 'mcp_operability_8df2cc47629c4a1784f2c0dbd5693ccb'; call listener_status('listener-63808-1')."
+      }
+    },
+    {
+      "tool": "event_send",
+      "arguments": {
+        "event_name": "mcp_operability_8df2cc47629c4a1784f2c0dbd5693ccb",
+        "payload": {
+          "probe": 42
+        },
+        "dry_run": false
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "dry_run": false,
+        "sent": true,
+        "target": "kit",
+        "event_type": "mcp_operability_8df2cc47629c4a1784f2c0dbd5693ccb",
+        "bus_event": "mcp_operability_8df2cc47629c4a1784f2c0dbd5693ccb",
+        "bus_payload": {
+          "probe": 42
+        },
+        "payload": {
+          "probe": 42
+        },
+        "api": "omni.kit.app.queue_event",
+        "delivered": "on the next app update (graph nodes react then)",
+        "message": "Sent 'mcp_operability_8df2cc47629c4a1784f2c0dbd5693ccb' with {'probe': 42}."
+      }
+    },
+    {
+      "tool": "event_status",
+      "arguments": {
+        "listener_id": "listener-63808-1"
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "listener_id": "listener-63808-1",
+        "event_name": "mcp_operability_8df2cc47629c4a1784f2c0dbd5693ccb",
+        "received": true,
+        "payload": {
+          "probe": 42
+        },
+        "timed_out": false,
+        "active": false,
+        "unsubscribed": true,
+        "waited_s": 0.594
+      }
+    },
+    {
+      "tool": "event_stop",
+      "arguments": {
+        "listener_id": "listener-63808-1",
+        "dry_run": false
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "listener_id": "listener-63808-1",
+        "stopped": true,
+        "received": true
+      }
+    },
+    {
+      "tool": "render_sequence",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+        "name": "mcp_sequence_20261024_224504",
+        "end": 1,
+        "width": 64,
+        "height": 64,
+        "dry_run": false
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "job_id": "c47f5b5304524b12b5e107ff4dd85a02",
+        "status": "pending",
+        "captures": [],
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sequence_20261024_224504",
+        "written": true,
+        "dry_run": false
+      }
+    },
+    {
+      "tool": "render_job_status",
+      "arguments": {
+        "job_id": "c47f5b5304524b12b5e107ff4dd85a02"
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "job_id": "c47f5b5304524b12b5e107ff4dd85a02",
+        "status": "running",
+        "captures": [],
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sequence_20261024_224504",
+        "written": true,
+        "dry_run": false
+      }
+    },
+    {
+      "tool": "render_job_status",
+      "arguments": {
+        "job_id": "c47f5b5304524b12b5e107ff4dd85a02"
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "job_id": "c47f5b5304524b12b5e107ff4dd85a02",
+        "status": "completed",
+        "captures": [
+          {
+            "frame": 0,
+            "capture": {
+              "ok": true,
+              "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sequence_20261024_224504\\viewport_20261024_224504_351847.png",
+              "ready": true,
+              "size": 121868,
+              "capture_done": true,
+              "resized_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sequence_20261024_224504\\viewport_20261024_224504_351847_64x64.png"
+            }
+          },
+          {
+            "frame": 1,
+            "capture": {
+              "ok": true,
+              "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sequence_20261024_224504\\viewport_20261024_224504_682304.png",
+              "ready": true,
+              "size": 121934,
+              "capture_done": true,
+              "resized_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sequence_20261024_224504\\viewport_20261024_224504_682304_64x64.png"
+            }
+          }
+        ],
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sequence_20261024_224504",
+        "written": true,
+        "dry_run": false
+      }
+    },
+    {
+      "tool": "render_compare",
+      "arguments": {
+        "a": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sequence_20261024_224504\\viewport_20261024_224504_351847.png",
+        "b": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sequence_20261024_224504\\viewport_20261024_224504_351847.png"
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "read_only": true,
+        "dimensions": [
+          640,
+          360
+        ],
+        "changed_pixels": 0,
+        "changed_percent": 0.0,
+        "regions": [],
+        "note": "Exact pixel difference, not a perceptual-quality or semantic similarity score."
+      }
+    },
+    {
+      "tool": "sdg_start",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+        "name": "mcp_sdg_20261024_224506",
+        "camera": "/World/Cameras/Overview",
+        "frames": 2,
+        "width": 64,
+        "height": 64,
+        "dry_run": false
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "job_id": "61dcbbbb12a54cb0a6f6587191c1a836",
+        "status": "pending",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sdg_20261024_224506",
+        "frames_stepped": 0,
+        "requested_frames": 2,
+        "dry_run": false,
+        "written": true
+      }
+    },
+    {
+      "tool": "sdg_status",
+      "arguments": {
+        "job_id": "61dcbbbb12a54cb0a6f6587191c1a836"
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "job_id": "61dcbbbb12a54cb0a6f6587191c1a836",
+        "status": "running",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sdg_20261024_224506",
+        "frames_stepped": 0,
+        "requested_frames": 2,
+        "dry_run": false,
+        "written": true
+      }
+    },
+    {
+      "tool": "sdg_status",
+      "arguments": {
+        "job_id": "61dcbbbb12a54cb0a6f6587191c1a836"
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "job_id": "61dcbbbb12a54cb0a6f6587191c1a836",
+        "status": "completed",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sdg_20261024_224506",
+        "frames_stepped": 2,
+        "requested_frames": 2,
+        "dry_run": false,
+        "written": true,
+        "finished_at": 1792874707.8345523
+      }
+    },
+    {
+      "tool": "dataset_check",
+      "arguments": {
+        "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sdg_20261024_224506",
+        "expected_frames": 2,
+        "width": 64,
+        "height": 64
+      },
+      "passed": true,
+      "result": {
+        "ok": true,
+        "passed": true,
+        "read_only": true,
+        "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sdg_20261024_224506",
+        "scanned": 4,
+        "truncated": false,
+        "counts": {
+          "rgb": 2,
+          "semantic_segmentation": 0,
+          "bounding_box_2d_tight": 0
+        },
+        "issues": [],
+        "issue_count": 0,
+        "limitations": "Checks files and frame coverage; it does not assess label accuracy or dataset bias."
+      }
+    },
+    {
+      "tool": "scene_summary",
+      "arguments": {},
+      "passed": true,
+      "result": {
+        "stage_name": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 34,
+        "top_level_prims": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras"
+        ]
+      }
+    }
+  ],
+  "visible_tools": 21,
+  "total_tools": 249,
+  "capture_ready": true,
+  "labels_restored": true,
+  "sequence_completed": true,
+  "sdg_completed": true,
+  "scene_files_unchanged": true,
+  "summary_unchanged": false,
+  "finished": 1792874708.129188,
+  "passed_checks": 42,
+  "failed_checks": 0
+}

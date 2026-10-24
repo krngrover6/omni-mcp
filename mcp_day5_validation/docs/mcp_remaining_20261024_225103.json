@@ -1,0 +1,1425 @@
+{
+  "started": 1792875063.887683,
+  "checks": [
+    {
+      "tool": "scene_summary",
+      "arguments": {},
+      "result": {
+        "stage_name": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 34,
+        "top_level_prims": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras"
+        ]
+      }
+    },
+    {
+      "tool": "sim_status",
+      "arguments": {},
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "playing": false,
+        "paused": false,
+        "stopped": true,
+        "current_time": 0.0,
+        "current_time_code": 0.0,
+        "start_time": 0.0,
+        "end_time": 0.041666666666666664,
+        "time_codes_per_second": 24.0,
+        "physics_available": true,
+        "mode": "live",
+        "action": "simulation_status"
+      }
+    },
+    {
+      "tool": "asset_import",
+      "arguments": {
+        "source_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle.obj",
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation",
+        "name": "mcp_import_20261024_225103",
+        "as_reference": false
+      },
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "source": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle.obj",
+        "source_format": "obj",
+        "source_size_bytes": 122,
+        "converter": "omni.kit.asset_converter",
+        "converter_info": {
+          "module": "omni.kit.asset_converter",
+          "versions": {
+            "isaacsim-6.1.0": "6.0.5",
+            "composer_build": "6.0.1"
+          },
+          "api": "get_instance().create_converter_task(import_path, output_path, progress_callback, asset_converter_context, material_loader=None, close_stage_and_reopen_if_opened=False) -> task; success = await task.wait_until_finished(); task.get_status(), task.get_error_message()"
+        },
+        "alternatives": [
+          "omni.kit.converter.hoops_core"
+        ],
+        "name": "mcp_import_20261024_225103",
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation",
+        "asset_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103",
+        "output_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103.usd",
+        "wrapper": {
+          "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103_wrapped.usda",
+          "prim_path": "/mcp_import_20261024_225103",
+          "kind": "component",
+          "meters_per_unit": 1.0,
+          "up_axis": "Z",
+          "references": "./mcp_import_20261024_225103.usd",
+          "xform_ops": "xformOp:rotateX:unitsResolve (axis fix) and xformOp:scale:unitsResolve (unit fix), before the source root's own ops",
+          "factor_rule": "scale = source metersPerUnit / project metersPerUnit",
+          "explanation": "The source format has no reliable unit/up-axis field, so the factor is decided after conversion by detect_units on the converted file.",
+          "note": "Typical for .obj: OBJ has no unit field; Y-up is the usual convention, the unit is whatever the author used. detect_units on the converted file decides."
+        },
+        "target": {
+          "meters_per_unit": 1.0,
+          "units": "metres (1)",
+          "up_axis": "Z",
+          "from": "metersPerUnit of root.usda, upAxis of root.usda"
+        },
+        "expected_source": {
+          "meters_per_unit": null,
+          "up_axis": "Y",
+          "certain": false,
+          "why": "OBJ has no unit field; Y-up is the usual convention, the unit is whatever the author used"
+        },
+        "how_to_place": {
+          "layer": "layers/layout.usda",
+          "layer_exists": true,
+          "prim_path": "/World/mcp_import_20261024_225103",
+          "arc": "payload",
+          "asset_path": "../assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda",
+          "instanceable": false,
+          "explanation": "Reference the WRAPPER (not the raw converted file) from layers/layout.usda at /World/mcp_import_20261024_225103; the wrapper already matches the project's units and up axis, so no extra scale is needed in the layout. A payload instead of a reference lets you unload this heavy asset.",
+          "python": "from pxr import Sdf, Usd\nstage = Usd.Stage.Open(r\"C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda\")\nlayout = Sdf.Layer.FindOrOpen(r\"C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\layers\\layout.usda\")\nstage.SetEditTarget(Usd.EditTarget(layout))\nprim = stage.DefinePrim(\"/World/mcp_import_20261024_225103\", \"Xform\")\nprim.GetPayloads().AddPayload(\"../assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda\")\nlayout.Save()"
+        },
+        "steps": [
+          "Convert triangle.obj with omni.kit.asset_converter to assets/mcp_import_20261024_225103/mcp_import_20261024_225103.usd (import_asset(..., dry_run=False) inside Kit; it runs as an async task, poll import_status).",
+          "detect_units reads the converted file's metersPerUnit/upAxis and checks them against its size.",
+          "wrap_units authors assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda with the project's units (metres (1), Z-up) and the scale/rotate correction.",
+          "asset_health_file checks the wrapper (missing textures, absolute paths, heavy meshes, ...).",
+          "Reference the wrapper from layers/layout.usda at /World/mcp_import_20261024_225103 (see how_to_place), then look at it in the viewport: it should stand upright at a believable size."
+        ],
+        "warnings": [],
+        "note": "Dry run: nothing was converted. Pass dry_run=False inside Kit to convert."
+      }
+    },
+    {
+      "tool": "asset_import",
+      "arguments": {
+        "source_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle.obj",
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation",
+        "name": "mcp_import_20261024_225103",
+        "as_reference": false,
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "job_id": "ffe4ccaf6d01",
+        "status": "running",
+        "source": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle.obj",
+        "converter": "omni.kit.asset_converter",
+        "output_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103.usd",
+        "wrapper_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103_wrapped.usda",
+        "options": {
+          "use_meter_as_world_unit": false,
+          "create_world_as_default_root_prim": true
+        },
+        "started": 1792875065.0755997,
+        "progress": null,
+        "scheduled_with": "omni.kit.async_engine.run_coroutine",
+        "plan": {
+          "ok": true,
+          "dry_run": true,
+          "source": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle.obj",
+          "source_format": "obj",
+          "source_size_bytes": 122,
+          "converter": "omni.kit.asset_converter",
+          "converter_info": {
+            "module": "omni.kit.asset_converter",
+            "versions": {
+              "isaacsim-6.1.0": "6.0.5",
+              "composer_build": "6.0.1"
+            },
+            "api": "get_instance().create_converter_task(import_path, output_path, progress_callback, asset_converter_context, material_loader=None, close_stage_and_reopen_if_opened=False) -> task; success = await task.wait_until_finished(); task.get_status(), task.get_error_message()"
+          },
+          "alternatives": [
+            "omni.kit.converter.hoops_core"
+          ],
+          "name": "mcp_import_20261024_225103",
+          "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation",
+          "asset_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103",
+          "output_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103.usd",
+          "wrapper": {
+            "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103_wrapped.usda",
+            "prim_path": "/mcp_import_20261024_225103",
+            "kind": "component",
+            "meters_per_unit": 1.0,
+            "up_axis": "Z",
+            "references": "./mcp_import_20261024_225103.usd",
+            "xform_ops": "xformOp:rotateX:unitsResolve (axis fix) and xformOp:scale:unitsResolve (unit fix), before the source root's own ops",
+            "factor_rule": "scale = source metersPerUnit / project metersPerUnit",
+            "explanation": "The source format has no reliable unit/up-axis field, so the factor is decided after conversion by detect_units on the converted file.",
+            "note": "Typical for .obj: OBJ has no unit field; Y-up is the usual convention, the unit is whatever the author used. detect_units on the converted file decides."
+          },
+          "target": {
+            "meters_per_unit": 1.0,
+            "units": "metres (1)",
+            "up_axis": "Z",
+            "from": "metersPerUnit of root.usda, upAxis of root.usda"
+          },
+          "expected_source": {
+            "meters_per_unit": null,
+            "up_axis": "Y",
+            "certain": false,
+            "why": "OBJ has no unit field; Y-up is the usual convention, the unit is whatever the author used"
+          },
+          "how_to_place": {
+            "layer": "layers/layout.usda",
+            "layer_exists": true,
+            "prim_path": "/World/mcp_import_20261024_225103",
+            "arc": "payload",
+            "asset_path": "../assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda",
+            "instanceable": false,
+            "explanation": "Reference the WRAPPER (not the raw converted file) from layers/layout.usda at /World/mcp_import_20261024_225103; the wrapper already matches the project's units and up axis, so no extra scale is needed in the layout. A payload instead of a reference lets you unload this heavy asset.",
+            "python": "from pxr import Sdf, Usd\nstage = Usd.Stage.Open(r\"C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda\")\nlayout = Sdf.Layer.FindOrOpen(r\"C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\layers\\layout.usda\")\nstage.SetEditTarget(Usd.EditTarget(layout))\nprim = stage.DefinePrim(\"/World/mcp_import_20261024_225103\", \"Xform\")\nprim.GetPayloads().AddPayload(\"../assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda\")\nlayout.Save()"
+          },
+          "steps": [
+            "Convert triangle.obj with omni.kit.asset_converter to assets/mcp_import_20261024_225103/mcp_import_20261024_225103.usd (import_asset(..., dry_run=False) inside Kit; it runs as an async task, poll import_status).",
+            "detect_units reads the converted file's metersPerUnit/upAxis and checks them against its size.",
+            "wrap_units authors assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda with the project's units (metres (1), Z-up) and the scale/rotate correction.",
+            "asset_health_file checks the wrapper (missing textures, absolute paths, heavy meshes, ...).",
+            "Reference the wrapper from layers/layout.usda at /World/mcp_import_20261024_225103 (see how_to_place), then look at it in the viewport: it should stand upright at a believable size."
+          ],
+          "warnings": [],
+          "note": "Plan only: nothing was converted or written."
+        },
+        "message": "Converting in the background: poll import_status(job_id)."
+      }
+    },
+    {
+      "tool": "asset_import_status",
+      "arguments": {
+        "job_id": "ffe4ccaf6d01"
+      },
+      "result": {
+        "ok": true,
+        "job_id": "ffe4ccaf6d01",
+        "status": "running",
+        "source": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle.obj",
+        "converter": "omni.kit.asset_converter",
+        "output_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103.usd",
+        "wrapper_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103_wrapped.usda",
+        "options": {
+          "use_meter_as_world_unit": false,
+          "create_world_as_default_root_prim": true
+        },
+        "started": 1792875065.0755997,
+        "progress": [
+          1,
+          2
+        ],
+        "scheduled_with": "omni.kit.async_engine.run_coroutine"
+      }
+    },
+    {
+      "tool": "asset_import_status",
+      "arguments": {
+        "job_id": "ffe4ccaf6d01"
+      },
+      "result": {
+        "ok": true,
+        "job_id": "ffe4ccaf6d01",
+        "status": "succeeded",
+        "source": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle.obj",
+        "converter": "omni.kit.asset_converter",
+        "output_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103.usd",
+        "wrapper_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103_wrapped.usda",
+        "options": {
+          "use_meter_as_world_unit": false,
+          "create_world_as_default_root_prim": true
+        },
+        "started": 1792875065.0755997,
+        "progress": [
+          2,
+          2
+        ],
+        "scheduled_with": "omni.kit.async_engine.run_coroutine",
+        "detected_units": {
+          "ok": true,
+          "file": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103.usd",
+          "meters_per_unit": 0.01,
+          "meters_per_unit_authored": true,
+          "units": "centimetres (0.01)",
+          "up_axis": "Y",
+          "up_axis_authored": true,
+          "default_prim": "/World",
+          "bbox": {
+            "min": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "max": [
+              1.0,
+              1.0,
+              0.0
+            ],
+            "size": [
+              1.0,
+              1.0,
+              0.0
+            ],
+            "largest": 1.0,
+            "largest_axis": "X"
+          },
+          "size_m": [
+            0.01,
+            0.01,
+            0.0
+          ],
+          "heuristic": {
+            "hint": null,
+            "typical_size_m": null,
+            "candidates": [
+              {
+                "units": "m",
+                "meters_per_unit": 1.0,
+                "largest_size_m": 1.0,
+                "score": 0.0
+              },
+              {
+                "units": "cm",
+                "meters_per_unit": 0.01,
+                "largest_size_m": 0.01,
+                "score": 2.0
+              },
+              {
+                "units": "mm",
+                "meters_per_unit": 0.001,
+                "largest_size_m": 0.001,
+                "score": 3.0
+              }
+            ],
+            "suggested_units": "m",
+            "suggested_meters_per_unit": 1.0,
+            "confidence": "low",
+            "reason": "The asset is 1 units across (largest axis X). With no known object word, sizes near 1 m are preferred: metres gives 1 m. Pass name_hint (e.g. 'chair') for a better guess."
+          },
+          "metadata_matches_size": true,
+          "suggested_meters_per_unit": 0.01,
+          "suggested_units": "centimetres (0.01)",
+          "confidence": "high",
+          "warnings": [],
+          "notes": [
+            "bbox is in the file's own units (centimetres (0.01)); size_m converts with metersPerUnit.",
+            "Read-only: nothing was changed or saved."
+          ]
+        },
+        "wrap": {
+          "ok": true,
+          "dry_run": false,
+          "wrapper_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103_wrapped.usda",
+          "converted_usd": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103.usd",
+          "prim_path": "/mcp_import_20261024_225103",
+          "reference": "./mcp_import_20261024_225103.usd",
+          "reference_is_relative": true,
+          "source": {
+            "meters_per_unit": 0.01,
+            "units": "centimetres (0.01)",
+            "up_axis": "Y"
+          },
+          "target": {
+            "meters_per_unit": 1.0,
+            "units": "metres (1)",
+            "up_axis": "Z"
+          },
+          "scale": 0.01,
+          "rotate_x": 90.0,
+          "explanation": "source is centimetres (0.01), project is metres (1) -> scale 0.01; source is Y-up, project is Z-up -> rotateX +90 (the source's up axis Y becomes Z).",
+          "xform_op_order": [
+            "xformOp:rotateX:unitsResolve",
+            "xformOp:scale:unitsResolve",
+            "xformOp:translate",
+            "xformOp:orient",
+            "xformOp:scale"
+          ],
+          "kept_source_xform_ops": [
+            "xformOp:translate",
+            "xformOp:orient",
+            "xformOp:scale"
+          ],
+          "expected_bbox": {
+            "min": [
+              0.0,
+              -2.220446049250313e-18,
+              0.0
+            ],
+            "max": [
+              0.01,
+              0.0,
+              0.010000000000000002
+            ],
+            "size": [
+              0.01,
+              2.220446049250313e-18,
+              0.010000000000000002
+            ],
+            "largest": 0.010000000000000002,
+            "largest_axis": "Z"
+          },
+          "warnings": [],
+          "written": true,
+          "replaced_existing": false,
+          "verify": {
+            "ok": true,
+            "problems": [],
+            "composed_bbox": {
+              "min": [
+                0.0,
+                -2.2204459996194763e-18,
+                0.0
+              ],
+              "max": [
+                0.009999999776482582,
+                0.0,
+                0.009999999776482584
+              ],
+              "size": [
+                0.009999999776482582,
+                2.2204459996194763e-18,
+                0.009999999776482584
+              ],
+              "largest": 0.009999999776482584,
+              "largest_axis": "Z"
+            },
+            "composed_size_m": [
+              0.009999999776482582,
+              2.2204459996194763e-18,
+              0.009999999776482584
+            ]
+          }
+        },
+        "health": {
+          "ok": true,
+          "healthy": true,
+          "score": 84,
+          "grade": "B",
+          "summary": "This asset scores 84/100 (grade B). It has 3 prims, 1 meshes with 1 faces, 0 materials and 0 textures, in 1 m units, Z-up. Worth fixing: unit or up-axis mismatch between files; every visible mesh has a material. Start here: Add a corrective transform on the prim that references the asset: scale = suggested_scale (e.g. 0.001 for mm into m), rotateX = 90 for Y-up into Z-up.",
+          "problems": [
+            {
+              "id": "units_mismatch",
+              "title": "Unit or up-axis mismatch between files",
+              "status": "warn"
+            },
+            {
+              "id": "material_bindings",
+              "title": "Every visible mesh has a material",
+              "status": "warn"
+            }
+          ]
+        },
+        "finished": 1792875065.2271857,
+        "how_to_place": {
+          "layer": "layers/layout.usda",
+          "layer_exists": true,
+          "prim_path": "/World/mcp_import_20261024_225103",
+          "arc": "payload",
+          "asset_path": "../assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda",
+          "instanceable": false,
+          "explanation": "Reference the WRAPPER (not the raw converted file) from layers/layout.usda at /World/mcp_import_20261024_225103; the wrapper already matches the project's units and up axis, so no extra scale is needed in the layout. A payload instead of a reference lets you unload this heavy asset.",
+          "python": "from pxr import Sdf, Usd\nstage = Usd.Stage.Open(r\"C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda\")\nlayout = Sdf.Layer.FindOrOpen(r\"C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\layers\\layout.usda\")\nstage.SetEditTarget(Usd.EditTarget(layout))\nprim = stage.DefinePrim(\"/World/mcp_import_20261024_225103\", \"Xform\")\nprim.GetPayloads().AddPayload(\"../assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda\")\nlayout.Save()"
+        },
+        "message": "Converted and wrapped. source is centimetres (0.01), project is metres (1) -> scale 0.01; source is Y-up, project is Z-up -> rotateX +90 (the source's up axis Y becomes Z). Next: reference ../assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda at /World/mcp_import_20261024_225103 in layers/layout.usda."
+      }
+    },
+    {
+      "tool": "scene_add_asset",
+      "arguments": {
+        "prim_path": "/World/MCPProbeRobot_3d9e6d",
+        "asset_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_probe_robot.usda"
+      },
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": true,
+        "changes": [
+          {
+            "action": "add_reference",
+            "path": "/World/MCPProbeRobot_3d9e6d",
+            "summary": "Add a reference to mcp_probe_robot.usda at /World/MCPProbeRobot_3d9e6d",
+            "before": null,
+            "after": {
+              "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/mcp_probe_robot.usda"
+            }
+          }
+        ],
+        "payload": {
+          "ok": true,
+          "dry_run": true,
+          "action": "add_reference",
+          "written": false,
+          "would_create": {
+            "path": "/World/MCPProbeRobot_3d9e6d",
+            "parent": "/World",
+            "type": "Xform",
+            "reference": {
+              "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/mcp_probe_robot.usda",
+              "prim_path": null
+            },
+            "asset": {
+              "name": "mcp_probe_robot.usda",
+              "size": 1530,
+              "default_prim": "Robot",
+              "up_axis": "Z",
+              "meters_per_unit": 1.0,
+              "header_read": true
+            },
+            "stage_units": {
+              "up_axis": "Z",
+              "meters_per_unit": 1.0
+            },
+            "unit_correction": null,
+            "xform_ops": [],
+            "translation": null,
+            "rotation": null,
+            "scale": null,
+            "instanceable": null,
+            "path_note": "The reference uses the absolute forward-slash path, so it only resolves on machines with the asset pack at the same location.",
+            "relative_path_hint": null
+          },
+          "edit_target_layer": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+          "edit_target": {
+            "identifier": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "display_name": "root.usda",
+            "anonymous": false,
+            "session_layer": false,
+            "root_layer": true,
+            "editable": true
+          },
+          "warnings": [],
+          "next_step": "Dry run: nothing was written. Call again with dry_run=False to author this.",
+          "mode": "live",
+          "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/mcp_probe_robot.usda"
+        },
+        "warnings": [],
+        "next_step": "Dry run: nothing was written. Call again with dry_run=False to author this.",
+        "applied": false,
+        "preview": true,
+        "message": "Preview only: nothing in the open scene changed. Show this plan to the user and apply it (same arguments plus dry_run=False) only after they agree.",
+        "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/mcp_probe_robot.usda"
+      }
+    },
+    {
+      "tool": "scene_add_asset",
+      "arguments": {
+        "prim_path": "/World/MCPProbeRobot_3d9e6d",
+        "asset_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_probe_robot.usda",
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "target": "scene",
+        "dry_run": false,
+        "changes": [
+          {
+            "action": "add_reference",
+            "path": "/World/MCPProbeRobot_3d9e6d",
+            "summary": "Add a reference to mcp_probe_robot.usda at /World/MCPProbeRobot_3d9e6d",
+            "before": null,
+            "after": {
+              "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/mcp_probe_robot.usda"
+            }
+          }
+        ],
+        "payload": {
+          "ok": true,
+          "dry_run": false,
+          "action": "add_reference",
+          "written": true,
+          "would_create": {
+            "path": "/World/MCPProbeRobot_3d9e6d",
+            "parent": "/World",
+            "type": "Xform",
+            "reference": {
+              "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/mcp_probe_robot.usda",
+              "prim_path": null
+            },
+            "asset": {
+              "name": "mcp_probe_robot.usda",
+              "size": 1530,
+              "default_prim": "Robot",
+              "up_axis": "Z",
+              "meters_per_unit": 1.0,
+              "header_read": true
+            },
+            "stage_units": {
+              "up_axis": "Z",
+              "meters_per_unit": 1.0
+            },
+            "unit_correction": null,
+            "xform_ops": [],
+            "translation": null,
+            "rotation": null,
+            "scale": null,
+            "instanceable": null,
+            "path_note": "The reference uses the absolute forward-slash path, so it only resolves on machines with the asset pack at the same location.",
+            "relative_path_hint": null
+          },
+          "edit_target_layer": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+          "edit_target": {
+            "identifier": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+            "display_name": "root.usda",
+            "anonymous": false,
+            "session_layer": false,
+            "root_layer": true,
+            "editable": true
+          },
+          "warnings": [],
+          "created": {
+            "path": "/World/MCPProbeRobot_3d9e6d",
+            "type": "Xform",
+            "references": [
+              {
+                "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/mcp_probe_robot.usda",
+                "prim_path": null
+              }
+            ],
+            "xform_op_order": [],
+            "instanceable": false,
+            "reference_resolved": true,
+            "child_count": 4
+          },
+          "undoable": true,
+          "mode": "live",
+          "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/mcp_probe_robot.usda"
+        },
+        "warnings": [],
+        "undoable": true,
+        "applied": true,
+        "message": "Applied to the user's open scene in memory: it is not saved (scene_save keeps it). scene_undo_last undoes it (preview first); saving is not undoable.",
+        "asset_path": "C:/Users/krngr/Omniverse/mcp_day5_validation/assets/mcp_probe_robot.usda"
+      }
+    },
+    {
+      "tool": "robot_joint_table",
+      "arguments": {
+        "robot_root": "/World/MCPProbeRobot_3d9e6d"
+      },
+      "result": {
+        "ok": true,
+        "action": "joint_table",
+        "read_only": true,
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed",
+        "robot_name": "Fixed",
+        "articulation_root": "/World/MCPProbeRobot_3d9e6d/Fixed",
+        "dof_count": 1,
+        "driven_count": 1,
+        "joints": [
+          {
+            "name": "Hinge",
+            "path": "/World/MCPProbeRobot_3d9e6d/Hinge",
+            "kind": "revolute",
+            "type": "hinge",
+            "axis": "Z",
+            "unit": "degrees",
+            "lower": -90.0,
+            "upper": 90.0,
+            "has_drive": true,
+            "drive": {
+              "instance": "angular",
+              "stiffness": 100.0,
+              "damping": 20.0,
+              "max_force": 100.0,
+              "target_position": 0.0,
+              "target_velocity": 0.0,
+              "gains_si": {
+                "stiffness": 5729.578,
+                "stiffness_unit": "N*m/rad",
+                "damping": 1145.916,
+                "damping_unit": "N*m*s/rad"
+              }
+            },
+            "mimics": null,
+            "instance_proxy": false
+          }
+        ],
+        "other_joints": [
+          {
+            "name": "Fixed",
+            "path": "/World/MCPProbeRobot_3d9e6d/Fixed",
+            "kind": "fixed",
+            "why_not_listed": "a fixed joint does not move, so it has no target"
+          }
+        ],
+        "problems": [],
+        "stage": {
+          "up_axis": "Z",
+          "meters_per_unit": 1.0,
+          "kilograms_per_unit": 1.0
+        },
+        "notes": [
+          "Targets and limits are in degrees for hinges and metres for sliders (USD stores angular drive targets in degrees; slider values were converted from stage units).",
+          "Rows follow the robot's tree from the base (close to, but not guaranteed to be, PhysX's DOF order).",
+          "Read-only: nothing was edited or saved."
+        ]
+      }
+    },
+    {
+      "tool": "sim_play",
+      "arguments": {},
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "playing": true,
+        "paused": false,
+        "stopped": false,
+        "current_time": 0.0,
+        "current_time_code": 0.0,
+        "start_time": 0.0,
+        "end_time": 0.041666666666666664,
+        "time_codes_per_second": 24.0,
+        "physics_available": true,
+        "action": "play",
+        "message": "Playing: the timeline advances every frame and physics (if any) simulates.",
+        "note": "This changes simulation state (timeline/physics), not authored scene data; nothing was saved. While physics runs, PhysX moves simulated prims on the live stage until stop restores them.",
+        "mode": "live"
+      }
+    },
+    {
+      "tool": "robot_joint_state",
+      "arguments": {
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed"
+      },
+      "result": {
+        "ok": true,
+        "action": "live_joint_state",
+        "read_only": true,
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed",
+        "api": "isaacsim.core.experimental.prims.Articulation",
+        "timeline": "playing",
+        "dof_count": 1,
+        "joints": [
+          {
+            "name": "Hinge",
+            "kind": "revolute",
+            "unit": "degrees",
+            "position": 0.0,
+            "velocity": 0.0,
+            "velocity_unit": "degrees/second",
+            "effort": 0.0,
+            "effort_unit": "N*m",
+            "lower": -90.000003,
+            "upper": 90.000003
+          }
+        ],
+        "notes": [
+          "Read from PhysX (the running simulation), not from USD; nothing was changed."
+        ]
+      }
+    },
+    {
+      "tool": "robot_live_move",
+      "arguments": {
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed",
+        "targets": {
+          "Hinge": 25
+        }
+      },
+      "result": {
+        "action": "live_move",
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed",
+        "dry_run": true,
+        "applied": false,
+        "ok": true,
+        "api": "isaacsim.core.experimental.prims.Articulation",
+        "timeline": "playing",
+        "plan": [
+          {
+            "joint": "Hinge",
+            "index": 0,
+            "unit": "degrees",
+            "requested": 25.0,
+            "target": 25.0,
+            "clamped": false,
+            "current": 0.0,
+            "physx_value": 0.436332313,
+            "physx_unit": "radians"
+          }
+        ],
+        "warnings": [],
+        "next_step": "Dry run: nothing was sent to PhysX. Call again with dry_run=False to move the robot."
+      }
+    },
+    {
+      "tool": "robot_live_move",
+      "arguments": {
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed",
+        "targets": {
+          "Hinge": 25
+        },
+        "dry_run": false
+      },
+      "result": {
+        "action": "live_move",
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed",
+        "dry_run": false,
+        "applied": true,
+        "ok": true,
+        "api": "isaacsim.core.experimental.prims.Articulation",
+        "timeline": "playing",
+        "plan": [
+          {
+            "joint": "Hinge",
+            "index": 0,
+            "unit": "degrees",
+            "requested": 25.0,
+            "target": 25.0,
+            "clamped": false,
+            "current": 0.0,
+            "physx_value": 0.436332313,
+            "physx_unit": "radians"
+          }
+        ],
+        "warnings": [],
+        "note": "Sent to PhysX (simulation state, not USD): the joints move toward these targets over the next physics steps. Stop resets the robot; use set_drive_targets to keep a pose in the scene."
+      }
+    },
+    {
+      "tool": "robot_joint_state",
+      "arguments": {
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed"
+      },
+      "result": {
+        "ok": true,
+        "action": "live_joint_state",
+        "read_only": true,
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed",
+        "api": "isaacsim.core.experimental.prims.Articulation",
+        "timeline": "playing",
+        "dof_count": 1,
+        "joints": [
+          {
+            "name": "Hinge",
+            "kind": "revolute",
+            "unit": "degrees",
+            "position": 24.763578,
+            "velocity": 0.0,
+            "velocity_unit": "degrees/second",
+            "effort": 0.0,
+            "effort_unit": "N*m",
+            "lower": -90.000003,
+            "upper": 90.000003
+          }
+        ],
+        "notes": [
+          "Read from PhysX (the running simulation), not from USD; nothing was changed."
+        ]
+      }
+    },
+    {
+      "tool": "sensor_read",
+      "arguments": {
+        "prim_path": "/World/Cameras/Overview",
+        "resolution": [
+          64,
+          64
+        ]
+      },
+      "result": {
+        "ok": true,
+        "kind": "camera",
+        "prim_path": "/World/Cameras/Overview",
+        "playing": true,
+        "resolution": [
+          64,
+          64
+        ],
+        "rgb": null,
+        "depth": null,
+        "ready": false,
+        "api": "isaacsim.sensors.experimental.rtx CameraSensor(RtxCamera(path)) annotators rgb + distance_to_image_plane",
+        "created_reader": "Made a render product for this camera (RtxCamera applies OmniSensorAPI to the camera prim if missing). release_sensor_live(prim_path) frees it.",
+        "note_ready": "No image yet: the annotator is warming up. Let a few frames render (Play) and read again."
+      }
+    },
+    {
+      "tool": "sensor_read",
+      "arguments": {
+        "prim_path": "/World/Cameras/Overview",
+        "resolution": [
+          64,
+          64
+        ]
+      },
+      "result": {
+        "ok": true,
+        "kind": "camera",
+        "prim_path": "/World/Cameras/Overview",
+        "playing": true,
+        "resolution": [
+          64,
+          64
+        ],
+        "rgb": {
+          "shape": [
+            64,
+            64,
+            3
+          ],
+          "dtype": "uint8",
+          "min": 16.0,
+          "max": 236.0,
+          "mean": 228.245442708
+        },
+        "depth": {
+          "shape": [
+            64,
+            64,
+            1
+          ],
+          "dtype": "float32",
+          "non_finite": 1912,
+          "min": 12.70259285,
+          "max": 44.429203033,
+          "mean": 21.666202545
+        },
+        "ready": true,
+        "api": "isaacsim.sensors.experimental.rtx CameraSensor(RtxCamera(path)) annotators rgb + distance_to_image_plane"
+      }
+    },
+    {
+      "tool": "sensor_release",
+      "arguments": {
+        "prim_path": "/World/Cameras/Overview",
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "released": [
+          "/World/Cameras/Overview"
+        ],
+        "remaining": 0
+      }
+    },
+    {
+      "tool": "sim_stop",
+      "arguments": {},
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "playing": false,
+        "paused": false,
+        "stopped": true,
+        "current_time": 0.0,
+        "current_time_code": 0.0,
+        "start_time": 0.0,
+        "end_time": 0.041666666666666664,
+        "time_codes_per_second": 24.0,
+        "physics_available": true,
+        "action": "stop",
+        "message": "Stopped: the timeline was reset to its start time (0 s), and PhysX restores simulated prims to the poses they had before play.",
+        "note": "This changes simulation state (timeline/physics), not authored scene data; nothing was saved. While physics runs, PhysX moves simulated prims on the live stage until stop restores them.",
+        "mode": "live"
+      }
+    },
+    {
+      "tool": "scene_undo_last",
+      "arguments": {
+        "dry_run": false
+      },
+      "result": {
+        "target": "scene",
+        "ok": false,
+        "dry_run": false,
+        "undone": null,
+        "refused": "changed",
+        "message": "/World/MCPProbeRobot_3d9e6d changed after this MCP edit (in Kit's UI, a script or another tool), so undoing it would overwrite those changes. Undo the later changes first (Ctrl+Z in Kit for edits Kit recorded); changes made outside Kit's undo history (a script) block Ctrl+Z on this edit too.",
+        "edit": {
+          "label": "Add mcp_probe_robot.usda at /World/MCPProbeRobot_3d9e6d",
+          "paths": [
+            "/World/MCPProbeRobot_3d9e6d"
+          ],
+          "layer": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda"
+        },
+        "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state.",
+        "mode": "live",
+        "action": "undo_last",
+        "applied": false
+      }
+    },
+    {
+      "tool": "semantic_labels",
+      "arguments": {
+        "mapping": {
+          "/World/Racks/Crate_01/Geom": "crate"
+        },
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "action": "semantic_labels",
+        "dry_run": false,
+        "applied": true,
+        "written": true,
+        "explanation": "Authored semantic class labels.",
+        "warnings": [
+          "root.usda now has unsaved changes; save it to keep this edit."
+        ],
+        "undo": {
+          "recorded": true,
+          "label": "Set semantic class labels"
+        },
+        "plan": {
+          "mapping": {
+            "/World/Racks/Crate_01/Geom": "crate"
+          },
+          "schema": "SemanticsLabelsAPI:class"
+        }
+      }
+    },
+    {
+      "tool": "sdg_start",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+        "name": "mcp_labels_20261024_225103",
+        "camera": "/World/Cameras/Overview",
+        "frames": 2,
+        "width": 128,
+        "height": 128,
+        "annotations": [
+          "rgb",
+          "semantic_segmentation",
+          "bounding_box_2d_tight"
+        ]
+      },
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "written": false,
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_labels_20261024_225103",
+        "config": {
+          "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+          "name": "mcp_labels_20261024_225103",
+          "camera": "/World/Cameras/Overview",
+          "frames": 2,
+          "width": 128,
+          "height": 128,
+          "seed": 42,
+          "annotations": [
+            "rgb",
+            "semantic_segmentation",
+            "bounding_box_2d_tight"
+          ]
+        },
+        "prerequisites": [
+          "Isaac/Kit Replicator extension already enabled",
+          "Existing camera on the active stage",
+          "Semantic class labels for segmentation and bounding boxes",
+          "Use a dedicated test stage"
+        ],
+        "note": "Fixed seed controls Replicator RNG; GPU images are not guaranteed bit-identical. No domain randomization is added."
+      }
+    },
+    {
+      "tool": "sdg_start",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+        "name": "mcp_labels_20261024_225103",
+        "camera": "/World/Cameras/Overview",
+        "frames": 2,
+        "width": 128,
+        "height": 128,
+        "annotations": [
+          "rgb",
+          "semantic_segmentation",
+          "bounding_box_2d_tight"
+        ],
+        "dry_run": false
+      },
+      "result": {
+        "ok": false,
+        "error": "Another Replicator run is active",
+        "written": false
+      }
+    },
+    {
+      "tool": "scene_undo_last",
+      "arguments": {
+        "dry_run": false
+      },
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "dry_run": false,
+        "undone": {
+          "label": "Set semantic class labels",
+          "paths": [
+            "/World/Racks/Crate_01/Geom"
+          ],
+          "layer": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda"
+        },
+        "verified": true,
+        "remaining": 1,
+        "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state.",
+        "via": "mcp_snapshot",
+        "mode": "live",
+        "action": "undo_last",
+        "applied": true
+      }
+    },
+    {
+      "tool": "scene_summary",
+      "arguments": {},
+      "result": {
+        "stage_name": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 40,
+        "top_level_prims": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras",
+          "/World/MCPProbeRobot_3d9e6d"
+        ]
+      }
+    }
+  ],
+  "observations": {
+    "mesh_conversion": {
+      "ok": true,
+      "job_id": "ffe4ccaf6d01",
+      "status": "succeeded",
+      "source": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle.obj",
+      "converter": "omni.kit.asset_converter",
+      "output_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103.usd",
+      "wrapper_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103_wrapped.usda",
+      "options": {
+        "use_meter_as_world_unit": false,
+        "create_world_as_default_root_prim": true
+      },
+      "started": 1792875065.0755997,
+      "progress": [
+        2,
+        2
+      ],
+      "scheduled_with": "omni.kit.async_engine.run_coroutine",
+      "detected_units": {
+        "ok": true,
+        "file": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103.usd",
+        "meters_per_unit": 0.01,
+        "meters_per_unit_authored": true,
+        "units": "centimetres (0.01)",
+        "up_axis": "Y",
+        "up_axis_authored": true,
+        "default_prim": "/World",
+        "bbox": {
+          "min": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "max": [
+            1.0,
+            1.0,
+            0.0
+          ],
+          "size": [
+            1.0,
+            1.0,
+            0.0
+          ],
+          "largest": 1.0,
+          "largest_axis": "X"
+        },
+        "size_m": [
+          0.01,
+          0.01,
+          0.0
+        ],
+        "heuristic": {
+          "hint": null,
+          "typical_size_m": null,
+          "candidates": [
+            {
+              "units": "m",
+              "meters_per_unit": 1.0,
+              "largest_size_m": 1.0,
+              "score": 0.0
+            },
+            {
+              "units": "cm",
+              "meters_per_unit": 0.01,
+              "largest_size_m": 0.01,
+              "score": 2.0
+            },
+            {
+              "units": "mm",
+              "meters_per_unit": 0.001,
+              "largest_size_m": 0.001,
+              "score": 3.0
+            }
+          ],
+          "suggested_units": "m",
+          "suggested_meters_per_unit": 1.0,
+          "confidence": "low",
+          "reason": "The asset is 1 units across (largest axis X). With no known object word, sizes near 1 m are preferred: metres gives 1 m. Pass name_hint (e.g. 'chair') for a better guess."
+        },
+        "metadata_matches_size": true,
+        "suggested_meters_per_unit": 0.01,
+        "suggested_units": "centimetres (0.01)",
+        "confidence": "high",
+        "warnings": [],
+        "notes": [
+          "bbox is in the file's own units (centimetres (0.01)); size_m converts with metersPerUnit.",
+          "Read-only: nothing was changed or saved."
+        ]
+      },
+      "wrap": {
+        "ok": true,
+        "dry_run": false,
+        "wrapper_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103_wrapped.usda",
+        "converted_usd": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\mcp_import_20261024_225103\\mcp_import_20261024_225103.usd",
+        "prim_path": "/mcp_import_20261024_225103",
+        "reference": "./mcp_import_20261024_225103.usd",
+        "reference_is_relative": true,
+        "source": {
+          "meters_per_unit": 0.01,
+          "units": "centimetres (0.01)",
+          "up_axis": "Y"
+        },
+        "target": {
+          "meters_per_unit": 1.0,
+          "units": "metres (1)",
+          "up_axis": "Z"
+        },
+        "scale": 0.01,
+        "rotate_x": 90.0,
+        "explanation": "source is centimetres (0.01), project is metres (1) -> scale 0.01; source is Y-up, project is Z-up -> rotateX +90 (the source's up axis Y becomes Z).",
+        "xform_op_order": [
+          "xformOp:rotateX:unitsResolve",
+          "xformOp:scale:unitsResolve",
+          "xformOp:translate",
+          "xformOp:orient",
+          "xformOp:scale"
+        ],
+        "kept_source_xform_ops": [
+          "xformOp:translate",
+          "xformOp:orient",
+          "xformOp:scale"
+        ],
+        "expected_bbox": {
+          "min": [
+            0.0,
+            -2.220446049250313e-18,
+            0.0
+          ],
+          "max": [
+            0.01,
+            0.0,
+            0.010000000000000002
+          ],
+          "size": [
+            0.01,
+            2.220446049250313e-18,
+            0.010000000000000002
+          ],
+          "largest": 0.010000000000000002,
+          "largest_axis": "Z"
+        },
+        "warnings": [],
+        "written": true,
+        "replaced_existing": false,
+        "verify": {
+          "ok": true,
+          "problems": [],
+          "composed_bbox": {
+            "min": [
+              0.0,
+              -2.2204459996194763e-18,
+              0.0
+            ],
+            "max": [
+              0.009999999776482582,
+              0.0,
+              0.009999999776482584
+            ],
+            "size": [
+              0.009999999776482582,
+              2.2204459996194763e-18,
+              0.009999999776482584
+            ],
+            "largest": 0.009999999776482584,
+            "largest_axis": "Z"
+          },
+          "composed_size_m": [
+            0.009999999776482582,
+            2.2204459996194763e-18,
+            0.009999999776482584
+          ]
+        }
+      },
+      "health": {
+        "ok": true,
+        "healthy": true,
+        "score": 84,
+        "grade": "B",
+        "summary": "This asset scores 84/100 (grade B). It has 3 prims, 1 meshes with 1 faces, 0 materials and 0 textures, in 1 m units, Z-up. Worth fixing: unit or up-axis mismatch between files; every visible mesh has a material. Start here: Add a corrective transform on the prim that references the asset: scale = suggested_scale (e.g. 0.001 for mm into m), rotateX = 90 for Y-up into Z-up.",
+        "problems": [
+          {
+            "id": "units_mismatch",
+            "title": "Unit or up-axis mismatch between files",
+            "status": "warn"
+          },
+          {
+            "id": "material_bindings",
+            "title": "Every visible mesh has a material",
+            "status": "warn"
+          }
+        ]
+      },
+      "finished": 1792875065.2271857,
+      "how_to_place": {
+        "layer": "layers/layout.usda",
+        "layer_exists": true,
+        "prim_path": "/World/mcp_import_20261024_225103",
+        "arc": "payload",
+        "asset_path": "../assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda",
+        "instanceable": false,
+        "explanation": "Reference the WRAPPER (not the raw converted file) from layers/layout.usda at /World/mcp_import_20261024_225103; the wrapper already matches the project's units and up axis, so no extra scale is needed in the layout. A payload instead of a reference lets you unload this heavy asset.",
+        "python": "from pxr import Sdf, Usd\nstage = Usd.Stage.Open(r\"C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda\")\nlayout = Sdf.Layer.FindOrOpen(r\"C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\layers\\layout.usda\")\nstage.SetEditTarget(Usd.EditTarget(layout))\nprim = stage.DefinePrim(\"/World/mcp_import_20261024_225103\", \"Xform\")\nprim.GetPayloads().AddPayload(\"../assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda\")\nlayout.Save()"
+      },
+      "message": "Converted and wrapped. source is centimetres (0.01), project is metres (1) -> scale 0.01; source is Y-up, project is Z-up -> rotateX +90 (the source's up axis Y becomes Z). Next: reference ../assets/mcp_import_20261024_225103/mcp_import_20261024_225103_wrapped.usda at /World/mcp_import_20261024_225103 in layers/layout.usda."
+    },
+    "robot_motion": {
+      "before": {
+        "ok": true,
+        "action": "live_joint_state",
+        "read_only": true,
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed",
+        "api": "isaacsim.core.experimental.prims.Articulation",
+        "timeline": "playing",
+        "dof_count": 1,
+        "joints": [
+          {
+            "name": "Hinge",
+            "kind": "revolute",
+            "unit": "degrees",
+            "position": 0.0,
+            "velocity": 0.0,
+            "velocity_unit": "degrees/second",
+            "effort": 0.0,
+            "effort_unit": "N*m",
+            "lower": -90.000003,
+            "upper": 90.000003
+          }
+        ],
+        "notes": [
+          "Read from PhysX (the running simulation), not from USD; nothing was changed."
+        ]
+      },
+      "after": {
+        "ok": true,
+        "action": "live_joint_state",
+        "read_only": true,
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed",
+        "api": "isaacsim.core.experimental.prims.Articulation",
+        "timeline": "playing",
+        "dof_count": 1,
+        "joints": [
+          {
+            "name": "Hinge",
+            "kind": "revolute",
+            "unit": "degrees",
+            "position": 24.763578,
+            "velocity": 0.0,
+            "velocity_unit": "degrees/second",
+            "effort": 0.0,
+            "effort_unit": "N*m",
+            "lower": -90.000003,
+            "upper": 90.000003
+          }
+        ],
+        "notes": [
+          "Read from PhysX (the running simulation), not from USD; nothing was changed."
+        ]
+      },
+      "command": {
+        "action": "live_move",
+        "robot_root": "/World/MCPProbeRobot_3d9e6d/Fixed",
+        "dry_run": false,
+        "applied": true,
+        "ok": true,
+        "api": "isaacsim.core.experimental.prims.Articulation",
+        "timeline": "playing",
+        "plan": [
+          {
+            "joint": "Hinge",
+            "index": 0,
+            "unit": "degrees",
+            "requested": 25.0,
+            "target": 25.0,
+            "clamped": false,
+            "current": 0.0,
+            "physx_value": 0.436332313,
+            "physx_unit": "radians"
+          }
+        ],
+        "warnings": [],
+        "note": "Sent to PhysX (simulation state, not USD): the joints move toward these targets over the next physics steps. Stop resets the robot; use set_drive_targets to keep a pose in the scene."
+      },
+      "passed": true
+    },
+    "camera_ready": true,
+    "robot_undo": {
+      "target": "scene",
+      "ok": false,
+      "dry_run": false,
+      "undone": null,
+      "refused": "changed",
+      "message": "/World/MCPProbeRobot_3d9e6d changed after this MCP edit (in Kit's UI, a script or another tool), so undoing it would overwrite those changes. Undo the later changes first (Ctrl+Z in Kit for edits Kit recorded); changes made outside Kit's undo history (a script) block Ctrl+Z on this edit too.",
+      "edit": {
+        "label": "Add mcp_probe_robot.usda at /World/MCPProbeRobot_3d9e6d",
+        "paths": [
+          "/World/MCPProbeRobot_3d9e6d"
+        ],
+        "layer": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda"
+      },
+      "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state.",
+      "mode": "live",
+      "action": "undo_last",
+      "applied": false
+    },
+    "label_capture": {
+      "ok": false,
+      "error": "Another Replicator run is active",
+      "written": false
+    },
+    "final_summary": {
+      "stage_name": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+      "root_path": "/World",
+      "selection": [],
+      "prim_count": 40,
+      "top_level_prims": [
+        "/World/Lights",
+        "/World/Looks",
+        "/World/Environment",
+        "/World/Racks",
+        "/World/Cameras",
+        "/World/MCPProbeRobot_3d9e6d"
+      ]
+    }
+  },
+  "scene_files_unchanged": true,
+  "finished": 1792875072.1118374
+}

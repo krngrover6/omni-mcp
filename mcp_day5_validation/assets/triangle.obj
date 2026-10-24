@@ -1,0 +1,6 @@
+# Locally generated test triangle; no third-party asset or license dependency.
+o Triangle
+v 0 0 0
+v 1 0 0
+v 0 1 0
+f 1 2 3

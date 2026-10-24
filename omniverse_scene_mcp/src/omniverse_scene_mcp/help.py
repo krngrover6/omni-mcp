@@ -590,7 +590,7 @@ _STOP_WORDS = {"a", "an", "the", "to", "how", "do", "i", "me", "my", "with", "on
 from .features import FEATURES as _FEATURES
 for _name, _spec in _FEATURES.items():
     TOOL_CATALOG[_spec.group].append(_tool(
-        _name, f"{_name.replace('_', ' ').capitalize()} ({_spec.module}); edits preview by default.",
+        _name, _name.replace('_', ' ').capitalize() + ('; preview before applying.' if _spec.mutates else '.'),
         _name + ('(dry_run=True, ...)' if _spec.mutates else '(...)'), _spec.mutates, _spec.location != 'local'))
 for _name, _what in (
     ('router_list_tools', 'Discover listed and hidden tool names without loading all schemas.'),

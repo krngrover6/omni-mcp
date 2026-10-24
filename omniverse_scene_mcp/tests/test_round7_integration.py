@@ -168,7 +168,7 @@ def _test_phrases():
 def test_round7_tools_are_registered_with_safe_defaults_and_catalogued():
     with _server() as call:
         tools = {tool.name: tool for tool in call.app._tool_manager.list_tools()}
-        assert NEW_TOOLS <= set(tools) and len(tools) == 228, len(tools)
+        assert NEW_TOOLS <= set(tools) and len(tools) == 158 + len(__import__("omniverse_scene_mcp.features", fromlist=["FEATURES"]).FEATURES), len(tools)
         for name in LAYOUT_TOOLS:
             properties = tools[name].parameters["properties"]
             assert properties["dry_run"]["default"] is True, name
@@ -436,6 +436,14 @@ def test_robot_inspect_reads_a_real_isaac_robot_asset_read_only():
 
 
 def test_journal_records_applied_edits_only_and_stays_in_memory_under_tests():
+    # A legitimate live MCP session may already have a journal. Tests must leave
+    # it unchanged, rather than require the user's runtime history to be absent.
+    real_folder = WORKSPACE / journal.FOLDER_NAME
+    def real_state():
+        return {str(p): (p.stat().st_mtime_ns, p.stat().st_size)
+                for p in real_folder.rglob('*') if p.is_file()}
+    before_real = real_state()
+    existed = real_folder.exists()
     with _server() as call:
         status = call("scene_journal")["journal"]
         assert status["memory_only"] is True and status["path"] is None
@@ -463,7 +471,7 @@ def test_journal_records_applied_edits_only_and_stays_in_memory_under_tests():
         assert kept["ok"] is False and call("scene_journal")["count"] == 2
         cleared = call("scene_journal_clear", confirm=True)
         assert cleared["ok"] is True and cleared["cleared"] == 2 and call("scene_journal")["count"] == 0
-    assert not (WORKSPACE / journal.FOLDER_NAME).exists(), "tests must never create the real scene-journal folder"
+    assert real_folder.exists() == existed and real_state() == before_real, "tests changed the real scene journal"
 
 
 def test_default_journal_folder_ignores_itself_in_git():

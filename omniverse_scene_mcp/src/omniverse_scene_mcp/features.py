@@ -73,6 +73,21 @@ _add("pick_place", "robot_pick_place_lesson:lesson_plan robot_pick_place_script:
 _add("pick_place", "robot_pick_place_check:readiness_check", "stage", "Robots")
 _add("ros2_check", "ros2_info ros2_environment:environment_check ros2_setup_plan:setup_plan", "local", "Robots")
 _add("ros2_check", "ros2_graph_check:graph_check", "stage", "Robots")
+_add("dataset", "dataset_check:check_dataset", "local", "Asset health")
+_add("sdg", "sdg_plan:plan_sdg sdg_script", "local", "Simulation & screenshots")
+_add("sdg", "sdg_start:start_sdg sdg_status sdg_cancel", "kit", "Simulation & screenshots", "sdg_start sdg_cancel")
+_add("render_helper", "render_plan", "local", "Simulation & screenshots")
+_add("render_helper", "render_capture", "kit", "Simulation & screenshots", "render_capture")
+_add("render_helper", "render_sequence_plan:plan_image_sequence render_compare:compare_screenshots", "local", "Simulation & screenshots")
+_add("render_helper", "render_turntable_plan:plan_turntable_render", "stage", "Simulation & screenshots")
+_add("render_helper", "render_sequence render_job_status render_cancel", "kit", "Simulation & screenshots", "render_sequence render_cancel")
+_add("blender_handoff", "blender_export_plan", "local", "Assets & physics")
+_add("blender_handoff", "blender_handoff_check", "stage", "Asset health")
+_add("extension_starter", "extension_create", "local", "Projects", "extension_create")
+_add("rubric", "rubric_template", "local", "Learning Python & homework")
+_add("rubric", "rubric_check:check_rubric", "stage", "Learning Python & homework")
+_add("semantic_labels", "semantic_audit", "stage", "Live insight")
+_add("semantic_labels", "semantic_labels:add_semantic_labels", "stage", "Scene: change safely", "semantic_labels")
 
 _INTERNAL = {"stage", "undo_stack", "deadline", "runner", "which", "env", "wait"}
 

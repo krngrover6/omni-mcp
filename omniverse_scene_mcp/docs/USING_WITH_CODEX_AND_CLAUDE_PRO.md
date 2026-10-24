@@ -16,10 +16,10 @@ Measured locally on 2026-10-22 using compact JSON characters / 4 (real tokenizer
 | `study` | 60 | 7,210 |
 | `build` | 85 | 13,280 |
 | `robotics` | 57 | 7,460 |
-| `pipeline` | 76 | 9,940 |
-| `all` | 228 | 31,140 |
+| `pipeline` | 97 | 12,470 |
+| `all` | 249 | 33,680 |
 
-Counts include the three discovery tools. Estimates are rounded and will change when descriptions change.
+Counts (updated for Day 5) include the three discovery tools. Estimates are rounded and will change when descriptions change.
 The default lists about 91% fewer tools. No existing client configuration is rewritten automatically.
 
 Every profile keeps `router_dispatch`, `router_list_tools`, `router_enable_tools` and `router_call_tool`.

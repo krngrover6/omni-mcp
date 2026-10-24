@@ -17,6 +17,8 @@ _READ = {
     'ros2 environment check': 'ros2_environment', 'ros2 setup plan': 'ros2_setup_plan',
     'inspect ros2 graphs': 'ros2_graph_check', 'supported import formats': 'asset_import_formats',
     'show live frame stats': 'scene_frame_stats',
+    'custom rubric template': 'rubric_template',
+    'audit semantic labels': 'semantic_audit',
 }
 
 

@@ -1,0 +1,96 @@
+{
+  "different_images": {
+    "ok": true,
+    "read_only": true,
+    "dimensions": [
+      256,
+      256
+    ],
+    "changed_pixels": 65536,
+    "changed_percent": 100.0,
+    "regions": [
+      {
+        "column": 0,
+        "row": 0,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 1,
+        "row": 0,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 2,
+        "row": 0,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 3,
+        "row": 0,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 0,
+        "row": 1,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 1,
+        "row": 1,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 2,
+        "row": 1,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 3,
+        "row": 1,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 0,
+        "row": 2,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 1,
+        "row": 2,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 2,
+        "row": 2,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 3,
+        "row": 2,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 0,
+        "row": 3,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 1,
+        "row": 3,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 2,
+        "row": 3,
+        "changed_percent": 100.0
+      },
+      {
+        "column": 3,
+        "row": 3,
+        "changed_percent": 100.0
+      }
+    ],
+    "note": "Exact pixel difference, not a perceptual-quality or semantic similarity score."
+  },
+  "positive_difference_passed": true
+}

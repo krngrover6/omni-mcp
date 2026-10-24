@@ -1,0 +1,66 @@
+#usda 1.0
+(
+    doc = "materials.usda: Material prims under /World/Looks and the material:binding relationships on geometry."
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+over "World"
+{
+    def Scope "Looks" (
+        doc = "Material library for the scene."
+    )
+    {
+        def Material "Concrete"
+        {
+            token outputs:surface.connect = </World/Looks/Concrete/PreviewSurface.outputs:surface>
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.45, 0.45, 0.43)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.85
+                token outputs:surface
+            }
+        }
+
+        def Material "Cardboard"
+        {
+            token outputs:surface.connect = </World/Looks/Cardboard/PreviewSurface.outputs:surface>
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.62, 0.45, 0.27)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.7
+                token outputs:surface
+            }
+        }
+    }
+
+    over "Environment"
+    {
+        over "Floor" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </World/Looks/Concrete>
+        }
+    }
+
+    over "Racks"
+    {
+        over "Crate_01"
+        {
+            over "Geom" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = </World/Looks/Cardboard>
+            }
+        }
+    }
+}
+

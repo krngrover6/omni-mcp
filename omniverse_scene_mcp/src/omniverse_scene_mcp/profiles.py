@@ -188,6 +188,7 @@ PROFILES: dict[str, tuple[str, ...]] = {
     ),
     # Assets, import, health, performance, variants, OmniGraph, message bus, animation, reports, projects, logs.
     "pipeline": (
+        "dataset_*", "sdg_*", "semantic_*", "render_*", "blender_*", "extension_*", "rubric_*",
         "event_*",
         "animation_*",
         "asset_*",
@@ -604,6 +605,8 @@ COMPACT_EXEMPT: tuple[str, ...] = (
     "router_list_tools",
     "router_call_tool",
     "robot_pick_place_script",
+    "sdg_script",
+    "blender_export_plan",
 )
 
 

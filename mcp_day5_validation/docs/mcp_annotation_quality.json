@@ -1,0 +1,50 @@
+{
+  "source_report": "mcp_labels_20261024_225812.json",
+  "frames": [
+    {
+      "frame": 0,
+      "passed": true,
+      "crate_pixels": 115,
+      "bbox": [
+        134,
+        123,
+        145,
+        134
+      ],
+      "dimensions": [
+        256,
+        256
+      ],
+      "prim_paths": [
+        "/World/Racks/Crate_01/Geom"
+      ],
+      "occlusion_ratio": -1.0
+    },
+    {
+      "frame": 1,
+      "passed": true,
+      "crate_pixels": 115,
+      "bbox": [
+        134,
+        123,
+        145,
+        134
+      ],
+      "dimensions": [
+        256,
+        256
+      ],
+      "prim_paths": [
+        "/World/Racks/Crate_01/Geom"
+      ],
+      "occlusion_ratio": -1.0
+    }
+  ],
+  "semantic_content_restored": true,
+  "audit_count_change": {
+    "before": 30,
+    "after": 39
+  },
+  "scene_files_unchanged": true,
+  "passed": true
+}

@@ -1,0 +1,267 @@
+{
+  "calls": [
+    {
+      "tool": "scene_summary",
+      "result": {
+        "stage_name": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 30,
+        "top_level_prims": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras"
+        ]
+      }
+    },
+    {
+      "tool": "semantic_audit",
+      "result": {
+        "ok": true,
+        "read_only": true,
+        "scanned": 30,
+        "truncated": false,
+        "labelled_prims": [],
+        "class_histogram": {},
+        "unlabelled_geometry": [
+          "/World/Environment/Floor",
+          "/World/Racks/Crate_01/Geom"
+        ],
+        "unlabelled_count": 2,
+        "ambiguous_geometry": [],
+        "note": "Multiple classes may be intentional; audit does not decide training-label correctness."
+      }
+    },
+    {
+      "tool": "semantic_labels",
+      "result": {
+        "ok": true,
+        "action": "semantic_labels",
+        "dry_run": false,
+        "applied": true,
+        "written": true,
+        "explanation": "Authored semantic class labels.",
+        "warnings": [
+          "root.usda now has unsaved changes; save it to keep this edit."
+        ],
+        "undo": {
+          "recorded": true,
+          "label": "Set semantic class labels"
+        },
+        "plan": {
+          "mapping": {
+            "/World/Racks/Crate_01/Geom": "crate"
+          },
+          "schema": "SemanticsLabelsAPI:class"
+        }
+      }
+    },
+    {
+      "tool": "sdg_start",
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "written": false,
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_annotations_20261024_225812",
+        "config": {
+          "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+          "name": "mcp_annotations_20261024_225812",
+          "camera": "/World/Cameras/Overview",
+          "frames": 2,
+          "width": 256,
+          "height": 256,
+          "seed": 42,
+          "annotations": [
+            "rgb",
+            "semantic_segmentation",
+            "bounding_box_2d_tight"
+          ]
+        },
+        "prerequisites": [
+          "Isaac/Kit Replicator extension already enabled",
+          "Existing camera on the active stage",
+          "Semantic class labels for segmentation and bounding boxes",
+          "Use a dedicated test stage"
+        ],
+        "note": "Fixed seed controls Replicator RNG; GPU images are not guaranteed bit-identical. No domain randomization is added."
+      }
+    },
+    {
+      "tool": "sdg_start",
+      "result": {
+        "ok": true,
+        "job_id": "dc391f66194341ba9ff1508fe9b1d811",
+        "status": "pending",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_annotations_20261024_225812",
+        "frames_stepped": 0,
+        "requested_frames": 2,
+        "dry_run": false,
+        "written": true
+      }
+    },
+    {
+      "tool": "sdg_status",
+      "result": {
+        "ok": true,
+        "job_id": "dc391f66194341ba9ff1508fe9b1d811",
+        "status": "running",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_annotations_20261024_225812",
+        "frames_stepped": 0,
+        "requested_frames": 2,
+        "dry_run": false,
+        "written": true
+      }
+    },
+    {
+      "tool": "sdg_status",
+      "result": {
+        "ok": true,
+        "job_id": "dc391f66194341ba9ff1508fe9b1d811",
+        "status": "running",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_annotations_20261024_225812",
+        "frames_stepped": 0,
+        "requested_frames": 2,
+        "dry_run": false,
+        "written": true
+      }
+    },
+    {
+      "tool": "sdg_status",
+      "result": {
+        "ok": true,
+        "job_id": "dc391f66194341ba9ff1508fe9b1d811",
+        "status": "running",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_annotations_20261024_225812",
+        "frames_stepped": 2,
+        "requested_frames": 2,
+        "dry_run": false,
+        "written": true
+      }
+    },
+    {
+      "tool": "sdg_status",
+      "result": {
+        "ok": true,
+        "job_id": "dc391f66194341ba9ff1508fe9b1d811",
+        "status": "completed",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_annotations_20261024_225812",
+        "frames_stepped": 2,
+        "requested_frames": 2,
+        "dry_run": false,
+        "written": true,
+        "finished_at": 1792875494.9531426
+      }
+    },
+    {
+      "tool": "dataset_check",
+      "result": {
+        "ok": true,
+        "passed": true,
+        "read_only": true,
+        "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_annotations_20261024_225812",
+        "scanned": 14,
+        "truncated": false,
+        "counts": {
+          "rgb": 2,
+          "semantic_segmentation": 2,
+          "bounding_box_2d_tight": 2
+        },
+        "issues": [],
+        "issue_count": 0,
+        "limitations": "Checks files and frame coverage; it does not assess label accuracy or dataset bias."
+      }
+    },
+    {
+      "tool": "scene_undo_last",
+      "result": {
+        "target": "scene",
+        "ok": true,
+        "dry_run": false,
+        "undone": {
+          "label": "Set semantic class labels",
+          "paths": [
+            "/World/Racks/Crate_01/Geom"
+          ],
+          "layer": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda"
+        },
+        "verified": true,
+        "remaining": 0,
+        "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state.",
+        "via": "mcp_snapshot",
+        "mode": "live",
+        "action": "undo_last",
+        "applied": true
+      }
+    },
+    {
+      "tool": "semantic_audit",
+      "result": {
+        "ok": true,
+        "read_only": true,
+        "scanned": 39,
+        "truncated": false,
+        "labelled_prims": [],
+        "class_histogram": {},
+        "unlabelled_geometry": [
+          "/World/Environment/Floor",
+          "/World/Racks/Crate_01/Geom"
+        ],
+        "unlabelled_count": 2,
+        "ambiguous_geometry": [],
+        "note": "Multiple classes may be intentional; audit does not decide training-label correctness."
+      }
+    }
+  ],
+  "started": 1792875492.1266994,
+  "capture": {
+    "ok": true,
+    "job_id": "dc391f66194341ba9ff1508fe9b1d811",
+    "status": "completed",
+    "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_annotations_20261024_225812",
+    "frames_stepped": 2,
+    "requested_frames": 2,
+    "dry_run": false,
+    "written": true,
+    "finished_at": 1792875494.9531426
+  },
+  "dataset": {
+    "ok": true,
+    "passed": true,
+    "read_only": true,
+    "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_annotations_20261024_225812",
+    "scanned": 14,
+    "truncated": false,
+    "counts": {
+      "rgb": 2,
+      "semantic_segmentation": 2,
+      "bounding_box_2d_tight": 2
+    },
+    "issues": [],
+    "issue_count": 0,
+    "limitations": "Checks files and frame coverage; it does not assess label accuracy or dataset bias."
+  },
+  "undo": {
+    "target": "scene",
+    "ok": true,
+    "dry_run": false,
+    "undone": {
+      "label": "Set semantic class labels",
+      "paths": [
+        "/World/Racks/Crate_01/Geom"
+      ],
+      "layer": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda"
+    },
+    "verified": true,
+    "remaining": 0,
+    "note": "Saving is not undoable: undo changes the open layers in memory; save again to write the reverted state.",
+    "via": "mcp_snapshot",
+    "mode": "live",
+    "action": "undo_last",
+    "applied": true
+  },
+  "labels_restored": false,
+  "scene_files_unchanged": true,
+  "finished": 1792875495.46826
+}

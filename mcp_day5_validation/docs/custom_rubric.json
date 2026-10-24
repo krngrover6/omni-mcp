@@ -1,0 +1,9 @@
+{
+  "title": "Day 5 independent warehouse smoke check",
+  "rules": [
+    {"id": "world", "kind": "prim", "path": "/World", "type": "Xform"},
+    {"id": "camera", "kind": "prim", "path": "/World/Cameras/Overview", "type": "Camera"},
+    {"id": "units", "kind": "metadata", "name": "metersPerUnit", "equals": 1.0},
+    {"id": "crate", "kind": "count", "path": "/World/Racks", "type": "Cube", "gte": 1}
+  ]
+}

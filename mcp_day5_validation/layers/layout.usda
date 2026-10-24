@@ -1,0 +1,68 @@
+#usda 1.0
+(
+    doc = "layout.usda: Floor, racks group, crate and camera: what is in the warehouse and where it sits."
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World" (
+    doc = "Default prim of the warehouse."
+    kind = "assembly"
+)
+{
+    def Xform "Environment" (
+        doc = "Floor, walls and other static surroundings (a component model, so its geometry sits inside a model)."
+        kind = "component"
+    )
+    {
+        def Mesh "Floor" (
+            doc = "A 30 m x 30 m floor quad. Replace it with an Isaac warehouse environment reference later."
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(-15, -15, 0), (15, 15, 0)]
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            point3f[] points = [(-15, -15, 0), (15, -15, 0), (15, 15, 0), (-15, 15, 0)]
+            uniform token subdivisionScheme = "none"
+        }
+    }
+
+    def Xform "Racks" (
+        doc = "Reference Isaac warehouse racks here, for example Isaac/Environments/Simple_Warehouse/Props/."
+        kind = "group"
+    )
+    {
+        def Xform "Crate_01" (
+            doc = "A crate asset to practice selecting, moving and duplicating: move this Xform, not its Geom."
+            kind = "component"
+        )
+        {
+            double3 xformOp:translate = (2, 0, 0.5)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+
+            def Cube "Geom" (
+                doc = "The crate's 1 m geometry."
+            )
+            {
+                float3[] extent = [(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)]
+                double size = 1
+            }
+        }
+    }
+
+    def Xform "Cameras"
+    {
+        def Camera "Overview" (
+            prepend apiSchemas = ["OmniRtxCameraAutoExposureAPI_1", "OmniRtxCameraExposureAPI_1"]
+        )
+        {
+            float2 clippingRange = (0.01, 10000)
+            float focalLength = 18
+            float3 xformOp:rotateXYZ = (64.7606, 0, 45)
+            double3 xformOp:translate = (18, -18, 12)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+    }
+}
+

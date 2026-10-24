@@ -1,0 +1,26 @@
+#usda 1.0
+(
+    doc = "lighting.usda: The sky (DomeLight) and sun (DistantLight) under /World/Lights."
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+over "World"
+{
+    def Xform "Lights"
+    {
+        def DomeLight "Sky"
+        {
+            float inputs:intensity = 1000
+        }
+
+        def DistantLight "Sun"
+        {
+            float inputs:angle = 1
+            float inputs:intensity = 3000
+            float3 xformOp:rotateXYZ = (39.746, 0, 38.6598)
+            uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+        }
+    }
+}
+

@@ -1,0 +1,866 @@
+{
+  "calls": [
+    {
+      "tool": "scene_summary",
+      "result": {
+        "stage_name": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 39,
+        "top_level_prims": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World",
+        "children": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Cameras",
+        "children": [
+          "/World/Cameras/Overview"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Cameras/Overview",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Racks",
+        "children": [
+          "/World/Racks/Crate_01"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Racks/Crate_01",
+        "children": [
+          "/World/Racks/Crate_01/Geom"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Racks/Crate_01/Geom",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Environment",
+        "children": [
+          "/World/Environment/Floor"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Environment/Floor",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Looks",
+        "children": [
+          "/World/Looks/Concrete",
+          "/World/Looks/Cardboard"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Looks/Cardboard",
+        "children": [
+          "/World/Looks/Cardboard/PreviewSurface"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Looks/Cardboard/PreviewSurface",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Looks/Concrete",
+        "children": [
+          "/World/Looks/Concrete/PreviewSurface"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Looks/Concrete/PreviewSurface",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Lights",
+        "children": [
+          "/World/Lights/Sky",
+          "/World/Lights/Sun"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Lights/Sun",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Lights/Sky",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render",
+        "children": [
+          "/Render/OmniverseKit",
+          "/Render/OmniverseGlobalRenderSettings",
+          "/Render/Vars",
+          "/Render/PostProcess"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/PostProcess",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars",
+        "children": [
+          "/Render/Vars/LdrColor",
+          "/Render/Vars/LdrColorSD",
+          "/Render/Vars/SemanticBoundingBox2DTight",
+          "/Render/Vars/SemanticIdMap",
+          "/Render/Vars/StableIdMap",
+          "/Render/Vars/StableIdSemanticIdMap",
+          "/Render/Vars/SemanticSegmentation"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/SemanticSegmentation",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/StableIdSemanticIdMap",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/StableIdMap",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/SemanticIdMap",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/SemanticBoundingBox2DTight",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/LdrColorSD",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/LdrColor",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/OmniverseGlobalRenderSettings",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/OmniverseKit",
+        "children": [
+          "/Render/OmniverseKit/HydraTextures"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/OmniverseKit/HydraTextures",
+        "children": [
+          "/Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Replicator",
+        "children": [
+          "/Replicator/SDGPipeline"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Replicator/SDGPipeline",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Orchestrator",
+        "children": [
+          "/Orchestrator/OgnReadFabricTime"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Orchestrator/OgnReadFabricTime",
+        "children": []
+      }
+    },
+    {
+      "tool": "sdg_start",
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "written": false,
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_cancel_20261024_230006",
+        "config": {
+          "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+          "name": "mcp_cancel_20261024_230006",
+          "camera": "/World/Cameras/Overview",
+          "frames": 100,
+          "width": 64,
+          "height": 64,
+          "seed": 42,
+          "annotations": [
+            "rgb"
+          ]
+        },
+        "prerequisites": [
+          "Isaac/Kit Replicator extension already enabled",
+          "Existing camera on the active stage",
+          "Semantic class labels for segmentation and bounding boxes",
+          "Use a dedicated test stage"
+        ],
+        "note": "Fixed seed controls Replicator RNG; GPU images are not guaranteed bit-identical. No domain randomization is added."
+      }
+    },
+    {
+      "tool": "sdg_start",
+      "result": {
+        "ok": true,
+        "job_id": "5530aa6ed3ec457ab0313e77ae0a5d2d",
+        "status": "pending",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_cancel_20261024_230006",
+        "frames_stepped": 0,
+        "requested_frames": 100,
+        "dry_run": false,
+        "written": true
+      }
+    },
+    {
+      "tool": "sdg_cancel",
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "cancel_requested": false
+      }
+    },
+    {
+      "tool": "sdg_cancel",
+      "result": {
+        "ok": true,
+        "dry_run": false,
+        "cancel_requested": true
+      }
+    },
+    {
+      "tool": "sdg_status",
+      "result": {
+        "ok": true,
+        "job_id": "5530aa6ed3ec457ab0313e77ae0a5d2d",
+        "status": "cancelled",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_cancel_20261024_230006",
+        "frames_stepped": 0,
+        "requested_frames": 100,
+        "dry_run": false,
+        "written": true,
+        "finished_at": 1792875610.0926328
+      }
+    },
+    {
+      "tool": "sdg_start",
+      "result": {
+        "ok": true,
+        "job_id": "13717860f42a42af8d55537ef968c0e5",
+        "status": "pending",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_after_cancel_20261024_230006",
+        "frames_stepped": 0,
+        "requested_frames": 1,
+        "dry_run": false,
+        "written": true
+      }
+    },
+    {
+      "tool": "sdg_status",
+      "result": {
+        "ok": true,
+        "job_id": "13717860f42a42af8d55537ef968c0e5",
+        "status": "running",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_after_cancel_20261024_230006",
+        "frames_stepped": 0,
+        "requested_frames": 1,
+        "dry_run": false,
+        "written": true
+      }
+    },
+    {
+      "tool": "sdg_status",
+      "result": {
+        "ok": true,
+        "job_id": "13717860f42a42af8d55537ef968c0e5",
+        "status": "completed",
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_after_cancel_20261024_230006",
+        "frames_stepped": 1,
+        "requested_frames": 1,
+        "dry_run": false,
+        "written": true,
+        "finished_at": 1792875610.9529908
+      }
+    },
+    {
+      "tool": "dataset_check",
+      "result": {
+        "ok": true,
+        "passed": true,
+        "read_only": true,
+        "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_after_cancel_20261024_230006",
+        "scanned": 3,
+        "truncated": false,
+        "counts": {
+          "rgb": 1,
+          "semantic_segmentation": 0,
+          "bounding_box_2d_tight": 0
+        },
+        "issues": [],
+        "issue_count": 0,
+        "limitations": "Checks files and frame coverage; it does not assess label accuracy or dataset bias."
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World",
+        "children": [
+          "/World/Lights",
+          "/World/Looks",
+          "/World/Environment",
+          "/World/Racks",
+          "/World/Cameras"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Cameras",
+        "children": [
+          "/World/Cameras/Overview"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Cameras/Overview",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Racks",
+        "children": [
+          "/World/Racks/Crate_01"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Racks/Crate_01",
+        "children": [
+          "/World/Racks/Crate_01/Geom"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Racks/Crate_01/Geom",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Environment",
+        "children": [
+          "/World/Environment/Floor"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Environment/Floor",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Looks",
+        "children": [
+          "/World/Looks/Concrete",
+          "/World/Looks/Cardboard"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Looks/Cardboard",
+        "children": [
+          "/World/Looks/Cardboard/PreviewSurface"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Looks/Cardboard/PreviewSurface",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Looks/Concrete",
+        "children": [
+          "/World/Looks/Concrete/PreviewSurface"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Looks/Concrete/PreviewSurface",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Lights",
+        "children": [
+          "/World/Lights/Sky",
+          "/World/Lights/Sun"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Lights/Sun",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/World/Lights/Sky",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render",
+        "children": [
+          "/Render/OmniverseKit",
+          "/Render/OmniverseGlobalRenderSettings",
+          "/Render/Vars",
+          "/Render/PostProcess"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/PostProcess",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars",
+        "children": [
+          "/Render/Vars/LdrColor",
+          "/Render/Vars/LdrColorSD",
+          "/Render/Vars/SemanticBoundingBox2DTight",
+          "/Render/Vars/SemanticIdMap",
+          "/Render/Vars/StableIdMap",
+          "/Render/Vars/StableIdSemanticIdMap",
+          "/Render/Vars/SemanticSegmentation"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/SemanticSegmentation",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/StableIdSemanticIdMap",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/StableIdMap",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/SemanticIdMap",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/SemanticBoundingBox2DTight",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/LdrColorSD",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/Vars/LdrColor",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/OmniverseGlobalRenderSettings",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/OmniverseKit",
+        "children": [
+          "/Render/OmniverseKit/HydraTextures"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/OmniverseKit/HydraTextures",
+        "children": [
+          "/Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Replicator",
+        "children": [
+          "/Replicator/SDGPipeline"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Replicator/SDGPipeline",
+        "children": []
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Orchestrator",
+        "children": [
+          "/Orchestrator/OgnReadFabricTime"
+        ]
+      }
+    },
+    {
+      "tool": "scene_children",
+      "result": {
+        "path": "/Orchestrator/OgnReadFabricTime",
+        "children": []
+      }
+    }
+  ],
+  "cancel_preview": {
+    "ok": true,
+    "dry_run": true,
+    "cancel_requested": false
+  },
+  "cancel_request": {
+    "ok": true,
+    "dry_run": false,
+    "cancel_requested": true
+  },
+  "cancel_result": {
+    "ok": true,
+    "job_id": "5530aa6ed3ec457ab0313e77ae0a5d2d",
+    "status": "cancelled",
+    "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_cancel_20261024_230006",
+    "frames_stepped": 0,
+    "requested_frames": 100,
+    "dry_run": false,
+    "written": true,
+    "finished_at": 1792875610.0926328
+  },
+  "cancel_passed": true,
+  "follow_up": {
+    "ok": true,
+    "job_id": "13717860f42a42af8d55537ef968c0e5",
+    "status": "completed",
+    "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_after_cancel_20261024_230006",
+    "frames_stepped": 1,
+    "requested_frames": 1,
+    "dry_run": false,
+    "written": true,
+    "finished_at": 1792875610.9529908
+  },
+  "follow_up_dataset": {
+    "ok": true,
+    "passed": true,
+    "read_only": true,
+    "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_after_cancel_20261024_230006",
+    "scanned": 3,
+    "truncated": false,
+    "counts": {
+      "rgb": 1,
+      "semantic_segmentation": 0,
+      "bounding_box_2d_tight": 0
+    },
+    "issues": [],
+    "issue_count": 0,
+    "limitations": "Checks files and frame coverage; it does not assess label accuracy or dataset bias."
+  },
+  "paths_before": {
+    "/World": [
+      "/World",
+      "/World/Cameras",
+      "/World/Cameras/Overview",
+      "/World/Environment",
+      "/World/Environment/Floor",
+      "/World/Lights",
+      "/World/Lights/Sky",
+      "/World/Lights/Sun",
+      "/World/Looks",
+      "/World/Looks/Cardboard",
+      "/World/Looks/Cardboard/PreviewSurface",
+      "/World/Looks/Concrete",
+      "/World/Looks/Concrete/PreviewSurface",
+      "/World/Racks",
+      "/World/Racks/Crate_01",
+      "/World/Racks/Crate_01/Geom"
+    ],
+    "/Render": [
+      "/Render",
+      "/Render/OmniverseGlobalRenderSettings",
+      "/Render/OmniverseKit",
+      "/Render/OmniverseKit/HydraTextures",
+      "/Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0",
+      "/Render/PostProcess",
+      "/Render/Vars",
+      "/Render/Vars/LdrColor",
+      "/Render/Vars/LdrColorSD",
+      "/Render/Vars/SemanticBoundingBox2DTight",
+      "/Render/Vars/SemanticIdMap",
+      "/Render/Vars/SemanticSegmentation",
+      "/Render/Vars/StableIdMap",
+      "/Render/Vars/StableIdSemanticIdMap"
+    ],
+    "/Replicator": [
+      "/Replicator",
+      "/Replicator/SDGPipeline"
+    ],
+    "/Orchestrator": [
+      "/Orchestrator",
+      "/Orchestrator/OgnReadFabricTime"
+    ]
+  },
+  "paths_after": {
+    "/World": [
+      "/World",
+      "/World/Cameras",
+      "/World/Cameras/Overview",
+      "/World/Environment",
+      "/World/Environment/Floor",
+      "/World/Lights",
+      "/World/Lights/Sky",
+      "/World/Lights/Sun",
+      "/World/Looks",
+      "/World/Looks/Cardboard",
+      "/World/Looks/Cardboard/PreviewSurface",
+      "/World/Looks/Concrete",
+      "/World/Looks/Concrete/PreviewSurface",
+      "/World/Racks",
+      "/World/Racks/Crate_01",
+      "/World/Racks/Crate_01/Geom"
+    ],
+    "/Render": [
+      "/Render",
+      "/Render/OmniverseGlobalRenderSettings",
+      "/Render/OmniverseKit",
+      "/Render/OmniverseKit/HydraTextures",
+      "/Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0",
+      "/Render/PostProcess",
+      "/Render/Vars",
+      "/Render/Vars/LdrColor",
+      "/Render/Vars/LdrColorSD",
+      "/Render/Vars/SemanticBoundingBox2DTight",
+      "/Render/Vars/SemanticIdMap",
+      "/Render/Vars/SemanticSegmentation",
+      "/Render/Vars/StableIdMap",
+      "/Render/Vars/StableIdSemanticIdMap"
+    ],
+    "/Replicator": [
+      "/Replicator",
+      "/Replicator/SDGPipeline"
+    ],
+    "/Orchestrator": [
+      "/Orchestrator",
+      "/Orchestrator/OgnReadFabricTime"
+    ]
+  },
+  "added_paths": {
+    "/World": [],
+    "/Render": [],
+    "/Replicator": [],
+    "/Orchestrator": []
+  },
+  "removed_paths": {
+    "/World": [],
+    "/Render": [],
+    "/Replicator": [],
+    "/Orchestrator": []
+  },
+  "world_paths_restored": true
+}

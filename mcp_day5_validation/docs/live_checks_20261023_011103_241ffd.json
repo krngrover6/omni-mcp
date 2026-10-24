@@ -1,0 +1,742 @@
+{
+  "started": 1792710663.4583027,
+  "results": [
+    {
+      "name": "live_rubric",
+      "status": "pass",
+      "evidence": {
+        "ok": true,
+        "passed": true,
+        "read_only": true,
+        "score_percent": 100.0,
+        "earned": 4,
+        "possible": 4,
+        "rules": [
+          {
+            "id": "world",
+            "passed": true,
+            "actual": true,
+            "weight": 1
+          },
+          {
+            "id": "camera",
+            "passed": true,
+            "actual": true,
+            "weight": 1
+          },
+          {
+            "id": "units",
+            "passed": true,
+            "actual": 1.0,
+            "weight": 1
+          },
+          {
+            "id": "crate",
+            "passed": true,
+            "actual": 1,
+            "weight": 1
+          }
+        ],
+        "note": "Checks declared USD structure only; visual quality and physical behavior require separate review."
+      }
+    },
+    {
+      "name": "semantic_labels",
+      "status": "pass",
+      "evidence": {
+        "ok": true,
+        "action": "semantic_labels",
+        "dry_run": false,
+        "applied": true,
+        "written": true,
+        "explanation": "Authored semantic class labels.",
+        "warnings": [
+          "anonymous layer (mcp_validation_live.usda) now has unsaved changes; save it to keep this edit."
+        ],
+        "undo": {
+          "recorded": false
+        },
+        "plan": {
+          "mapping": {
+            "/World/Racks/Crate_01/Geom": "crate"
+          },
+          "schema": "SemanticsLabelsAPI:class"
+        }
+      }
+    },
+    {
+      "name": "action_graph_creation",
+      "status": "pass",
+      "evidence": {
+        "ok": true,
+        "dry_run": false,
+        "recipe": "event_sets_variant",
+        "graph_path": "/World/MCPValidation/Graph",
+        "created": [
+          "/World/MCPValidation/Graph/OnEvent",
+          "/World/MCPValidation/Graph/SetVariant"
+        ],
+        "explanation": [
+          "When message bus event 'mcp_validation_2551cf99dbeb46a4a044f4294f946dcc' arrives -> Set Variant Selection sets Test=<the 'colors' value> on /World/MCPValidation/VariantCube.",
+          "The sender (a browser client, Python, or Send MessageBus Event) must use event name 'mcp_validation_2551cf99dbeb46a4a044f4294f946dcc' and payload key 'colors' exactly, with a value such as A, B.",
+          "Python test inside Kit: import carb.events, omni.kit.app; omni.kit.app.get_app().get_message_bus_event_stream().push(carb.events.type_from_string('mcp_validation_2551cf99dbeb46a4a044f4294f946dcc'), payload={'colors': 'A'})"
+        ],
+        "warnings": [],
+        "message": "Built event_sets_variant at /World/MCPValidation/Graph. Ctrl+Z undoes it in one step; nothing was saved.",
+        "flow": [
+          "When message bus event 'mcp_validation_2551cf99dbeb46a4a044f4294f946dcc' arrives -> Set Variant Selection sets Test=the 'colors' value carried by the 'mcp_validation_2551cf99dbeb46a4a044f4294f946dcc' event on /World/MCPValidation/VariantCube"
+        ],
+        "problems": [
+          {
+            "severity": "info",
+            "code": "no_sender",
+            "message": "No graph in this stage sends message bus event 'mcp_validation_2551cf99dbeb46a4a044f4294f946dcc'; OnEvent waits for it from outside (Python code or a browser client) - which must use exactly this name.",
+            "node": "/World/MCPValidation/Graph/OnEvent",
+            "graph": "/World/MCPValidation/Graph"
+          },
+          {
+            "severity": "info",
+            "code": "variant_from_outside",
+            "message": "SetVariant takes the variant name from an event payload that no node in this stage sends; whoever sends it must use one of ['A', 'B'] exactly.",
+            "node": "/World/MCPValidation/Graph/SetVariant",
+            "graph": "/World/MCPValidation/Graph"
+          }
+        ]
+      }
+    },
+    {
+      "name": "message_bus_delivery",
+      "status": "pass",
+      "evidence": {
+        "sent": {
+          "ok": true,
+          "dry_run": false,
+          "sent": true,
+          "target": "kit",
+          "event_type": "mcp_validation_2551cf99dbeb46a4a044f4294f946dcc",
+          "bus_event": "mcp_validation_2551cf99dbeb46a4a044f4294f946dcc",
+          "bus_payload": {
+            "colors": "B"
+          },
+          "payload": {
+            "colors": "B"
+          },
+          "api": "omni.kit.app.queue_event",
+          "delivered": "on the next app update (graph nodes react then)",
+          "message": "Sent 'mcp_validation_2551cf99dbeb46a4a044f4294f946dcc' with {'colors': 'B'}."
+        },
+        "received": {
+          "ok": true,
+          "listener_id": "listener-63484-1",
+          "event_name": "mcp_validation_2551cf99dbeb46a4a044f4294f946dcc",
+          "received": true,
+          "payload": {
+            "colors": "B"
+          },
+          "timed_out": false,
+          "active": false,
+          "unsubscribed": true,
+          "waited_s": 0.25
+        }
+      }
+    },
+    {
+      "name": "action_graph_evaluation",
+      "status": "pass",
+      "evidence": {
+        "actual": "B",
+        "expected": "B"
+      }
+    },
+    {
+      "name": "mesh_conversion",
+      "status": "pass",
+      "evidence": {
+        "ok": true,
+        "job_id": "cafe1e0cacf6",
+        "status": "succeeded",
+        "source": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle.obj",
+        "converter": "omni.kit.asset_converter",
+        "output_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle_20261023_011103_241ffd\\triangle_20261023_011103_241ffd.usd",
+        "wrapper_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle_20261023_011103_241ffd\\triangle_20261023_011103_241ffd_wrapped.usda",
+        "options": {
+          "use_meter_as_world_unit": false,
+          "create_world_as_default_root_prim": true
+        },
+        "started": 1792710663.7675056,
+        "progress": [
+          2,
+          2
+        ],
+        "scheduled_with": "omni.kit.async_engine.run_coroutine",
+        "detected_units": {
+          "ok": true,
+          "file": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle_20261023_011103_241ffd\\triangle_20261023_011103_241ffd.usd",
+          "meters_per_unit": 0.01,
+          "meters_per_unit_authored": true,
+          "units": "centimetres (0.01)",
+          "up_axis": "Y",
+          "up_axis_authored": true,
+          "default_prim": "/World",
+          "bbox": {
+            "min": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "max": [
+              1.0,
+              1.0,
+              0.0
+            ],
+            "size": [
+              1.0,
+              1.0,
+              0.0
+            ],
+            "largest": 1.0,
+            "largest_axis": "X"
+          },
+          "size_m": [
+            0.01,
+            0.01,
+            0.0
+          ],
+          "heuristic": {
+            "hint": null,
+            "typical_size_m": null,
+            "candidates": [
+              {
+                "units": "m",
+                "meters_per_unit": 1.0,
+                "largest_size_m": 1.0,
+                "score": 0.0
+              },
+              {
+                "units": "cm",
+                "meters_per_unit": 0.01,
+                "largest_size_m": 0.01,
+                "score": 2.0
+              },
+              {
+                "units": "mm",
+                "meters_per_unit": 0.001,
+                "largest_size_m": 0.001,
+                "score": 3.0
+              }
+            ],
+            "suggested_units": "m",
+            "suggested_meters_per_unit": 1.0,
+            "confidence": "low",
+            "reason": "The asset is 1 units across (largest axis X). With no known object word, sizes near 1 m are preferred: metres gives 1 m. Pass name_hint (e.g. 'chair') for a better guess."
+          },
+          "metadata_matches_size": true,
+          "suggested_meters_per_unit": 0.01,
+          "suggested_units": "centimetres (0.01)",
+          "confidence": "high",
+          "warnings": [],
+          "notes": [
+            "bbox is in the file's own units (centimetres (0.01)); size_m converts with metersPerUnit.",
+            "Read-only: nothing was changed or saved."
+          ]
+        },
+        "wrap": {
+          "ok": true,
+          "dry_run": false,
+          "wrapper_path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle_20261023_011103_241ffd\\triangle_20261023_011103_241ffd_wrapped.usda",
+          "converted_usd": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\assets\\triangle_20261023_011103_241ffd\\triangle_20261023_011103_241ffd.usd",
+          "prim_path": "/triangle_20261023_011103_241ffd",
+          "reference": "./triangle_20261023_011103_241ffd.usd",
+          "reference_is_relative": true,
+          "source": {
+            "meters_per_unit": 0.01,
+            "units": "centimetres (0.01)",
+            "up_axis": "Y"
+          },
+          "target": {
+            "meters_per_unit": 1.0,
+            "units": "metres (1)",
+            "up_axis": "Z"
+          },
+          "scale": 0.01,
+          "rotate_x": 90.0,
+          "explanation": "source is centimetres (0.01), project is metres (1) -> scale 0.01; source is Y-up, project is Z-up -> rotateX +90 (the source's up axis Y becomes Z).",
+          "xform_op_order": [
+            "xformOp:rotateX:unitsResolve",
+            "xformOp:scale:unitsResolve",
+            "xformOp:translate",
+            "xformOp:orient",
+            "xformOp:scale"
+          ],
+          "kept_source_xform_ops": [
+            "xformOp:translate",
+            "xformOp:orient",
+            "xformOp:scale"
+          ],
+          "expected_bbox": {
+            "min": [
+              0.0,
+              -2.220446049250313e-18,
+              0.0
+            ],
+            "max": [
+              0.01,
+              0.0,
+              0.010000000000000002
+            ],
+            "size": [
+              0.01,
+              2.220446049250313e-18,
+              0.010000000000000002
+            ],
+            "largest": 0.010000000000000002,
+            "largest_axis": "Z"
+          },
+          "warnings": [],
+          "written": true,
+          "replaced_existing": false,
+          "verify": {
+            "ok": true,
+            "problems": [],
+            "composed_bbox": {
+              "min": [
+                0.0,
+                -2.2204459996194763e-18,
+                0.0
+              ],
+              "max": [
+                0.009999999776482582,
+                0.0,
+                0.009999999776482584
+              ],
+              "size": [
+                0.009999999776482582,
+                2.2204459996194763e-18,
+                0.009999999776482584
+              ],
+              "largest": 0.009999999776482584,
+              "largest_axis": "Z"
+            },
+            "composed_size_m": [
+              0.009999999776482582,
+              2.2204459996194763e-18,
+              0.009999999776482584
+            ]
+          }
+        },
+        "health": {
+          "ok": true,
+          "healthy": true,
+          "score": 84,
+          "grade": "B",
+          "summary": "This asset scores 84/100 (grade B). It has 3 prims, 1 meshes with 1 faces, 0 materials and 0 textures, in 1 m units, Z-up. Worth fixing: unit or up-axis mismatch between files; every visible mesh has a material. Start here: Add a corrective transform on the prim that references the asset: scale = suggested_scale (e.g. 0.001 for mm into m), rotateX = 90 for Y-up into Z-up.",
+          "problems": [
+            {
+              "id": "units_mismatch",
+              "title": "Unit or up-axis mismatch between files",
+              "status": "warn"
+            },
+            {
+              "id": "material_bindings",
+              "title": "Every visible mesh has a material",
+              "status": "warn"
+            }
+          ]
+        },
+        "finished": 1792710663.8854284,
+        "how_to_place": {
+          "layer": "layers/layout.usda",
+          "layer_exists": true,
+          "prim_path": "/World/triangle_20261023_011103_241ffd",
+          "arc": "payload",
+          "asset_path": "../assets/triangle_20261023_011103_241ffd/triangle_20261023_011103_241ffd_wrapped.usda",
+          "instanceable": false,
+          "explanation": "Reference the WRAPPER (not the raw converted file) from layers/layout.usda at /World/triangle_20261023_011103_241ffd; the wrapper already matches the project's units and up axis, so no extra scale is needed in the layout. A payload instead of a reference lets you unload this heavy asset.",
+          "python": "from pxr import Sdf, Usd\nstage = Usd.Stage.Open(r\"C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda\")\nlayout = Sdf.Layer.FindOrOpen(r\"C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\layers\\layout.usda\")\nstage.SetEditTarget(Usd.EditTarget(layout))\nprim = stage.DefinePrim(\"/World/triangle_20261023_011103_241ffd\", \"Xform\")\nprim.GetPayloads().AddPayload(\"../assets/triangle_20261023_011103_241ffd/triangle_20261023_011103_241ffd_wrapped.usda\")\nlayout.Save()"
+        },
+        "message": "Converted and wrapped. source is centimetres (0.01), project is metres (1) -> scale 0.01; source is Y-up, project is Z-up -> rotateX +90 (the source's up axis Y becomes Z). Next: reference ../assets/triangle_20261023_011103_241ffd/triangle_20261023_011103_241ffd_wrapped.usda at /World/triangle_20261023_011103_241ffd in layers/layout.usda."
+      }
+    },
+    {
+      "name": "proprietary_cad_conversion",
+      "status": "blocked",
+      "evidence": "No licensed CAD fixture supplied; OBJ conversion is a separate check."
+    },
+    {
+      "name": "robot_motion",
+      "status": "pass",
+      "evidence": {
+        "preview": {
+          "action": "live_move",
+          "robot_root": "/World/MCPValidation/Robot/Fixed",
+          "dry_run": true,
+          "applied": false,
+          "ok": true,
+          "api": "isaacsim.core.experimental.prims.Articulation",
+          "timeline": "playing",
+          "plan": [
+            {
+              "joint": "Hinge",
+              "index": 0,
+              "unit": "degrees",
+              "requested": 25.0,
+              "target": 25.0,
+              "clamped": false,
+              "current": 0.0,
+              "physx_value": 0.436332313,
+              "physx_unit": "radians"
+            }
+          ],
+          "warnings": [],
+          "next_step": "Dry run: nothing was sent to PhysX. Call again with dry_run=False to move the robot."
+        },
+        "command": {
+          "action": "live_move",
+          "robot_root": "/World/MCPValidation/Robot/Fixed",
+          "dry_run": false,
+          "applied": true,
+          "ok": true,
+          "api": "isaacsim.core.experimental.prims.Articulation",
+          "timeline": "playing",
+          "plan": [
+            {
+              "joint": "Hinge",
+              "index": 0,
+              "unit": "degrees",
+              "requested": 25.0,
+              "target": 25.0,
+              "clamped": false,
+              "current": 0.0,
+              "physx_value": 0.436332313,
+              "physx_unit": "radians"
+            }
+          ],
+          "warnings": [],
+          "note": "Sent to PhysX (simulation state, not USD): the joints move toward these targets over the next physics steps. Stop resets the robot; use set_drive_targets to keep a pose in the scene."
+        },
+        "before": {
+          "ok": true,
+          "action": "live_joint_state",
+          "read_only": true,
+          "robot_root": "/World/MCPValidation/Robot/Fixed",
+          "api": "isaacsim.core.experimental.prims.Articulation",
+          "timeline": "playing",
+          "dof_count": 1,
+          "joints": [
+            {
+              "name": "Hinge",
+              "kind": "revolute",
+              "unit": "degrees",
+              "position": 0.0,
+              "velocity": 0.0,
+              "velocity_unit": "degrees/second",
+              "effort": 0.0,
+              "effort_unit": "N*m",
+              "lower": -90.000003,
+              "upper": 90.000003
+            }
+          ],
+          "notes": [
+            "Read from PhysX (the running simulation), not from USD; nothing was changed."
+          ]
+        },
+        "after": {
+          "ok": true,
+          "action": "live_joint_state",
+          "read_only": true,
+          "robot_root": "/World/MCPValidation/Robot/Fixed",
+          "api": "isaacsim.core.experimental.prims.Articulation",
+          "timeline": "playing",
+          "dof_count": 1,
+          "joints": [
+            {
+              "name": "Hinge",
+              "kind": "revolute",
+              "unit": "degrees",
+              "position": 24.763578,
+              "velocity": 0.0,
+              "velocity_unit": "degrees/second",
+              "effort": 0.0,
+              "effort_unit": "N*m",
+              "lower": -90.000003,
+              "upper": 90.000003
+            }
+          ],
+          "notes": [
+            "Read from PhysX (the running simulation), not from USD; nothing was changed."
+          ]
+        }
+      }
+    },
+    {
+      "name": "camera_sensor_reading",
+      "status": "pass",
+      "evidence": {
+        "ok": true,
+        "kind": "camera",
+        "prim_path": "/World/Cameras/Overview",
+        "playing": true,
+        "resolution": [
+          64,
+          64
+        ],
+        "rgb": {
+          "shape": [
+            64,
+            64,
+            3
+          ],
+          "dtype": "uint8",
+          "min": 18.0,
+          "max": 236.0,
+          "mean": 228.113525391
+        },
+        "depth": {
+          "shape": [
+            64,
+            64,
+            1
+          ],
+          "dtype": "float32",
+          "non_finite": 1912,
+          "min": 12.70259285,
+          "max": 44.429203033,
+          "mean": 21.65625
+        },
+        "ready": true,
+        "api": "isaacsim.sensors.experimental.rtx CameraSensor(RtxCamera(path)) annotators rgb + distance_to_image_plane"
+      }
+    },
+    {
+      "name": "viewport_capture",
+      "status": "pass",
+      "evidence": {
+        "ok": true,
+        "path": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\capture_20261023_011103_241ffd\\viewport_20261023_011107_291832.png",
+        "ready": true,
+        "size": 95132,
+        "capture_done": true
+      }
+    },
+    {
+      "name": "replicator_capture",
+      "status": "fail",
+      "evidence": {
+        "ok": false,
+        "error": "Another Replicator run is active",
+        "written": false
+      }
+    },
+    {
+      "name": "ros2_readiness",
+      "status": "observed",
+      "evidence": {
+        "ok": true,
+        "ready": {
+          "isaac_side": true,
+          "ros_side": false,
+          "bridge_enabled_at_startup": false
+        },
+        "ros_cli_found": false,
+        "ros_cli_path": null,
+        "ros_cli_probe": null,
+        "pixi_found": false,
+        "ros_distro": {
+          "set": true,
+          "value": "jazzy"
+        },
+        "rmw_implementation": {
+          "set": true,
+          "value": "rmw_zenoh_cpp"
+        },
+        "ros_domain_id": {
+          "set": false,
+          "value": null,
+          "effective": 0,
+          "valid": true
+        },
+        "ros_localhost_only": {
+          "set": false,
+          "value": null
+        },
+        "ros_automatic_discovery_range": {
+          "set": false,
+          "value": null
+        },
+        "ros_version": {
+          "set": false,
+          "value": null
+        },
+        "ament_prefix_path": {
+          "set": true,
+          "entries": 1
+        },
+        "python": {
+          "router": "3.12",
+          "isaac_sim": "3.12",
+          "ros_python_version_env": null,
+          "note": "Isaac Sim's Python is 3.12: custom ROS message packages for Isaac's rclpy must be built for Python 3.12 (Jazzy Pixi on Windows uses its own Python environment)."
+        },
+        "isaac": {
+          "root": "C:/Users/krngr/Omniverse/isaacsim-6.1.0",
+          "found": true,
+          "version_file": "6.1.0-rc.26+release.49347.2d230af4.gl",
+          "extensions": {
+            "isaacsim.ros2.bridge": {
+              "present": true,
+              "version": "5.1.4"
+            },
+            "isaacsim.ros2.core": {
+              "present": true,
+              "version": "1.11.0"
+            },
+            "isaacsim.ros2.nodes": {
+              "present": true,
+              "version": "1.22.7"
+            },
+            "isaacsim.ros2.ui": {
+              "present": true,
+              "version": "1.9.2"
+            },
+            "isaacsim.ros2.examples": {
+              "present": true,
+              "version": "1.2.9"
+            },
+            "isaacsim.ros2.control": {
+              "present": true,
+              "version": "0.1.6"
+            },
+            "isaacsim.ros2.sim_control": {
+              "present": true,
+              "version": "1.6.8"
+            },
+            "isaacsim.ros2.tf_viewer": {
+              "present": true,
+              "version": "2.3.8"
+            },
+            "isaacsim.ros2.urdf": {
+              "present": true,
+              "version": "2.3.9"
+            }
+          },
+          "bridge_present": true,
+          "bundled_distros": [
+            "humble",
+            "jazzy"
+          ],
+          "bundled_rmw": {
+            "humble": [
+              "rmw_cyclonedds_cpp",
+              "rmw_fastrtps_cpp",
+              "rmw_zenoh_cpp"
+            ],
+            "jazzy": [
+              "rmw_cyclonedds_cpp",
+              "rmw_fastrtps_cpp",
+              "rmw_zenoh_cpp"
+            ]
+          },
+          "zenoh_router_bundled": false,
+          "setup_ros_env": {
+            "present": true,
+            "default_ros_distro": "jazzy",
+            "default_rmw": "rmw_zenoh_cpp"
+          },
+          "python": "3.12"
+        },
+        "kit_files": [
+          {
+            "file": "C:/Users/krngr/Omniverse/isaacsim-6.1.0/apps/isaacsim.exp.base.zero_delay.kit",
+            "startup_ros_bridge_extension": {},
+            "bridge_dependency_sections": [],
+            "bridge_settings": {
+              "publish_multithreading_disabled": "true",
+              "publish_with_queue_thread": "false"
+            },
+            "enables_bridge_on_windows": false
+          },
+          {
+            "file": "C:/Users/krngr/Omniverse/isaacsim-6.1.0/apps/isaacsim.exp.full.kit",
+            "startup_ros_bridge_extension": {
+              "windows-x86_64": "",
+              "linux-x86_64": "isaacsim.ros2.bridge",
+              "linux-aarch64": "isaacsim.ros2.bridge"
+            },
+            "bridge_dependency_sections": [],
+            "bridge_settings": {
+              "ros_distro": "\"system_default\""
+            },
+            "enables_bridge_on_windows": false
+          },
+          {
+            "file": "C:/Users/krngr/Omniverse/isaacsim-6.1.0/apps/isaacsim.exp.full.newton.kit",
+            "startup_ros_bridge_extension": {
+              "windows-x86_64": "",
+              "linux-x86_64": "isaacsim.ros2.bridge",
+              "linux-aarch64": "isaacsim.ros2.bridge"
+            },
+            "bridge_dependency_sections": [],
+            "bridge_settings": {
+              "ros_distro": "\"system_default\""
+            },
+            "enables_bridge_on_windows": false
+          }
+        ],
+        "autoload": {
+          "config_found": true,
+          "path": "C:/Users/krngr/AppData/Local/ov/data/Kit/Isaac-Sim Full/6.1/user.config.json",
+          "key": "/persistent/app/exts/enabled",
+          "bridge_autoload": false,
+          "ros_autoload_entries": []
+        },
+        "user_launcher": {
+          "found": true,
+          "path": "C:/Users/krngr/Omniverse/start-isaacsim.ps1",
+          "uses_isaac_sim_bat": true,
+          "passes_no_ros_env": false,
+          "enables_bridge": false
+        },
+        "enabled_in": [],
+        "isaac_will_use": {
+          "launcher": "isaac-sim.bat (via start-isaacsim.ps1)",
+          "ros_distro": "jazzy",
+          "rmw_implementation": "rmw_zenoh_cpp",
+          "uses_bundled_ros_libraries": false,
+          "domain_id": 0,
+          "note": "What Isaac Sim will most likely use when started from this environment. ROS_DISTRO/RMW set in this shell would override the launcher defaults."
+        },
+        "needs": [
+          {
+            "severity": "action",
+            "code": "bridge_not_enabled",
+            "what": "The ROS 2 Bridge is installed but not enabled at startup on Windows (the full .kit leaves it off).",
+            "how": "In Isaac Sim: Window > Extensions > search 'ROS 2 Bridge' > toggle on (tick AUTOLOAD to keep it), or launch with --enable isaacsim.ros2.bridge. Needs your approval: it changes how Isaac starts."
+          },
+          {
+            "severity": "action",
+            "code": "ros_cli_missing",
+            "what": "No 'ros2' command on PATH, so you cannot list or echo topics from this shell yet.",
+            "how": "Isaac Sim publishes without it. To verify topics on Windows, NVIDIA's route is a ROS 2 Jazzy Pixi workspace (skills/isaac-sim-ros-workspaces: setup_pixi_workspace.ps1; needs MSVC Build Tools 2022). This is a large install - only with your approval. Then run commands inside 'pixi shell'."
+          },
+          {
+            "severity": "info",
+            "code": "zenoh_router",
+            "what": "Isaac Sim will use rmw_zenoh_cpp (launcher default). ROS 2 tools must use the same RMW, and Zenoh needs a router running (none ships with Isaac Sim).",
+            "how": "In the ROS 2 shell: set RMW_IMPLEMENTATION=rmw_zenoh_cpp and run 'ros2 run rmw_zenoh_cpp rmw_zenohd' first - or set RMW_IMPLEMENTATION=rmw_fastrtps_cpp in BOTH shells before launching."
+          }
+        ],
+        "story": "Isaac Sim's ROS 2 Bridge is installed but not switched on at startup yet. Isaac will most likely use ROS 2 jazzy with rmw_zenoh_cpp on domain 0. There is no ros2 command on this PC yet, so topics can be published by Isaac but not checked from a terminal.",
+        "privacy": "Only ROS_DISTRO, RMW_IMPLEMENTATION, ROS_DOMAIN_ID and similar short, validated values are shown; path variables are counted, and secret-looking values are redacted."
+      }
+    },
+    {
+      "name": "ros2_connectivity",
+      "status": "blocked",
+      "evidence": "A local ROS publisher/subscriber fixture has not been configured; readiness is not proof of delivery."
+    }
+  ],
+  "project": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation",
+  "scene_files_unchanged": true,
+  "finished": 1792710667.658195,
+  "passed": false
+}

@@ -27,7 +27,7 @@ the right upstream MCP:
 
 ## Handoff integration (2026-10-22)
 
-The complete surface has **228 tools** and **9 workflow prompts**. The default `starter` profile lists **21**
+The complete surface has **249 tools** and **9 workflow prompts**. The default `starter` profile lists **21**
 tools; discover the rest with `router_list_tools(pattern="robot_*", include_schema=True)`, call them through
 `router_call_tool`, or expose a group with `router_enable_tools(names="robotics")`.
 Set `OMNIVERSE_MCP_PROFILE=all` before an approved router restart to advertise everything.
@@ -41,8 +41,9 @@ operations run without Kit. Runtime-only tools report missing Kit capabilities r
 **Scene edit tools preview by default.** Only literal `dry_run=False` permits a write. Natural-language routes
 for the new tools always preview edits, even when their JSON contains false. Reading a saved `scene_file`
 cannot edit it. Pick-and-place code is generated as text and is never executed by its generation tool.
-Runtime robot motion, converter jobs and sensors still need verification in the running app after an approved
-bridge reload. Unit tests and standalone USD checks do not prove physical simulation or ROS connectivity.
+Direct MCP live checks on 2026-10-24 verified robot motion, OBJ conversion, camera readings, events,
+captures and two-frame RGB SDG. ROS connectivity and the other app integrations remain unverified.
+Unit tests and standalone USD checks alone do not prove physical simulation or ROS connectivity.
 
 ### Verification without starting apps
 
@@ -56,6 +57,16 @@ From the workspace root, using the existing matching Python and dependencies:
 The second command loads the installed USD 25.11 libraries into a separate Python process and runs the suite
 on temporary stages. It does not start Isaac, reload a bridge, or contact live MCP services. Tests also exercise
 fake bridge-reload scripts: their printed reload messages describe mocks, not the running apps.
+
+## Day 5 tools (2026-10-23)
+
+Added custom rubrics, safe render/capture jobs and comparison, Blender export plans and USD handoff checks,
+an inert extension starter, modern semantic labels with undo, Replicator capture jobs and a dependency-free
+PNG/NPY dataset checker. See [tool guide and limits](docs/DAY5_TOOLS.md).
+
+The new `mcp_day5_validation/` project was created through the running MCP, preview first; saved-file inspection
+passed and the active Isaac scene remained unchanged. Runtime robot, sensor, CAD, ROS and render checks have
+separate statuses and must not be inferred from offline test results. No merge to `main` is part of this work.
 
 ## Running
 

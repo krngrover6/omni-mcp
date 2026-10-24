@@ -1,0 +1,702 @@
+{
+  "phase": "project_creation_and_saved_file_inspection",
+  "passed": true,
+  "active_scene_unchanged": true,
+  "calls": [
+    {
+      "tool": "scene_summary",
+      "arguments": {},
+      "is_error": false,
+      "result": {
+        "stage_name": "anon:00000319B00F0100:World0.usd",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 14,
+        "top_level_prims": []
+      }
+    },
+    {
+      "tool": "project_create",
+      "arguments": {
+        "name": "mcp_day5_validation",
+        "template": "warehouse",
+        "goal": "Validate Day 5 tools on a new independent warehouse project; preserve existing user scenes."
+      },
+      "is_error": false,
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "name": "mcp_day5_validation",
+        "template": "warehouse",
+        "title": "Warehouse study scene",
+        "app": "Isaac Sim or USD Composer",
+        "goal": "Validate Day 5 tools on a new independent warehouse project; preserve existing user scenes.",
+        "root": "C:\\Users\\krngr\\Omniverse",
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation",
+        "scene_entry": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda",
+        "settings": {
+          "units": "m",
+          "meters_per_unit": 1.0,
+          "up_axis": "Z",
+          "kilograms_per_unit": null,
+          "default_prim": "World"
+        },
+        "units_explained": "upAxis Z, metersPerUnit 1: 1 unit = 1 meter.",
+        "files": [
+          {
+            "path": "assets/",
+            "kind": "folder",
+            "summary": "Source assets (USD, textures). Record each asset's source and license in PROJECT_CONTEXT.md."
+          },
+          {
+            "path": "layers/",
+            "kind": "folder",
+            "summary": "The sublayers of root.usda, one per concern."
+          },
+          {
+            "path": "scenes/",
+            "kind": "folder",
+            "summary": "Extra entry scenes (shots, variations) that sublayer ../root.usda."
+          },
+          {
+            "path": "renders/",
+            "kind": "folder",
+            "summary": "Rendered images and synthetic data output (ignored by git)."
+          },
+          {
+            "path": "scripts/",
+            "kind": "folder",
+            "summary": "Python helpers for this project."
+          },
+          {
+            "path": "docs/",
+            "kind": "folder",
+            "summary": "Notes and explanations for this project."
+          },
+          {
+            "path": "root.usda",
+            "kind": "usd_root",
+            "summary": "Scene entry. upAxis Z, metersPerUnit 1: 1 unit = 1 meter. defaultPrim /World. Sublayers (strongest first): layers/layout.usda, layers/materials.usda, layers/lighting.usda."
+          },
+          {
+            "path": "layers/layout.usda",
+            "kind": "usd_layer",
+            "summary": "Floor, racks group, crate and camera: what is in the warehouse and where it sits. Authors: /World, /World/Cameras, /World/Cameras/Overview, /World/Environment, /World/Environment/Floor, /World/Racks, /World/Racks/Crate_01, /World/Racks/Crate_01/Geom."
+          },
+          {
+            "path": "layers/materials.usda",
+            "kind": "usd_layer",
+            "summary": "Material prims under /World/Looks and the material:binding relationships on geometry. Authors: /World/Environment/Floor, /World/Looks, /World/Looks/Cardboard, /World/Looks/Concrete, /World/Racks/Crate_01/Geom."
+          },
+          {
+            "path": "layers/lighting.usda",
+            "kind": "usd_layer",
+            "summary": "The sky (DomeLight) and sun (DistantLight) under /World/Lights. Authors: /World/Lights, /World/Lights/Sky, /World/Lights/Sun."
+          },
+          {
+            "path": "PROJECT_CONTEXT.md",
+            "kind": "markdown",
+            "summary": "Project record from NEW_PROJECT_CONTEXT_TEMPLATE.md: goal, entry, prims, layers, controls, lessons, next steps."
+          },
+          {
+            "path": "README.md",
+            "kind": "markdown",
+            "summary": "How to open the scene and the first steps."
+          },
+          {
+            "path": ".gitignore",
+            "kind": "gitignore",
+            "summary": "Keeps renders/, Replicator output, thumbnails and Python caches out of git."
+          },
+          {
+            "path": "docs/layer_stack.md",
+            "kind": "markdown",
+            "summary": "Why the layers are in this order (strongest first)."
+          },
+          {
+            "path": "assets/README.md",
+            "kind": "markdown",
+            "summary": "Where assets go and how to reference them with relative paths."
+          },
+          {
+            "path": "scenes/README.md",
+            "kind": "markdown",
+            "summary": "What the scenes/ folder is for."
+          },
+          {
+            "path": "renders/.gitkeep",
+            "kind": "placeholder",
+            "summary": "Keeps the empty renders/ folder in git."
+          },
+          {
+            "path": "scripts/inspect_scene.py",
+            "kind": "python",
+            "summary": "Read-only beginner script: prints units, the layer stack and which layer defines each prim."
+          }
+        ],
+        "layer_stack": {
+          "order": [
+            "root.usda",
+            "layers/layout.usda",
+            "layers/materials.usda",
+            "layers/lighting.usda"
+          ],
+          "layers": [
+            {
+              "file": "root.usda",
+              "strength": 0,
+              "owns": "Stage metadata (upAxis, metersPerUnit, defaultPrim) and the list of sublayers. No prims.",
+              "why": "Strongest file. Composer saves edits here unless you pick another authoring layer, so it starts empty: anything that lands here by accident is easy to spot and move."
+            },
+            {
+              "file": "layers/layout.usda",
+              "strength": 1,
+              "owns": "Floor, racks group, crate and camera: what is in the warehouse and where it sits.",
+              "why": "Strongest of the department layers: placement is what you change most, and if another layer ever authors a transform by mistake, layout still wins."
+            },
+            {
+              "file": "layers/materials.usda",
+              "strength": 2,
+              "owns": "Material prims under /World/Looks and the material:binding relationships on geometry.",
+              "why": "Looks only add bindings and shaders; they should never move anything, so they sit below layout."
+            },
+            {
+              "file": "layers/lighting.usda",
+              "strength": 3,
+              "owns": "The sky (DomeLight) and sun (DistantLight) under /World/Lights.",
+              "why": "Weakest: lights own their own prims and rarely conflict. Keeping them separate lets you swap a whole lighting setup by replacing one file."
+            }
+          ],
+          "explanation": "Strongest to weakest: layout, materials, lighting. Each layer owns different prims, so order only matters when two layers author the same property. Then the stronger one wins without deleting the weaker opinion. Putting layout on top keeps placement in charge. The root layer lists its sublayers strongest first; the session layer (unsaved, in memory) sits above all of them."
+        },
+        "starter_prims": [
+          {
+            "path": "/World",
+            "layer": "layers/layout.usda",
+            "specifier": "def",
+            "type": "Xform",
+            "authors": "def Xform"
+          },
+          {
+            "path": "/World/Environment",
+            "layer": "layers/layout.usda",
+            "specifier": "def",
+            "type": "Xform",
+            "authors": "def Xform"
+          },
+          {
+            "path": "/World/Environment/Floor",
+            "layer": "layers/layout.usda",
+            "specifier": "def",
+            "type": "Mesh",
+            "authors": "def Mesh"
+          },
+          {
+            "path": "/World/Racks",
+            "layer": "layers/layout.usda",
+            "specifier": "def",
+            "type": "Xform",
+            "authors": "def Xform"
+          },
+          {
+            "path": "/World/Racks/Crate_01",
+            "layer": "layers/layout.usda",
+            "specifier": "def",
+            "type": "Xform",
+            "authors": "def Xform"
+          },
+          {
+            "path": "/World/Racks/Crate_01/Geom",
+            "layer": "layers/layout.usda",
+            "specifier": "def",
+            "type": "Cube",
+            "authors": "def Cube"
+          },
+          {
+            "path": "/World/Cameras",
+            "layer": "layers/layout.usda",
+            "specifier": "def",
+            "type": "Xform",
+            "authors": "def Xform"
+          },
+          {
+            "path": "/World/Cameras/Overview",
+            "layer": "layers/layout.usda",
+            "specifier": "def",
+            "type": "Camera",
+            "authors": "def Camera"
+          },
+          {
+            "path": "/World/Looks",
+            "layer": "layers/materials.usda",
+            "specifier": "def",
+            "type": "Scope",
+            "authors": "def Scope"
+          },
+          {
+            "path": "/World/Looks/Concrete",
+            "layer": "layers/materials.usda",
+            "specifier": "def",
+            "type": "Material",
+            "authors": "def Material"
+          },
+          {
+            "path": "/World/Looks/Cardboard",
+            "layer": "layers/materials.usda",
+            "specifier": "def",
+            "type": "Material",
+            "authors": "def Material"
+          },
+          {
+            "path": "/World/Environment/Floor",
+            "layer": "layers/materials.usda",
+            "specifier": "over",
+            "type": "",
+            "authors": "over; binds /World/Looks/Concrete"
+          },
+          {
+            "path": "/World/Racks/Crate_01/Geom",
+            "layer": "layers/materials.usda",
+            "specifier": "over",
+            "type": "",
+            "authors": "over; binds /World/Looks/Cardboard"
+          },
+          {
+            "path": "/World/Lights",
+            "layer": "layers/lighting.usda",
+            "specifier": "def",
+            "type": "Xform",
+            "authors": "def Xform"
+          },
+          {
+            "path": "/World/Lights/Sky",
+            "layer": "layers/lighting.usda",
+            "specifier": "def",
+            "type": "DomeLight",
+            "authors": "def DomeLight"
+          },
+          {
+            "path": "/World/Lights/Sun",
+            "layer": "layers/lighting.usda",
+            "specifier": "def",
+            "type": "DistantLight",
+            "authors": "def DistantLight"
+          }
+        ],
+        "warnings": [],
+        "message": "Dry run: nothing was written. Call create_project(..., dry_run=False) to create it.",
+        "action": "create_project"
+      }
+    },
+    {
+      "tool": "project_create",
+      "arguments": {
+        "name": "mcp_day5_validation",
+        "template": "warehouse",
+        "goal": "Validate Day 5 tools on a new independent warehouse project; preserve existing user scenes.",
+        "dry_run": false
+      },
+      "is_error": false,
+      "result": {
+        "dry_run": false,
+        "name": "mcp_day5_validation",
+        "template": "warehouse",
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation",
+        "ok": true,
+        "scene_entry": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda",
+        "settings": {
+          "units": "m",
+          "meters_per_unit": 1.0,
+          "up_axis": "Z",
+          "kilograms_per_unit": null,
+          "default_prim": "World"
+        },
+        "created": [
+          "assets/",
+          "layers/",
+          "scenes/",
+          "renders/",
+          "scripts/",
+          "docs/",
+          ".gitignore",
+          "PROJECT_CONTEXT.md",
+          "README.md",
+          "assets/README.md",
+          "docs/layer_stack.md",
+          "layers/layout.usda",
+          "layers/lighting.usda",
+          "layers/materials.usda",
+          "renders/.gitkeep",
+          "root.usda",
+          "scenes/README.md",
+          "scripts/inspect_scene.py"
+        ],
+        "layer_stack": {
+          "order": [
+            "root.usda",
+            "layers/layout.usda",
+            "layers/materials.usda",
+            "layers/lighting.usda"
+          ],
+          "layers": [
+            {
+              "file": "root.usda",
+              "strength": 0,
+              "owns": "Stage metadata (upAxis, metersPerUnit, defaultPrim) and the list of sublayers. No prims.",
+              "why": "Strongest file. Composer saves edits here unless you pick another authoring layer, so it starts empty: anything that lands here by accident is easy to spot and move."
+            },
+            {
+              "file": "layers/layout.usda",
+              "strength": 1,
+              "owns": "Floor, racks group, crate and camera: what is in the warehouse and where it sits.",
+              "why": "Strongest of the department layers: placement is what you change most, and if another layer ever authors a transform by mistake, layout still wins."
+            },
+            {
+              "file": "layers/materials.usda",
+              "strength": 2,
+              "owns": "Material prims under /World/Looks and the material:binding relationships on geometry.",
+              "why": "Looks only add bindings and shaders; they should never move anything, so they sit below layout."
+            },
+            {
+              "file": "layers/lighting.usda",
+              "strength": 3,
+              "owns": "The sky (DomeLight) and sun (DistantLight) under /World/Lights.",
+              "why": "Weakest: lights own their own prims and rarely conflict. Keeping them separate lets you swap a whole lighting setup by replacing one file."
+            }
+          ],
+          "explanation": "Strongest to weakest: layout, materials, lighting. Each layer owns different prims, so order only matters when two layers author the same property. Then the stronger one wins without deleting the weaker opinion. Putting layout on top keeps placement in charge. The root layer lists its sublayers strongest first; the session layer (unsaved, in memory) sits above all of them."
+        },
+        "validation": {
+          "ok": true,
+          "usd_version": "0.26.8",
+          "checks": [
+            {
+              "check": "opens",
+              "ok": true,
+              "detail": "Usd.Stage.Open opened root.usda"
+            },
+            {
+              "check": "default_prim",
+              "ok": true,
+              "detail": "defaultPrim is /World (expected /World)"
+            },
+            {
+              "check": "up_axis",
+              "ok": true,
+              "detail": "upAxis is Z (expected Z)"
+            },
+            {
+              "check": "meters_per_unit",
+              "ok": true,
+              "detail": "metersPerUnit is 1 (expected 1)"
+            },
+            {
+              "check": "layer_stack",
+              "ok": true,
+              "detail": "layer stack (strongest first): root.usda, layout.usda, materials.usda, lighting.usda"
+            },
+            {
+              "check": "composition_errors",
+              "ok": true,
+              "detail": "no composition errors"
+            },
+            {
+              "check": "starter_prims",
+              "ok": true,
+              "detail": "every starter prim is defined"
+            },
+            {
+              "check": "usd_validate",
+              "ok": true,
+              "detail": "exam lint: 0 error(s), 0 warning(s)"
+            }
+          ],
+          "lint": {
+            "counts": {
+              "error": 0,
+              "warning": 0,
+              "info": 0
+            },
+            "codes": []
+          }
+        },
+        "open_in": "Composer: File > Open C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda",
+        "open_in_isaac": "Isaac Sim: File > Open C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda",
+        "next_steps": [
+          "Open the scene in Isaac Sim: File > Open > C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda.",
+          "Open the Layer window (the Layer tab next to Stage): root.usda lists layers/layout.usda, layers/materials.usda, layers/lighting.usda, strongest first (layers/layout.usda is the strongest sublayer).",
+          "Before editing, right-click layers/layout.usda in the Layer window > Set Authoring Layer. Otherwise your edits are saved into root.usda, which is meant to stay empty.",
+          "Reference a rack asset under /World/Racks (Composer: drag a USD file from the Content browser onto /World/Racks with layout.usda as the authoring layer).",
+          "Look through the Overview camera: viewport camera menu > Cameras > Overview.",
+          "Check the scene from Python (read-only): python scripts/inspect_scene.py with a Python that has pxr, or open it in the Script Editor (Window > Script Editor) and press Run.",
+          "Fill in PROJECT_CONTEXT.md as you go: assets and licenses, decisions, lessons and next steps."
+        ],
+        "warnings": [],
+        "action": "create_project"
+      }
+    },
+    {
+      "tool": "scene_stage_info",
+      "arguments": {
+        "scene_file": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda"
+      },
+      "is_error": false,
+      "result": {
+        "ok": true,
+        "root_layer": {
+          "identifier": "anon:00000319B00F0100:World0.usd",
+          "display_name": "World0.usd",
+          "real_path": null,
+          "anonymous": true,
+          "dirty": true,
+          "muted": false
+        },
+        "session_layer": {
+          "present": true,
+          "identifier": "anon:00000319B00F0600:World0-session.usda",
+          "empty": false,
+          "dirty": true
+        },
+        "edit_target": {
+          "layer": "anon:00000319B00F0100:World0.usd",
+          "is_root_layer": true,
+          "is_session_layer": false
+        },
+        "layer_stack": [
+          {
+            "identifier": "anon:00000319B00F0600:World0-session.usda",
+            "display_name": "World0-session.usda",
+            "real_path": null,
+            "anonymous": true,
+            "dirty": true,
+            "muted": false,
+            "role": "session",
+            "authored_path": null,
+            "depth": 0,
+            "parent": null,
+            "offset": {
+              "offset": 0.0,
+              "scale": 1.0
+            },
+            "missing": false,
+            "in_layer_stack": true
+          },
+          {
+            "identifier": "anon:00000319B00F0100:World0.usd",
+            "display_name": "World0.usd",
+            "real_path": null,
+            "anonymous": true,
+            "dirty": true,
+            "muted": false,
+            "role": "root",
+            "authored_path": null,
+            "depth": 0,
+            "parent": null,
+            "offset": {
+              "offset": 0.0,
+              "scale": 1.0
+            },
+            "missing": false,
+            "in_layer_stack": true
+          }
+        ],
+        "layer_stack_truncated": false,
+        "muted_layers": [],
+        "used_layers": {
+          "count": 2,
+          "identifiers": [
+            "anon:00000319B00F0100:World0.usd",
+            "anon:00000319B00F0600:World0-session.usda"
+          ],
+          "truncated": false
+        },
+        "default_prim": "/World",
+        "default_prim_authored": "World",
+        "up_axis": "Z",
+        "up_axis_authored": true,
+        "meters_per_unit": 1.0,
+        "meters_per_unit_authored": true,
+        "time_codes_per_second": 60.0,
+        "frames_per_second": 24.0,
+        "start_time_code": 0.0,
+        "end_time_code": 1000000.0,
+        "has_authored_time_code_range": true,
+        "prims": {
+          "total": 14,
+          "traversed_by_default": 14,
+          "inactive": 0,
+          "unloaded": 0,
+          "abstract": 0,
+          "instances": 0,
+          "prototypes": 0,
+          "by_type": {
+            "(typeless)": 4,
+            "Camera": 4,
+            "Xform": 2,
+            "DistantLight": 1,
+            "RenderProduct": 1,
+            "RenderSettings": 1,
+            "RenderVar": 1
+          },
+          "other_types": 0,
+          "by_specifier": {
+            "def": 14
+          },
+          "truncated": false,
+          "truncated_by_time": false
+        },
+        "model_hierarchy": {
+          "by_kind": {
+            "component": 4
+          },
+          "models": [
+            {
+              "path": "/OmniverseKit_Persp",
+              "kind": "component"
+            },
+            {
+              "path": "/OmniverseKit_Front",
+              "kind": "component"
+            },
+            {
+              "path": "/OmniverseKit_Top",
+              "kind": "component"
+            },
+            {
+              "path": "/OmniverseKit_Right",
+              "kind": "component"
+            }
+          ],
+          "models_truncated": false,
+          "broken_model_kinds": [],
+          "note": "broken_model_kinds lists prims with a model kind whose ancestors are not all group/assembly, so IsModel() is False.",
+          "truncated_by_time": false
+        },
+        "composition_errors": [],
+        "truncated_by_time": false,
+        "time_budget": {
+          "truncated_by_time": false,
+          "elapsed_ms": 1.6,
+          "budget_ms": 3000.0,
+          "processed": 14,
+          "note": "Finished within the time budget.",
+          "layers_walked": 2,
+          "requested_budget_ms": 3000.0,
+          "limited_by_queue_wait": false,
+          "queue_wait_ms": 16.0,
+          "enforced": true
+        },
+        "stage_identifier": "anon:00000319B00F0100:World0.usd",
+        "root_layer_anonymous": true,
+        "has_unsaved_changes": true,
+        "unsaved_layers": [
+          {
+            "identifier": "anon:00000319B00F0100:World0.usd",
+            "anonymous": true,
+            "is_root_layer": true
+          }
+        ],
+        "unsaved_layer_count": 1,
+        "session_layer_has_edits": true,
+        "mode": "live",
+        "query": "stage_info",
+        "args": {},
+        "elapsed_ms": 1,
+        "note": "Read from the LIVE stage in Kit, including unsaved edits; nothing was changed, selected or saved.",
+        "budget_ms": 3000.0,
+        "mode_requested": "auto"
+      }
+    },
+    {
+      "tool": "usd_validate",
+      "arguments": {
+        "scene_file": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\root.usda",
+        "profile": "exam"
+      },
+      "is_error": false,
+      "result": {
+        "ok": true,
+        "profile": "exam",
+        "stage": "anon:00000319B00F0100:World0.usd",
+        "usd_version": "0.25.11",
+        "counts": {
+          "error": 0,
+          "warning": 0,
+          "info": 0
+        },
+        "total_issues": 0,
+        "returned": 0,
+        "truncated": false,
+        "issues": [],
+        "validators_run": [
+          "exam:stage_metadata",
+          "exam:asset_paths",
+          "exam:composition_errors",
+          "exam:model_hierarchy",
+          "exam:extent",
+          "exam:mesh_topology",
+          "exam:primvars",
+          "exam:material_bindings",
+          "exam:instancing",
+          "exam:layer_units",
+          "exam:time_samples",
+          "exam:visibility"
+        ],
+        "notes": [
+          "Read-only: nothing was changed, fixed or saved."
+        ],
+        "truncated_by_time": false,
+        "time_budget": {
+          "truncated_by_time": false,
+          "elapsed_ms": 4.4,
+          "budget_ms": 3000.0,
+          "processed": 14,
+          "note": "Finished within the time budget.",
+          "prims_checked": 14,
+          "specs_scanned": 19,
+          "stopped_early": [],
+          "not_run": [],
+          "requested_budget_ms": 3000.0,
+          "limited_by_queue_wait": false,
+          "queue_wait_ms": 16.0,
+          "enforced": true
+        },
+        "stage_identifier": "anon:00000319B00F0100:World0.usd",
+        "root_layer_anonymous": true,
+        "has_unsaved_changes": true,
+        "unsaved_layers": [
+          {
+            "identifier": "anon:00000319B00F0100:World0.usd",
+            "anonymous": true,
+            "is_root_layer": true
+          }
+        ],
+        "unsaved_layer_count": 1,
+        "session_layer_has_edits": true,
+        "mode": "live",
+        "query": "validate",
+        "args": {
+          "profile": "exam",
+          "max_issues": 100,
+          "max_prims": 20000
+        },
+        "elapsed_ms": 4,
+        "note": "Read from the LIVE stage in Kit, including unsaved edits; nothing was changed, selected or saved.",
+        "budget_ms": 3000.0,
+        "mode_requested": "auto"
+      }
+    },
+    {
+      "tool": "scene_summary",
+      "arguments": {},
+      "is_error": false,
+      "result": {
+        "stage_name": "anon:00000319B00F0100:World0.usd",
+        "root_path": "/World",
+        "selection": [],
+        "prim_count": 14,
+        "top_level_prims": []
+      }
+    }
+  ]
+}

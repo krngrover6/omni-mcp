@@ -1,0 +1,118 @@
+[
+  {
+    "tool": "scene_summary",
+    "result": {
+      "stage_name": "file:/C:/Users/krngr/Omniverse/mcp_day5_validation/root.usda",
+      "root_path": "/World",
+      "selection": [],
+      "prim_count": 40,
+      "top_level_prims": [
+        "/World/Lights",
+        "/World/Looks",
+        "/World/Environment",
+        "/World/Racks",
+        "/World/Cameras",
+        "/World/MCPProbeRobot_3d9e6d"
+      ]
+    }
+  },
+  {
+    "tool": "scene_delete",
+    "result": {
+      "ok": true,
+      "target": "scene",
+      "dry_run": true,
+      "changes": [
+        {
+          "action": "delete",
+          "path": "/World/MCPProbeRobot_3d9e6d",
+          "summary": "Delete prim at /World/MCPProbeRobot_3d9e6d",
+          "before": {
+            "path": "/World/MCPProbeRobot_3d9e6d",
+            "type_name": "Xform",
+            "parent": "/World",
+            "children": [
+              "/World/MCPProbeRobot_3d9e6d/Base",
+              "/World/MCPProbeRobot_3d9e6d/Link",
+              "/World/MCPProbeRobot_3d9e6d/Fixed",
+              "/World/MCPProbeRobot_3d9e6d/Hinge"
+            ],
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "material": null
+          },
+          "after": null
+        }
+      ],
+      "payload": {
+        "path": "/World/MCPProbeRobot_3d9e6d"
+      }
+    }
+  },
+  {
+    "tool": "scene_delete",
+    "result": {
+      "ok": true,
+      "target": "scene",
+      "dry_run": false,
+      "changes": [
+        {
+          "action": "delete",
+          "path": "/World/MCPProbeRobot_3d9e6d",
+          "summary": "Delete prim at /World/MCPProbeRobot_3d9e6d",
+          "before": {
+            "path": "/World/MCPProbeRobot_3d9e6d",
+            "type_name": "Xform",
+            "parent": "/World",
+            "children": [
+              "/World/MCPProbeRobot_3d9e6d/Base",
+              "/World/MCPProbeRobot_3d9e6d/Link",
+              "/World/MCPProbeRobot_3d9e6d/Fixed",
+              "/World/MCPProbeRobot_3d9e6d/Hinge"
+            ],
+            "translation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "material": null
+          },
+          "after": null
+        }
+      ],
+      "payload": {
+        "path": "/World/MCPProbeRobot_3d9e6d"
+      }
+    }
+  },
+  {
+    "tool": "scene_inspect",
+    "result": {
+      "ok": false,
+      "message": "Error executing tool scene_inspect: Prim does not exist: /World/MCPProbeRobot_3d9e6d"
+    }
+  }
+]

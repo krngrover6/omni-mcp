@@ -1,0 +1,94 @@
+{
+  "checks": [
+    {
+      "tool": "extension_create",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation",
+        "name": "mcp_verified_extension_20261024_225558"
+      },
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "written": false,
+        "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\mcp_verified_extension_20261024_225558",
+        "files": [
+          "config/extension.toml",
+          "study_extension/__init__.py",
+          "README.md"
+        ]
+      }
+    },
+    {
+      "tool": "extension_create",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation",
+        "name": "mcp_verified_extension_20261024_225558",
+        "dry_run": false
+      },
+      "result": {
+        "ok": true,
+        "dry_run": false,
+        "written": true,
+        "directory": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\mcp_verified_extension_20261024_225558",
+        "files": [
+          "config/extension.toml",
+          "study_extension/__init__.py",
+          "README.md"
+        ]
+      }
+    },
+    {
+      "tool": "blender_export_plan",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation",
+        "name": "mcp_blender_preview_20261024_225558"
+      },
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "written": false,
+        "executed": false,
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\mcp_blender_preview_20261024_225558",
+        "script": "# Run in Blender's Text Editor after reviewing the plan.\nfrom pathlib import Path\nimport bpy\n\nDRY_RUN = True\ndirectory = Path('C:\\\\Users\\\\krngr\\\\Omniverse\\\\mcp_day5_validation\\\\mcp_blender_preview_20261024_225558')\ndestination = directory / 'asset.usdc'\nif not bpy.context.selected_objects:\n    raise RuntimeError('Select the intended export objects first')\nif directory.exists():\n    raise RuntimeError('Refusing to overwrite an existing export directory')\noptions = dict(filepath=str(destination), selected_objects_only=True,\n               export_animation=False, export_materials=True,\n               generate_preview_surface=True, relative_paths=True,\n               overwrite_textures=False, root_prim_path='/Asset')\nproperties = bpy.ops.wm.usd_export.get_rna_type().properties.keys()\nif not all(key in properties for key in options):\n    raise RuntimeError('This Blender USD exporter lacks a required option; no export started')\nif 'export_textures_mode' in properties:\n    options['export_textures_mode'] = 'NEW'\nelif 'export_textures' in properties:\n    options['export_textures'] = True\nprint('USD export plan:', options)\nif DRY_RUN is False:\n    directory.mkdir()\n    result = bpy.ops.wm.usd_export(**options)\n    if 'FINISHED' not in result:\n        raise RuntimeError('USD export did not finish; inspect the new output directory')\n",
+        "next_step": "Review/run in Blender with DRY_RUN=True, then explicitly apply and inspect the exported USD."
+      }
+    },
+    {
+      "tool": "sdg_script",
+      "arguments": {
+        "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+        "name": "mcp_sdg_script_preview"
+      },
+      "result": {
+        "ok": true,
+        "dry_run": true,
+        "written": false,
+        "output_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders\\mcp_sdg_script_preview",
+        "config": {
+          "project_dir": "C:\\Users\\krngr\\Omniverse\\mcp_day5_validation\\renders",
+          "name": "mcp_sdg_script_preview",
+          "camera": "/World/Camera",
+          "frames": 3,
+          "width": 320,
+          "height": 240,
+          "seed": 42,
+          "annotations": [
+            "rgb"
+          ]
+        },
+        "prerequisites": [
+          "Isaac/Kit Replicator extension already enabled",
+          "Existing camera on the active stage",
+          "Semantic class labels for segmentation and bounding boxes",
+          "Use a dedicated test stage"
+        ],
+        "note": "Fixed seed controls Replicator RNG; GPU images are not guaranteed bit-identical. No domain randomization is added.",
+        "script": "from omniverse_scene_mcp.sdg import start_sdg, sdg_status\nDRY_RUN = True  # inspect the plan before changing this to False\nresult = start_sdg(**{'project_dir': 'C:\\\\Users\\\\krngr\\\\Omniverse\\\\mcp_day5_validation\\\\renders', 'name': 'mcp_sdg_script_preview', 'camera': '/World/Camera', 'frames': 3, 'width': 320, 'height': 240, 'seed': 42, 'annotations': ['rgb']}, dry_run=DRY_RUN)\nprint(result)\n# Poll sdg_status(result[\"job_id\"]) later; do not block the Kit main thread.\n",
+        "executed": false
+      }
+    }
+  ],
+  "extension_files_parse": true,
+  "blender_script_parses": true,
+  "sdg_script_parses": true
+}
