@@ -29,6 +29,26 @@ SAFETY_FOOTER = (
 # name -> {title, description, params: [(name, default, description)], steps: [str]}.
 # Steps are str.format templates over the params.
 PROMPTS: dict[str, dict[str, Any]] = {
+    "study_session": {
+        "title": "Study a teacher's class session",
+        "description": "Turn a class recording's subtitles into short lessons, then study them one at a time.",
+        "params": [
+            ("session", "3", "The class session number, e.g. 3."),
+            ("minutes", "15", "About how long each lesson should be (5-60)."),
+        ],
+        "steps": [
+            "Call class_transcripts and check that session {session} has a transcript; if not, show what was found.",
+            "Call class_session_plan(session={session}, minutes={minutes}) and show the lessons as a short list "
+            "(number, time range, title). Mention how many accuracy flags there are, without details yet.",
+            "Start with lesson 1: call class_lesson(session={session}, number=1). Tell the user which part of the "
+            "recording to watch, explain the key terms in plain words, then the main points.",
+            "Walk through the do_in_app steps one by one; the user does them in Isaac Sim or Composer themselves.",
+            "Explain each accuracy flag gently: what was said, the correct idea, and that subtitles can mishear.",
+            "Ask the check questions one at a time and wait for answers; then the exam questions, graded with "
+            "learning_exam_answer(question_id, chosen=[...]). Explain every wrong answer simply.",
+            "Ask whether to continue with the next lesson (class_lesson with number+1) or stop for today.",
+        ],
+    },
     "start_project": {
         "title": "Start a new OpenUSD project",
         "description": "Plan and create a new, well-organized project folder from a template (preview first).",

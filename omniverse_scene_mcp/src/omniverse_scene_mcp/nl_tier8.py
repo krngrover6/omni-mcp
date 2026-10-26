@@ -19,7 +19,33 @@ _READ = {
     'show live frame stats': 'scene_frame_stats',
     'custom rubric template': 'rubric_template',
     'audit semantic labels': 'semantic_audit',
+    'list class transcripts': 'class_transcripts', 'which class transcripts do i have': 'class_transcripts',
 }
+
+_SESSION_NUMBER = r'(?:session|class)\s*0*(\d{1,3})'
+_TEACH = re.compile(r'(?:teach me|study|plan|lessons? for|split)\s+' + _SESSION_NUMBER + r'(?:\s+in\s+(\d{1,2})\s*min(?:ute)?s?)?', re.I)
+_LESSON = re.compile(_SESSION_NUMBER + r'\s+(?:lesson|part|block)\s*(\d{1,2})|(?:lesson|part|block)\s*(\d{1,2})\s+(?:of|from)\s+' + _SESSION_NUMBER, re.I)
+_CLAIMS = re.compile(r'(?:check|fact[\s\-]?check)\s+' + _SESSION_NUMBER + r'(?:\s+for\s+(?:mistakes|errors))?', re.I)
+
+
+def _session_route(clean: str) -> tuple[str, dict] | None:
+    """Teacher-transcript lessons: 'teach me session 3', 'session 3 lesson 2', 'check session 3 for mistakes'."""
+    if len(clean) > 120:
+        return None
+    match = _LESSON.fullmatch(clean)
+    if match:
+        session, number = (match[1], match[2]) if match[1] else (match[4], match[3])
+        return 'class_lesson', {'session': int(session), 'number': int(number)}
+    match = _CLAIMS.fullmatch(clean)
+    if match:
+        return 'class_check_claims', {'session': int(match[1])}
+    match = _TEACH.fullmatch(clean)
+    if match:
+        arguments = {'session': int(match[1])}
+        if match[2]:
+            arguments['minutes'] = int(match[2])
+        return 'class_session_plan', arguments
+    return None
 
 
 def parse(text: str) -> dict | None:
@@ -28,6 +54,10 @@ def parse(text: str) -> dict | None:
     clean = re.sub(r'\s+', ' ', text.strip()).rstrip('?.!')
     tool = _READ.get(clean.lower())
     arguments = {}
+    if tool is None:
+        routed = _session_route(clean)
+        if routed:
+            tool, arguments = routed
     if tool is None:
         match = re.fullmatch(r'(?:inspect joints|joint table)\s+(/[^\s]+)', clean, re.I)
         if match:

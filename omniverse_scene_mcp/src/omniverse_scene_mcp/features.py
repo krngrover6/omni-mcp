@@ -89,7 +89,11 @@ _add("rubric", "rubric_check:check_rubric", "stage", "Learning Python & homework
 _add("semantic_labels", "semantic_audit", "stage", "Live insight")
 _add("semantic_labels", "semantic_labels:add_semantic_labels", "stage", "Scene: change safely", "semantic_labels")
 
-_INTERNAL = {"stage", "undo_stack", "deadline", "runner", "which", "env", "wait"}
+_add("session_lessons", "class_transcripts:find_transcripts class_session_plan:session_plan class_lesson:lesson "
+     "class_check_claims:check_claims", "local", "Learning Python & homework")
+
+# search_dirs stays internal so MCP callers cannot point a reader at arbitrary folders.
+_INTERNAL = {"stage", "undo_stack", "deadline", "runner", "which", "env", "wait", "search_dirs"}
 
 
 def function(name: str) -> Any:
