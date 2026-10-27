@@ -140,12 +140,14 @@ as slash commands, `/mcp__omniverse_router__daily_study`. Commands: `claude mcp 
 
 ## Ready-made recipes (MCP prompts)
 
-`workflows.py` defines eleven prompts. A prompt costs nothing until you pick it; then it gives the model a short,
+`workflows.py` defines thirteen prompts. A prompt costs nothing until you pick it; then it gives the model a short,
 numbered plan naming the exact tools, with the safety rules (preview with `dry_run=True`, apply only after you agree,
 never save without asking):
 
 | Prompt | Arguments | What it does |
 |---|---|---|
+| `fix_connection` | (none) | router_doctor, then its next steps one at a time, re-checking after each |
+| `predict_result` | difficulty, rounds | LIVRPS puzzles with grading, then predictions on your own scene via scene_what_if |
 | `why_value` | prim_path, attribute | scene_why_value, explain what it beats, ask a prediction, check with scene_what_if |
 | `study_session` | session, minutes | class_transcripts > class_session_plan > class_lesson one lesson at a time, quiz |
 | `start_project` | name, template, goal | project_templates > project_list > project_plan > (ask) > project_create |
@@ -164,6 +166,17 @@ Where to find them: Claude Code `/` menu; Claude Desktop "+" menu > the router's
 call, so prompt support is not needed. Ask "list the router workflows" (it calls `router_workflow()`), then e.g.
 "follow router_workflow why_value for /World/Box size", which calls
 `router_workflow(name="why_value", params={"prim_path": "/World/Box", "attribute": "size"})`.
+
+**When something doesn't connect:** ask "run router_doctor" (always on). If the router itself is down, run the
+same check from a terminal in `C:\Users\krngr\Omniverse`; it needs only the package on the path and never starts,
+stops or reloads anything:
+
+```powershell
+$env:PYTHONPATH = "omniverse_scene_mcp\src"; & "C:\Program Files\Python312\python.exe" -m omniverse_scene_mcp doctor
+```
+
+It says whether the router is running the latest code, whether each app bridge needs a Script Editor reload, and
+whether the router points at the open app, then lists the next steps.
 
 **Reaching tools outside the starter list:** plain English through `router_dispatch` ("teach me session 3",
 "why is /World/Box.size 2"), or `router_list_tools` then `router_call_tool(name=..., arguments={...})`.

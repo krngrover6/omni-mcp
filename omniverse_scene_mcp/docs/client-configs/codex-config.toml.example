@@ -38,6 +38,7 @@ enabled_tools = [
   "router_list_tools",
   "router_call_tool",
   "router_workflow",
+  "router_doctor",
 ]
 
 # ---------------------------------------------------------------------------------------------------------------

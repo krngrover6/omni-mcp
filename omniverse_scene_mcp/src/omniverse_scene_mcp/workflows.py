@@ -29,6 +29,39 @@ SAFETY_FOOTER = (
 # name -> {title, description, params: [(name, default, description)], steps: [str]}.
 # Steps are str.format templates over the params.
 PROMPTS: dict[str, dict[str, Any]] = {
+    "predict_result": {
+        "title": "Predict the result",
+        "description": "Train LIVRPS: guess which opinion wins on small generated scenes, then on your own scene.",
+        "params": [
+            ("difficulty", "easy", "Start level: easy, medium or hard."),
+            ("rounds", "3", "How many puzzles before moving to your own scene."),
+        ],
+        "steps": [
+            "Call learning_composition_puzzle(difficulty='{difficulty}'). Show the layers and the question, and ask "
+            "the user to guess before showing the options' answer. Do not reveal it.",
+            "Grade with learning_composition_puzzle_answer(puzzle_id, answer). Explain the winning rule in one or two "
+            "sentences (layer order or a LIVRPS letter).",
+            "Repeat for {rounds} puzzles. After two right answers in a row, move up a difficulty level.",
+            "Then use the user's own scene: pick an attribute (ask, or use scene_explain to find one), call "
+            "scene_why_value, and ask its first 'predict' question.",
+            "Check the guess with the matching scene_what_if call (in-memory only; nothing changes) and explain.",
+            "End with a one-line score and the rule they found hardest.",
+        ],
+    },
+    "fix_connection": {
+        "title": "Fix my connection",
+        "description": "Find out why the AI can't reach Isaac Sim or Composer, and fix it step by step.",
+        "params": [],
+        "steps": [
+            "Call router_doctor. (If no router tools respond at all, ask the user to run: python -m omniverse_scene_mcp "
+            "doctor, from C:\\Users\\krngr\\Omniverse with PYTHONPATH=omniverse_scene_mcp\\src, and paste the result.)",
+            "Read the headline, then each part in plain words: router, Isaac Sim bridge, Composer bridge.",
+            "Give the next_steps one at a time. The user does each step themselves (Script Editor reloads, starting "
+            "apps, restarting the router); never start, stop or reload anything yourself without asking.",
+            "After each step, call router_doctor again and confirm the part turned healthy before moving on.",
+            "Finish when the verdict is 'ready', then try one read-only call such as scene_summary.",
+        ],
+    },
     "why_value": {
         "title": "Why does this value appear?",
         "description": "Explain where an attribute's value comes from, then predict and check an override.",

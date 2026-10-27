@@ -3108,6 +3108,19 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         except (KeyError, TypeError, ValueError, ToolError) as exc:
             return _error(str(exc))
 
+    @app.tool(name="router_doctor")
+    def router_doctor() -> dict:
+        """Read-only connection doctor: is the router healthy and running the latest code, do the Isaac Sim (9911) and
+        Composer (9910) bridges answer with the current version or need a reload, does the router point at an open
+        app, and recent Kit log errors. Ends with plain next steps for you; never starts, reloads or retargets
+        anything. Also runs without the router: python -m omniverse_scene_mcp doctor."""
+        from . import doctor, kit_logs
+
+        report = check_router_health(
+            router._scene.backend_info, router.backend_status()["backends"], workspace_root=_workspace_root())
+        return doctor.diagnose(workspace=_workspace_root(), router_health_report=report, inside_router=True,
+                               logs=lambda key: kit_logs.summary(key))
+
     @app.tool(name="router_workflow")
     def router_workflow(name: str | None = None, params: dict[str, Any] | None = None) -> dict:
         """Guided step-by-step workflows (the same recipes as this server's MCP prompts) as a normal tool, for

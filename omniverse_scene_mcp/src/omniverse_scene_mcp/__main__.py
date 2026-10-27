@@ -5,15 +5,27 @@ import asyncio
 import sys
 from dataclasses import asdict
 
-from .runtime import build_router
-from .server import main as serve_main
-
 APPLY_FLAG = "--apply"
+
+
+def build_router():
+    """Imported lazily so `doctor` runs without the router's heavy dependencies; tests may replace this."""
+    from .runtime import build_router as build
+
+    return build()
 
 
 def main() -> int:
     args = sys.argv[1:]
+    if args and args[0] == "doctor":
+        # Read-only connection check. Imported first and alone: it must work even when the router (or its MCP
+        # library) cannot start, which is exactly when you need it.
+        from .doctor import main as doctor_main
+
+        return doctor_main(args[1:])
     if args and args[0] in {"serve", "server"}:
+        from .server import main as serve_main
+
         return serve_main(args[1:])
 
     # Preview by default: scene edits run as dry runs unless --apply is passed.
