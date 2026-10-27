@@ -20,7 +20,13 @@ except ImportError:  # pragma: no cover
     Gf = Sdf = Usd = UsdGeom = UsdPhysics = None
 
 KINDS = {"fixed": "FixedJoint", "revolute": "RevoluteJoint", "prismatic": "PrismaticJoint",
-         "spherical": "SphericalJoint", "distance": "DistanceJoint"}
+         "spherical": "SphericalJoint", "distance": "DistanceJoint", "d6": "Joint"}
+D6_AXES = ("transX", "transY", "transZ", "rotX", "rotY", "rotZ")
+# PhysX extras (PhysxSchema in Isaac Sim 6.1, omni.usd.schema.physx 110.3): written by name so they also work
+# where PhysxSchema is not installed; Isaac's own schema recognises them.
+GEAR_TYPE, RACK_TYPE = "PhysxPhysicsGearJoint", "PhysxPhysicsRackAndPinionJoint"
+JOINT_API, SPRING_API = "PhysxJointAPI", "PhysxPhysicsDistanceJointAPI"
+_FACE = __import__("re").compile(r"^(?:[+-][xyz]){1,3}$")
 AXES = ("X", "Y", "Z")
 MAX_FLOAT = 3.4028234663852886e38
 MOTION_LEFT = {
@@ -29,6 +35,7 @@ MOTION_LEFT = {
     "prismatic": "one slide along the axis (like a drawer)",
     "spherical": "turning in any direction (like a shoulder), within the cone limits",
     "distance": "anything, as long as the distance stays between min and max",
+    "d6": "only the axes you leave free (the others are locked)",
 }
 _COLLIDER_SCAN = 500
 
@@ -115,8 +122,14 @@ def _frames(stage: Any, body0: Any, body1: Any, pivot: Any) -> dict[str, Any]:
     to_pose = cache.GetLocalToWorldTransform(body1)
     frame = Gf.Matrix4d(to_pose).RemoveScaleShear()
     if pivot is not None:
-        point = cache.GetLocalToWorldTransform(body0).ExtractTranslation() if pivot == "body0" and body0 else (
-            to_pose.ExtractTranslation() if pivot in ("body1", "center") else _vec(pivot, "pivot"))
+        if pivot == "body0" and body0:
+            point = cache.GetLocalToWorldTransform(body0).ExtractTranslation()
+        elif pivot in ("body1", "center"):
+            point = to_pose.ExtractTranslation()
+        elif isinstance(pivot, str):
+            point = _face_point(body1, pivot)
+        else:
+            point = _vec(pivot, "pivot")
         frame.SetTranslateOnly(Gf.Vec3d(point))
     if body0 is None:
         rel0 = Gf.Matrix4d(frame)
@@ -128,6 +141,22 @@ def _frames(stage: Any, body0: Any, body1: Any, pivot: Any) -> dict[str, Any]:
         "pos1": Gf.Vec3f(rel1.ExtractTranslation()), "rot1": Gf.Quatf(rel1.ExtractRotationQuat()),
         "frame": frame,
     }
+
+
+def _face_point(prim: Any, spec: str) -> Any:
+    """A point on the prim's world bounding box: '-y' is the centre of its -Y face, '-x-y' the middle of that edge."""
+    text = spec.strip().lower()
+    if not _FACE.fullmatch(text):
+        raise _Refusal("pivot must be [x, y, z], 'center', 'body0', or a face/edge of body1 such as '-y', '+x' or '-x-y'")
+    box = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render"]).ComputeWorldBound(prim).ComputeAlignedRange()
+    if box.IsEmpty():
+        raise _Refusal(f"{prim.GetPath()} has no size to measure; give the pivot as [x, y, z] instead")
+    low, high = box.GetMin(), box.GetMax()
+    point = [(low[i] + high[i]) / 2 for i in range(3)]
+    for sign, letter in zip(text[0::2], text[1::2]):
+        index = "xyz".index(letter)
+        point[index] = high[index] if sign == "+" else low[index]
+    return Gf.Vec3d(*point)
 
 
 def _round(values: Any, digits: int = 4) -> list[float]:
@@ -198,12 +227,13 @@ def _guard(function):
 @_guard
 def create_joint(stage: Any, kind: str, body0: str | None = None, body1: str | None = None, *, pivot: Any = None,
                  axis: str = "X", lower: Any = None, upper: Any = None, min_distance: Any = None,
-                 max_distance: Any = None, cone0: Any = None, cone1: Any = None, name: str | None = None,
-                 undo_stack: Any = None, dry_run: Any = True) -> dict[str, Any]:
-    """Preview (or with dry_run=False create) a fixed, revolute, prismatic, spherical or distance joint between body0
-    and body1, like Isaac Sim's Create > Physics > Joint. Give only one body to pin it to the world. pivot is a world
-    point [x, y, z] for the joint (default: body1's origin), axis X/Y/Z is in body1's frame. lower/upper are degrees
-    (revolute) or distance (prismatic); cone0/cone1 are degrees (spherical); min/max_distance for distance joints."""
+                 max_distance: Any = None, cone0: Any = None, cone1: Any = None, free: Any = None,
+                 name: str | None = None, undo_stack: Any = None, dry_run: Any = True) -> dict[str, Any]:
+    """Preview (or with dry_run=False create) a fixed, revolute, prismatic, spherical, distance or d6 joint between
+    body0 and body1, like Isaac Sim's Create > Physics > Joint. Give only one body to pin it to the world. pivot is a
+    world point [x, y, z], 'center', or a face/edge of body1 such as '-y' or '-x-y' (a door's hinge edge); axis X/Y/Z
+    is in body1's frame. lower/upper are degrees (revolute) or distance (prismatic); cone0/cone1 degrees (spherical);
+    min/max_distance (distance). d6: free={'rotZ': [-90, 90], 'transX': None}, others locked."""
     _ready(stage)
     key = str(kind).strip().lower() if isinstance(kind, str) else ""
     if key not in KINDS:
@@ -249,6 +279,29 @@ def create_joint(stage: Any, kind: str, body0: str | None = None, body1: str | N
         raise _Refusal("min_distance must not be larger than max_distance")
     if name is not None and (not isinstance(name, str) or not Sdf.Path.IsValidIdentifier(name)):
         raise _Refusal("name must be a valid prim name such as WheelJoint_01")
+    d6: dict[str, Any] = {}
+    if key == "d6":
+        if free is None:
+            free = {}
+        if not isinstance(free, dict) or any(axis not in D6_AXES for axis in free):
+            raise _Refusal(f"free must map axes ({', '.join(D6_AXES)}) to None (free) or [low, high] (limited)")
+        for axis_name in D6_AXES:
+            if axis_name not in free:
+                d6[axis_name] = "locked"
+            elif free[axis_name] is None:
+                d6[axis_name] = "free"
+            else:
+                pair = free[axis_name]
+                if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                    raise _Refusal(f"{axis_name} must be None or [low, high]")
+                low, high = _number(pair[0], f"{axis_name} low"), _number(pair[1], f"{axis_name} high")
+                if low >= high:
+                    raise _Refusal(f"{axis_name}: low must be smaller than high")
+                if axis_name.startswith("rot") and max(abs(low), abs(high)) > 360:
+                    raise _Refusal(f"{axis_name} limits are degrees between -360 and 360")
+                d6[axis_name] = [low, high]
+    elif free is not None:
+        raise _Refusal("free applies to d6 joints")
 
     frames = _frames(stage, p0, p1, pivot)
     path = _unused(stage, _joint_parent(p1), name or KINDS[key])
@@ -267,6 +320,8 @@ def create_joint(stage: Any, kind: str, body0: str | None = None, body1: str | N
         "limit_units": unit if key in ("revolute", "prismatic") else None,
         "motion_left": MOTION_LEFT[key],
     }
+    if d6:
+        plan["d6_axes"] = d6
     explanation = (f"A {key} joint at {plan['pivot_world']} joining {plan['body0'] or 'the world'} and {plan['body1']}. "
                    f"It leaves {MOTION_LEFT[key]}." + (f" Axis {axis_key} points along {axis_world} in the world."
                                                         if axis_world else ""))
@@ -302,6 +357,13 @@ def create_joint(stage: Any, kind: str, body0: str | None = None, body1: str | N
                 schema.CreateMinDistanceAttr().Set(dmin)
             if dmax is not None:
                 schema.CreateMaxDistanceAttr().Set(dmax)
+        for axis_name, state in d6.items():  # Isaac's convention: low > high locks the axis
+            if state == "free":
+                continue
+            limit = UsdPhysics.LimitAPI.Apply(schema.GetPrim(), axis_name)
+            low, high = (1.0, -1.0) if state == "locked" else state
+            limit.CreateLowAttr().Set(low)
+            limit.CreateHighAttr().Set(high)
 
     def verify() -> str | None:
         prim = stage.GetPrimAtPath(path)
@@ -440,6 +502,199 @@ def add_articulation_root(stage: Any, prim_path: str, *, undo_stack: Any = None,
                   f"Add articulation root to {prim.GetName()}", common)
 
 
+def _api_names(prim: Any) -> list[str]:
+    """Applied API schema names straight from metadata: GetAppliedSchemas() hides PhysX schemas where PhysxSchema
+    is not installed (plain usd-core), though Isaac Sim sees them."""
+    ops = prim.GetMetadata("apiSchemas")
+    return [str(name) for name in ops.ApplyOperations([])] if ops else []
+
+
+def _add_api(prim: Any, name: str) -> None:
+    if name not in _api_names(prim):
+        prim.AddAppliedSchema(name)
+
+
+def _moving_body(joint: Any) -> Any:
+    """The body a hinge or slider moves: body1, or body0 when body1 is empty (as Isaac's demos connect them)."""
+    schema = UsdPhysics.Joint(joint)
+    for rel in (schema.GetBody1Rel(), schema.GetBody0Rel()):
+        targets = rel.GetTargets() if rel else []
+        if targets:
+            return joint.GetStage().GetPrimAtPath(targets[0])
+    return None
+
+
+def _coupling(stage: Any, action: str, type_name: str, links: list[tuple[str, Any, Any]], ratio_attr: str, ratio: float,
+              name: str | None, undo_stack: Any, dry_run: Any, explanation: str) -> dict[str, Any]:
+    """Shared body of gear and rack-and-pinion joints: they couple existing joints with a ratio."""
+    bodies = [_moving_body(joint) for _, joint, _ in links]
+    if any(body is None for body in bodies):
+        raise _Refusal("Each linked joint must connect to a body (body0 or body1)")
+    if bodies[0].GetPath() == bodies[1].GetPath():
+        raise _Refusal("The two joints move the same body; couple joints that move different parts")
+    if name is not None and (not isinstance(name, str) or not Sdf.Path.IsValidIdentifier(name)):
+        raise _Refusal("name must be a valid prim name")
+    path = _unused(stage, _joint_parent(bodies[0]), name or type_name.replace("PhysxPhysics", ""))
+    plan = {"joint_path": str(path), "type": type_name, "body0": str(bodies[0].GetPath()),
+            "body1": str(bodies[1].GetPath()), ratio_attr: ratio,
+            "links": {rel: str(joint.GetPath()) for rel, joint, _ in links}}
+    python = "\n".join([
+        "# The same coupling in Python (Script Editor).",
+        "import omni.usd",
+        "from pxr import PhysxSchema, Sdf",
+        "stage = omni.usd.get_context().get_stage()",
+        f"joint = PhysxSchema.{type_name}.Define(stage, {str(path)!r})",
+        f"joint.CreateBody0Rel().SetTargets([Sdf.Path({plan['body0']!r})])",
+        f"joint.CreateBody1Rel().SetTargets([Sdf.Path({plan['body1']!r})])",
+        f"joint.Create{ratio_attr[0].upper() + ratio_attr[1:]}Attr({ratio!r})",
+    ] + [f"joint.Create{method}Rel().SetTargets([Sdf.Path({str(joint.GetPath())!r})])" for _, joint, method in links])
+    common = {"plan": plan, "explanation": explanation, "warnings": [], "python": python}
+    if dry_run is not False:
+        return _result(action, next_step="Run again with dry_run=False to create it (undoable).", **common)
+
+    def mutate() -> None:
+        prim = stage.DefinePrim(path, type_name)
+        prim.CreateRelationship("physics:body0").SetTargets([bodies[0].GetPath()])
+        prim.CreateRelationship("physics:body1").SetTargets([bodies[1].GetPath()])
+        prim.CreateAttribute(f"physics:{ratio_attr}", Sdf.ValueTypeNames.Float).Set(ratio)
+        for rel, joint, _ in links:
+            prim.CreateRelationship(f"physics:{rel}").SetTargets([joint.GetPath()])
+
+    def verify() -> str | None:
+        prim = stage.GetPrimAtPath(path)
+        return None if prim and prim.GetTypeName() == type_name else "the coupling joint was not created"
+
+    return _apply(stage, action, [path], [], mutate, verify, undo_stack, f"Create {path.name}", common)
+
+
+@_guard
+def create_gear_joint(stage: Any, hinge0: str, hinge1: str, ratio: Any = 1.0, *, name: str | None = None,
+                      undo_stack: Any = None, dry_run: Any = True) -> dict[str, Any]:
+    """Preview (or with dry_run=False create) a gear joint: two existing revolute joints turn together. ratio is how
+    fast the second turns per turn of the first; for touching gears use radius0 / radius1 (Isaac's gear demo)."""
+    _ready(stage)
+    first, second = _prim(stage, hinge0, "hinge0"), _prim(stage, hinge1, "hinge1")
+    for prim in (first, second):
+        if not prim.IsA(UsdPhysics.RevoluteJoint):
+            raise _Refusal(f"{prim.GetPath()} is not a revolute joint; a gear couples two revolute joints")
+    if first.GetPath() == second.GetPath():
+        raise _Refusal("hinge0 and hinge1 must be different joints")
+    value = _number(ratio, "ratio")
+    if not value:
+        raise _Refusal("ratio must not be 0")
+    return _coupling(stage, "create_gear_joint", GEAR_TYPE, [("hinge0", first, "Hinge0"), ("hinge1", second, "Hinge1")],
+                     "gearRatio", value, name, undo_stack, dry_run,
+                     f"A gear joint: when {first.GetName()} turns, {second.GetName()} turns {value} times as fast.")
+
+
+@_guard
+def create_rack_and_pinion_joint(stage: Any, hinge: str, prismatic: str, ratio: Any, *, name: str | None = None,
+                                 undo_stack: Any = None, dry_run: Any = True) -> dict[str, Any]:
+    """Preview (or with dry_run=False create) a rack-and-pinion joint: turning an existing revolute joint slides an
+    existing prismatic joint. ratio is degrees of turn per unit of slide."""
+    _ready(stage)
+    turn, slide = _prim(stage, hinge, "hinge"), _prim(stage, prismatic, "prismatic")
+    if not turn.IsA(UsdPhysics.RevoluteJoint):
+        raise _Refusal(f"{turn.GetPath()} is not a revolute joint")
+    if not slide.IsA(UsdPhysics.PrismaticJoint):
+        raise _Refusal(f"{slide.GetPath()} is not a prismatic joint")
+    value = _number(ratio, "ratio")
+    if not value:
+        raise _Refusal("ratio must not be 0")
+    return _coupling(stage, "create_rack_and_pinion_joint", RACK_TYPE,
+                     [("hinge", turn, "Hinge"), ("prismatic", slide, "Prismatic")], "ratio", value, name, undo_stack,
+                     dry_run, f"A rack and pinion: every {value} degrees {turn.GetName()} turns, {slide.GetName()} "
+                              "slides one unit.")
+
+
+@_guard
+def set_joint_properties(stage: Any, joint_path: str, *, break_force: Any = None, break_torque: Any = None,
+                         joint_friction: Any = None, max_joint_velocity: Any = None, collision_enabled: Any = None,
+                         enabled: Any = None, exclude_from_articulation: Any = None, undo_stack: Any = None,
+                         dry_run: Any = True) -> dict[str, Any]:
+    """Preview (or with dry_run=False set) a joint's settings: break_force/break_torque (it snaps when pulled
+    harder), joint_friction and max_joint_velocity (PhysX), collision_enabled (let the two bodies touch),
+    enabled, exclude_from_articulation."""
+    _ready(stage)
+    joint = _prim(stage, joint_path, "joint_path")
+    if not joint.IsA(UsdPhysics.Joint) and joint.GetTypeName() not in (GEAR_TYPE, RACK_TYPE):
+        raise _Refusal(f"{joint.GetPath()} is not a joint")
+    changes: list[tuple[str, Any, Any, str | None]] = []
+    for attr, value, kind in (("physics:breakForce", break_force, "force"), ("physics:breakTorque", break_torque, "force"),
+                              ("physxJoint:jointFriction", joint_friction, "force"),
+                              ("physxJoint:maxJointVelocity", max_joint_velocity, "force")):
+        number = _number(value, attr.split(":")[-1], low=0)
+        if number is not None:
+            changes.append((attr, Sdf.ValueTypeNames.Float, number, JOINT_API if attr.startswith("physx") else None))
+    for attr, value in (("physics:collisionEnabled", collision_enabled), ("physics:jointEnabled", enabled),
+                        ("physics:excludeFromArticulation", exclude_from_articulation)):
+        if value is None:
+            continue
+        if not isinstance(value, bool):
+            raise _Refusal(f"{attr.split(':')[-1]} must be true or false")
+        changes.append((attr, Sdf.ValueTypeNames.Bool, value, None))
+    if not changes:
+        raise _Refusal("Give at least one setting to change")
+    plan = {"joint_path": str(joint.GetPath()), "set": {attr: value for attr, _, value, _ in changes},
+            "before": {attr: (joint.GetAttribute(attr).Get() if joint.GetAttribute(attr) else None)
+                       for attr, _, _, _ in changes}}
+    notes = []
+    if break_force is not None or break_torque is not None:
+        notes.append("Break force/torque are in the stage's force units; the joint snaps (switches off) above them.")
+    if joint_friction is not None or max_joint_velocity is not None:
+        notes.append("joint_friction and max_joint_velocity are PhysX settings (PhysxJointAPI).")
+    common = {"plan": plan, "warnings": [], "explanation": " ".join(notes) or "Joint settings updated."}
+    if dry_run is not False:
+        return _result("set_joint_properties", next_step="Run again with dry_run=False to set them (undoable).", **common)
+
+    def mutate() -> None:
+        for attr, value_type, value, api in changes:
+            if api:
+                _add_api(joint, api)
+            joint.CreateAttribute(attr, value_type).Set(value)
+
+    def verify() -> str | None:
+        return None
+
+    return _apply(stage, "set_joint_properties", [], [joint.GetPath()], mutate, verify, undo_stack,
+                  f"Set properties of {joint.GetName()}", common)
+
+
+@_guard
+def set_distance_spring(stage: Any, joint_path: str, *, stiffness: Any = None, damping: Any = None,
+                        enabled: Any = True, undo_stack: Any = None, dry_run: Any = True) -> dict[str, Any]:
+    """Preview (or with dry_run=False set) the spring of a distance joint (PhysX): with it enabled the distance
+    stretches like a spring instead of a rope. stiffness pulls back, damping calms the bounce."""
+    _ready(stage)
+    joint = _prim(stage, joint_path, "joint_path")
+    if not joint.IsA(UsdPhysics.DistanceJoint):
+        raise _Refusal(f"{joint.GetPath()} is not a distance joint")
+    if not isinstance(enabled, bool):
+        raise _Refusal("enabled must be true or false")
+    stiff, damp = _number(stiffness, "stiffness", low=0), _number(damping, "damping", low=0)
+    if enabled and not stiff:
+        raise _Refusal("A spring needs stiffness > 0 (how hard it pulls back). Start around 100.")
+    values = {"springEnabled": enabled, "springStiffness": stiff, "springDamping": damp}
+    plan = {"joint_path": str(joint.GetPath()), "spring": {k: v for k, v in values.items() if v is not None}}
+    common = {"plan": plan, "warnings": [],
+              "explanation": ("The distance joint now acts like a spring." if enabled else "The spring is switched off.")}
+    if dry_run is not False:
+        return _result("set_distance_spring", next_step="Run again with dry_run=False to set it (undoable).", **common)
+
+    def mutate() -> None:
+        _add_api(joint, SPRING_API)
+        joint.CreateAttribute("physxPhysicsDistanceJoint:springEnabled", Sdf.ValueTypeNames.Bool).Set(enabled)
+        for key, value in (("springStiffness", stiff), ("springDamping", damp)):
+            if value is not None:
+                joint.CreateAttribute(f"physxPhysicsDistanceJoint:{key}", Sdf.ValueTypeNames.Float).Set(value)
+
+    def verify() -> str | None:
+        return None if SPRING_API in _api_names(joint) else "the spring settings were not applied"
+
+    return _apply(stage, "set_distance_spring", [], [joint.GetPath()], mutate, verify, undo_stack,
+                  f"Set spring on {joint.GetName()}", common)
+
+
 # ------------------------------------------------------------------------------------------------ python snippets
 def _joint_python(plan: dict[str, Any], key: str) -> str:
     lines = [
@@ -462,6 +717,13 @@ def _joint_python(plan: dict[str, Any], key: str) -> str:
              "min_distance": "MinDistance", "max_distance": "MaxDistance"}
     for limit, value in plan["limits"].items():
         lines.append(f"joint.Create{names[limit]}Attr().Set({value!r})")
+    for axis, state in plan.get("d6_axes", {}).items():
+        if state == "free":
+            continue
+        low, high = (1.0, -1.0) if state == "locked" else state
+        note = "  # low > high locks this axis" if state == "locked" else "  # limited range"
+        lines.append(f"limit = UsdPhysics.LimitAPI.Apply(joint.GetPrim(), {axis!r}){note}")
+        lines.append(f"limit.CreateLowAttr().Set({low!r}); limit.CreateHighAttr().Set({high!r})")
     return "\n".join(lines)
 
 

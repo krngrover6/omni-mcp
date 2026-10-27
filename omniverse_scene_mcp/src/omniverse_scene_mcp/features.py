@@ -90,8 +90,11 @@ _add("semantic_labels", "semantic_audit", "stage", "Live insight")
 _add("semantic_labels", "semantic_labels:add_semantic_labels", "stage", "Scene: change safely", "semantic_labels")
 
 _add("joints", "scene_create_joint:create_joint scene_add_drive:add_drive scene_set_joint_limits:set_joint_limits "
-     "scene_add_articulation_root:add_articulation_root", "stage", "Robots",
-     "scene_create_joint scene_add_drive scene_set_joint_limits scene_add_articulation_root")
+     "scene_add_articulation_root:add_articulation_root scene_create_gear_joint:create_gear_joint "
+     "scene_create_rack_and_pinion_joint:create_rack_and_pinion_joint scene_set_joint_properties:set_joint_properties "
+     "scene_set_distance_spring:set_distance_spring", "stage", "Robots",
+     "scene_create_joint scene_add_drive scene_set_joint_limits scene_add_articulation_root scene_create_gear_joint "
+     "scene_create_rack_and_pinion_joint scene_set_joint_properties scene_set_distance_spring")
 _add("homework", "homework_check:check_homework", "stage", "Learning Python & homework")
 _add("homework", "homework_sessions", "local", "Learning Python & homework")
 _add("value_story","scene_why_value:why_value scene_what_if:what_if", "stage", "Live insight")

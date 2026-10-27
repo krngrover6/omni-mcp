@@ -157,8 +157,88 @@ def test_read_only_edit_target_is_refused():
     stage.GetRootLayer().SetPermissionToEdit(True)
 
 
+def test_pivot_on_a_face_or_edge_of_the_part():
+    stage = _stage()
+    door = j.create_joint(stage, "revolute", None, "/World/Door", pivot="-y", axis="Z")
+    assert door["plan"]["pivot_world"] == [3.0, -1.0, 1.0] and door["plan"]["local_pos1"] == [0.0, -1.0, 0.0]
+    corner = j.create_joint(stage, "revolute", None, "/World/Door", pivot="+x-y-z")
+    assert corner["plan"]["pivot_world"] == [3.05, -1.0, 0.0]
+    for bad in ("left", "-w", "-y-y-y-y", ""):
+        assert not j.create_joint(stage, "revolute", None, "/World/Door", pivot=bad)["ok"], bad
+
+
+def test_d6_locks_every_axis_not_left_free():
+    stage = _stage()
+    made = j.create_joint(stage, "d6", None, "/World/Wheel", free={"rotZ": [-90, 90], "transX": None}, dry_run=False)
+    axes = made["plan"]["d6_axes"]
+    assert axes["transX"] == "free" and axes["rotZ"] == [-90.0, 90.0] and axes["rotX"] == "locked"
+    prim = stage.GetPrimAtPath(made["plan"]["joint_path"])
+    assert prim.IsA(UsdPhysics.Joint)
+    locked = UsdPhysics.LimitAPI(prim, "transY")
+    assert locked.GetLowAttr().Get() == 1.0 and locked.GetHighAttr().Get() == -1.0
+    assert UsdPhysics.LimitAPI(prim, "rotZ").GetHighAttr().Get() == 90.0
+    assert not prim.HasAPI(UsdPhysics.LimitAPI, "transX")
+    compile(made["python"], "<snippet>", "exec")
+    assert not j.create_joint(stage, "d6", None, "/World/Wheel", free={"spin": None})["ok"]
+    assert not j.create_joint(stage, "d6", None, "/World/Wheel", free={"rotX": [5, 1]})["ok"]
+    assert not j.create_joint(stage, "revolute", None, "/World/Wheel", free={"rotX": None})["ok"]
+
+
+def test_gear_and_rack_and_pinion_couple_existing_joints():
+    stage = _stage()
+    UsdPhysics.RigidBodyAPI.Apply(UsdGeom.Cylinder.Define(stage, "/World/Gear2").GetPrim())
+    hinge0 = j.create_joint(stage, "revolute", None, "/World/Wheel", axis="Z", dry_run=False)["plan"]["joint_path"]
+    hinge1 = j.create_joint(stage, "revolute", None, "/World/Gear2", axis="Z", dry_run=False)["plan"]["joint_path"]
+    slide = j.create_joint(stage, "prismatic", None, "/World/Door", axis="X", dry_run=False)["plan"]["joint_path"]
+    before = _text(stage)
+    preview = j.create_gear_joint(stage, hinge0, hinge1, 2.0)
+    assert preview["dry_run"] and _text(stage) == before
+    gear = j.create_gear_joint(stage, hinge0, hinge1, 2.0, dry_run=False)
+    prim = stage.GetPrimAtPath(gear["plan"]["joint_path"])
+    assert prim.GetTypeName() == "PhysxPhysicsGearJoint" and prim.GetAttribute("physics:gearRatio").Get() == 2.0
+    assert [str(t) for t in prim.GetRelationship("physics:hinge1").GetTargets()] == [hinge1]
+    assert [str(t) for t in prim.GetRelationship("physics:body1").GetTargets()] == ["/World/Gear2"]
+    rack = j.create_rack_and_pinion_joint(stage, hinge0, slide, 36.0, dry_run=False)
+    rprim = stage.GetPrimAtPath(rack["plan"]["joint_path"])
+    assert rprim.GetTypeName() == "PhysxPhysicsRackAndPinionJoint" and rprim.GetAttribute("physics:ratio").Get() == 36.0
+    assert "revolute" in j.create_gear_joint(stage, hinge0, slide)["error"]
+    assert "prismatic" in j.create_rack_and_pinion_joint(stage, hinge0, hinge1, 1.0)["error"]
+    assert "different" in j.create_gear_joint(stage, hinge0, hinge0)["error"]
+    assert "0" in j.create_gear_joint(stage, hinge0, hinge1, 0)["error"]
+    compile(gear["python"], "<snippet>", "exec")
+
+
+def test_distance_spring_and_joint_properties():
+    stage = _stage()
+    dist = j.create_joint(stage, "distance", "/World/Base", "/World/Wheel", max_distance=2, dry_run=False)["plan"]["joint_path"]
+    assert "stiffness" in j.set_distance_spring(stage, dist)["error"]
+    stack = UndoStack()
+    before = _text(stage)
+    spring = j.set_distance_spring(stage, dist, stiffness=100, damping=5, undo_stack=stack, dry_run=False)
+    prim = stage.GetPrimAtPath(dist)
+    assert spring["applied"] and j._api_names(prim) == ["PhysxPhysicsDistanceJointAPI"]
+    assert prim.GetAttribute("physxPhysicsDistanceJoint:springStiffness").Get() == 100
+    assert stack.undo_last(stage=stage, dry_run=False)["ok"] and _text(stage) == before
+    hinge = j.create_joint(stage, "revolute", "/World/Base", "/World/Wheel", dry_run=False)["plan"]["joint_path"]
+    assert "not a distance joint" in j.set_distance_spring(stage, hinge, stiffness=1)["error"]
+    props = j.set_joint_properties(stage, hinge, break_force=500, joint_friction=0.1, max_joint_velocity=180,
+                                   collision_enabled=True, dry_run=False)
+    joint = stage.GetPrimAtPath(hinge)
+    assert props["applied"] and joint.GetAttribute("physics:breakForce").Get() == 500
+    assert joint.GetAttribute("physics:collisionEnabled").Get() is True
+    assert j._api_names(joint).count("PhysxJointAPI") == 1
+    j.set_joint_properties(stage, hinge, joint_friction=0.2, dry_run=False)
+    assert j._api_names(joint).count("PhysxJointAPI") == 1
+    assert not j.set_joint_properties(stage, hinge)["ok"]
+    assert not j.set_joint_properties(stage, hinge, enabled="yes")["ok"]
+    assert not j.set_joint_properties(stage, hinge, break_force=-1)["ok"]
+    assert not j.set_joint_properties(stage, "/World/Base", break_force=1)["ok"]
+
+
 def test_registered_as_previewing_edit_tools():
-    for name in ("scene_create_joint", "scene_add_drive", "scene_set_joint_limits", "scene_add_articulation_root"):
+    for name in ("scene_create_joint", "scene_add_drive", "scene_set_joint_limits", "scene_add_articulation_root",
+                 "scene_create_gear_joint", "scene_create_rack_and_pinion_joint", "scene_set_joint_properties",
+                 "scene_set_distance_spring"):
         spec = features.FEATURES[name]
         assert spec.location == "stage" and spec.mutates
         assert features.signature(name).parameters["dry_run"].default is True
