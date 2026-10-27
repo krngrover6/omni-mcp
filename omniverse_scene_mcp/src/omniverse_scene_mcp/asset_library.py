@@ -620,15 +620,16 @@ def add_reference(
     correct_units: bool = False,
     library: AssetLibrary | None = None,
     dry_run: bool = True,
+    as_payload: bool = False,
 ) -> dict[str, Any]:
     """Plan (dry_run=True, the default) or author an Xform at prim_path that references asset_path.
 
     asset_path is absolute or relative to the asset library; it is authored as an absolute forward-slash path.
     rotation is rotateXYZ in degrees; scale is one number or (x, y, z). asset_prim_path picks a prim in the asset
     when it has no defaultPrim. correct_units=True fills an unspecified rotation / scale with the suggested up-axis
-    and metersPerUnit correction.
+    and metersPerUnit correction. as_payload=True adds a payload instead (the same, but it can be unloaded).
     """
-    action = "add_reference"
+    action = "add_payload" if as_payload else "add_reference"
     dry = _dry(dry_run)
     warnings: list[str] = []
     try:
@@ -678,6 +679,7 @@ def add_reference(
             "path": str(sdf_path),
             "parent": str(parent.GetPath()),
             "type": "Xform",
+            "arc": "payload" if as_payload else "reference",
             "reference": {"asset_path": asset_text, "prim_path": target_prim},
             "asset": {
                 "name": asset.name,
@@ -839,7 +841,8 @@ def _author(
     stage: Any, sdf_path: Any, plan: dict[str, Any], ops: dict[str, Any], instanceable: bool | None, warnings: list[str]
 ) -> dict[str, Any]:
     """Author the planned prim; on failure remove the specs it added to the edit target layer."""
-    action = "add_reference"
+    payload = plan.get("arc") == "payload"
+    action = "add_payload" if payload else "add_reference"
     edit_target = stage.GetEditTarget()
     layer = edit_target.GetLayer()
     spec_path = edit_target.MapToSpecPath(sdf_path)
@@ -847,8 +850,11 @@ def _author(
     reference = plan["reference"]
     try:
         prim = UsdGeom.Xform.Define(stage, sdf_path).GetPrim()
-        ref = Sdf.Reference(reference["asset_path"], Sdf.Path(reference["prim_path"]) if reference["prim_path"] else Sdf.Path())
-        if not prim.GetReferences().AddReference(ref):
+        target = Sdf.Path(reference["prim_path"]) if reference["prim_path"] else Sdf.Path()
+        if payload:
+            if not prim.GetPayloads().AddPayload(Sdf.Payload(reference["asset_path"], target)):
+                raise ValueError("AddPayload returned False")
+        elif not prim.GetReferences().AddReference(Sdf.Reference(reference["asset_path"], target)):
             raise ValueError("AddReference returned False")
         xformable = UsdGeom.Xformable(prim)
         if ops["translation"] is not None:

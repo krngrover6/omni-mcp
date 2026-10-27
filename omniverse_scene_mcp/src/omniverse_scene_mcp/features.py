@@ -95,6 +95,13 @@ _add("joints", "scene_create_joint:create_joint scene_add_drive:add_drive scene_
      "scene_set_distance_spring:set_distance_spring", "stage", "Robots",
      "scene_create_joint scene_add_drive scene_set_joint_limits scene_add_articulation_root scene_create_gear_joint "
      "scene_create_rack_and_pinion_joint scene_set_joint_properties scene_set_distance_spring")
+_add("physics_extras", "scene_list_payloads:list_payloads", "stage", "Assets & physics")
+_add("physics_extras", "scene_add_payload:add_payload scene_load_payloads:load_payloads "
+     "scene_unload_payloads:unload_payloads scene_create_physics_material:create_physics_material "
+     "scene_bind_physics_material:bind_physics_material scene_set_rigid_body_properties:set_rigid_body_properties",
+     "stage", "Assets & physics",
+     "scene_add_payload scene_load_payloads scene_unload_payloads scene_create_physics_material "
+     "scene_bind_physics_material scene_set_rigid_body_properties")
 _add("homework", "homework_check:check_homework", "stage", "Learning Python & homework")
 _add("homework", "homework_sessions", "local", "Learning Python & homework")
 _add("value_story","scene_why_value:why_value scene_what_if:what_if", "stage", "Live insight")

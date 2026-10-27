@@ -20,6 +20,8 @@ _READ = {
     'custom rubric template': 'rubric_template',
     'audit semantic labels': 'semantic_audit',
     'list class transcripts': 'class_transcripts', 'which class transcripts do i have': 'class_transcripts',
+    'list payloads': 'scene_list_payloads', 'show payloads': 'scene_list_payloads',
+    'which payloads are loaded': 'scene_list_payloads',
 }
 
 _SESSION_NUMBER = r'(?:session|class)\s*0*(\d{1,3})'
@@ -54,10 +56,18 @@ _JOINT_WORLD = re.compile(r'(?:create|add|make) an? ' + _JOINT_KINDS + r' joint 
                           r'(?: to the world)?(?: on (?:the )?([xyz])(?: axis)?)?', re.I)
 
 
+_PAYLOAD = re.compile(r'(unload|load) (?:the )?payload (?:at |of |on )?(/[A-Za-z0-9_/]+)', re.I)
+
+
 def _physics_route(clean: str) -> tuple[str, dict] | None:
-    """'check my session 5 homework', 'create a revolute joint between /World/Base and /World/Wheel on the y axis'."""
+    """'check my session 5 homework', 'create a revolute joint between /World/Base and /World/Wheel on the y axis',
+    'unload payload /World/Factory' (previews)."""
     if len(clean) > 200:
         return None
+    match = _PAYLOAD.fullmatch(clean)
+    if match:
+        tool = 'scene_unload_payloads' if match[1].lower() == 'unload' else 'scene_load_payloads'
+        return tool, {'paths': [match[2]]}
     match = _HOMEWORK.fullmatch(clean)
     if match:
         return 'homework_check', {'session': int(match[1] or match[2])}

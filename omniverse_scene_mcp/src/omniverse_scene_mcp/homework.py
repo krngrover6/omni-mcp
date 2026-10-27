@@ -180,7 +180,7 @@ def _session4(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
                      "pass" if moving else "partial" if ball else "fail", moving or {},
                      "Something has to send the ball at the pins: an initial velocity, a spin or a slope.",
                      ["Select the ball, and in Property > Physics > Rigid Body set Linear Velocity toward the pins "
-                      "(e.g. 0, 5, 0), then Play.",
+                      "(e.g. 0, 5, 0), then Play (or scene_set_rigid_body_properties with velocity=[0, 5, 0]).",
                       "Or place it on a slope so gravity rolls it."]))
     return rows
 
