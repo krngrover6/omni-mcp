@@ -32,6 +32,12 @@ enabled_tools = [
   "scene_undo_last",
   "usd_knowledge",
   "workspace_context",
+  # Always-on meta tools: list and call every other router tool (e.g. scene_why_value, class_lesson), and fetch
+  # guided workflows as a normal tool, since Codex does not show MCP prompts.
+  "router_enable_tools",
+  "router_list_tools",
+  "router_call_tool",
+  "router_workflow",
 ]
 
 # ---------------------------------------------------------------------------------------------------------------

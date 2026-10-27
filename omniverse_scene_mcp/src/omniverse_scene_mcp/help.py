@@ -369,7 +369,10 @@ TOOL_CATALOG: dict[str, list[dict[str, Any]]] = {
               'assignment_check(assignment_id="isaac_session02_warehouse")', False, False),
         _tool("scene_explain", "Explain your scene in plain words: groups, geometry, lights, cameras, materials, "
               "physics and layers, with a glossary.", 'scene_explain(focus_path="/World")', False, False),
-        _tool("class_sessions", "List the mentorship class sessions found in your class folder and revision notes.",
+        _tool("router_workflow", "Guided step-by-step workflows (study a session, why does this value appear, daily "
+              "study, fix my error...) as a normal tool, for clients such as Codex that don't show MCP prompts.",
+              "router_workflow(name='why_value', params={'prim_path': '/World/Box', 'attribute': 'size'})", False, False),
+        _tool("class_sessions","List the mentorship class sessions found in your class folder and revision notes.",
               "class_sessions()", False, False),
         _tool("class_ask", "What did the teacher say about something? The best passages from the class subtitles "
               "and notes, by session.", 'class_ask(question="how do I add a ground plane", session=2)', False, False),

@@ -48,6 +48,7 @@ ALWAYS_ON: tuple[str, ...] = (
     "router_enable_tools",
     "router_list_tools",
     "router_call_tool",
+    "router_workflow",
 )
 
 PROFILES: dict[str, tuple[str, ...]] = {

@@ -3108,6 +3108,25 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         except (KeyError, TypeError, ValueError, ToolError) as exc:
             return _error(str(exc))
 
+    @app.tool(name="router_workflow")
+    def router_workflow(name: str | None = None, params: dict[str, Any] | None = None) -> dict:
+        """Guided step-by-step workflows (the same recipes as this server's MCP prompts) as a normal tool, for
+        clients that do not show MCP prompts, such as Codex. No name lists them; with a name, returns the steps
+        to follow, one tool call at a time. Example: router_workflow(name='why_value',
+        params={'prim_path': '/World/Box', 'attribute': 'size'})."""
+        if name is None:
+            return {"ok": True, "workflows": [
+                {"name": key, "title": spec["title"], "about": spec["description"],
+                 "params": {p[0]: p[2] for p in spec["params"]}} for key, spec in workflows.PROMPTS.items()],
+                "how": "Call router_workflow(name=..., params={...}) and follow the steps it returns."}
+        if params is not None and not isinstance(params, dict):
+            return _error("params must be an object such as {'session': 3}")
+        try:
+            steps = workflows.render_prompt(name, **(params or {}))
+        except (KeyError, TypeError) as exc:
+            return _error(str(exc).strip("'\""), workflows=workflows.prompt_names())
+        return {"ok": True, "name": name, "steps": steps}
+
     profiles.install_compact_outputs(app)
     profiles.advertise_tool_list_changed(app)
     stash, profile_report = profiles.apply_profile_to_app(app)

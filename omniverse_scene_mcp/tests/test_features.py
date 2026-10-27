@@ -66,6 +66,30 @@ def test_small_default_discovers_and_calls_hidden_tools_with_validation():
     assert not asyncio.run(meta.run({'name': 'sensor_add_camera', 'arguments': {}}))['ok']
 
 
+def test_workflows_are_a_normal_always_on_tool_for_clients_without_prompts():
+    import tomllib
+    from pathlib import Path
+    from omniverse_scene_mcp.server import build_server
+    with _profile(None):
+        app = build_server()
+    names = [t.name for t in asyncio.run(app.list_tools())]
+    assert 'router_workflow' in names and len(names) <= 25
+    tool = app._tool_manager.get_tool('router_workflow')
+    listed = asyncio.run(tool.run({}))
+    assert {'why_value', 'study_session'} <= {w['name'] for w in listed['workflows']}
+    steps = asyncio.run(tool.run({'name': 'why_value', 'params': {'prim_path': '/World/Box', 'attribute': 'size'}}))
+    assert steps['ok'] and "scene_why_value(prim_path='/World/Box', attribute='size')" in steps['steps']
+    assert not asyncio.run(tool.run({'name': 'no_such_workflow'}))['ok']
+    assert not asyncio.run(tool.run({'name': 'why_value', 'params': {'bogus': 1}}))['ok']
+    # the new study tools are reachable from the starter profile through the meta tools
+    hidden = asyncio.run(app._tool_manager.get_tool('router_list_tools').run({'pattern': 'scene_wh*'}))
+    assert {'scene_why_value', 'scene_what_if'} <= {t['name'] for t in hidden['tools']}
+    example = Path(__file__).resolve().parents[1] / 'docs' / 'client-configs' / 'codex-config.toml.example'
+    enabled = tomllib.loads(example.read_text(encoding='utf-8'))['mcp_servers']['omniverse_router']['enabled_tools']
+    for name in ('router_list_tools', 'router_call_tool', 'router_workflow'):
+        assert name in enabled, name
+
+
 def test_internal_feature_name_cannot_be_overridden_by_a_routed_argument():
     from unittest.mock import patch
     from omniverse_scene_mcp.server import build_server

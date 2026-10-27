@@ -247,7 +247,10 @@ def test_codex_example_parses_as_toml_in_both_options_and_has_no_secrets():
     option_a = tomllib.loads(text)
     server = option_a["mcp_servers"]["omniverse_router"]
     assert server["url"] == "http://127.0.0.1:9905/mcp"
-    assert list(server["enabled_tools"]) == list(profiles.PROFILES["starter"])
+    # exactly what the router's starter profile shows: the starter list plus the always-on meta tools
+    starter = list(profiles.PROFILES["starter"])
+    expected = starter + [name for name in profiles.ALWAYS_ON if name not in starter]
+    assert list(server["enabled_tools"]) == expected
     uncommented = "\n".join(line[3:] if line.startswith("#B ") else ("" if line == "#B" else line) for line in text.splitlines())
     option_b = tomllib.loads(uncommented)["mcp_servers"]["omniverse_router_stdio"]
     assert option_b["args"] == ["-m", "omniverse_scene_mcp", "serve", "--transport", "stdio"]

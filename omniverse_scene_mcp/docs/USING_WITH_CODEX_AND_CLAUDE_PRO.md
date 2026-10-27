@@ -140,12 +140,14 @@ as slash commands, `/mcp__omniverse_router__daily_study`. Commands: `claude mcp 
 
 ## Ready-made recipes (MCP prompts)
 
-`workflows.py` defines nine prompts. A prompt costs nothing until you pick it; then it gives the model a short,
+`workflows.py` defines eleven prompts. A prompt costs nothing until you pick it; then it gives the model a short,
 numbered plan naming the exact tools, with the safety rules (preview with `dry_run=True`, apply only after you agree,
 never save without asking):
 
 | Prompt | Arguments | What it does |
 |---|---|---|
+| `why_value` | prim_path, attribute | scene_why_value, explain what it beats, ask a prediction, check with scene_what_if |
+| `study_session` | session, minutes | class_transcripts > class_session_plan > class_lesson one lesson at a time, quiz |
 | `start_project` | name, template, goal | project_templates > project_list > project_plan > (ask) > project_create |
 | `daily_study` | minutes | learning_today, then drills/quizzes, then learning_exam_progress |
 | `fix_my_error` | paste | explain_error (or kit_explain_recent_errors), then a previewed fix |
@@ -156,10 +158,15 @@ never save without asking):
 | `review_my_scene` | focus_path | read-only: scene_explain, usd_validate, usd_asset_health, scene_layers |
 | `make_portfolio_report` | project_dir, title | project_report preview, then write only after you agree |
 
-Where to find them: Claude Code `/` menu; Claude Desktop "+" menu > the router's prompts. The Codex binary speaks
-`prompts/list` and `prompts/get`, but how (and whether) this Codex version shows server prompts in its UI was not
-verified. In any client you can ask "call router_help" and then "follow the daily_study steps", or paste the
-rendered text (`python -c "from omniverse_scene_mcp import workflows; print(workflows.render_prompt('daily_study', minutes='30'))"`).
+Where to find them: Claude Code `/` menu; Claude Desktop "+" menu > the router's prompts.
+
+**Any client, including Codex:** the always-on tool `router_workflow` returns the same recipes as a normal tool
+call, so prompt support is not needed. Ask "list the router workflows" (it calls `router_workflow()`), then e.g.
+"follow router_workflow why_value for /World/Box size", which calls
+`router_workflow(name="why_value", params={"prim_path": "/World/Box", "attribute": "size"})`.
+
+**Reaching tools outside the starter list:** plain English through `router_dispatch` ("teach me session 3",
+"why is /World/Box.size 2"), or `router_list_tools` then `router_call_tool(name=..., arguments={...})`.
 
 ## Compact results
 
