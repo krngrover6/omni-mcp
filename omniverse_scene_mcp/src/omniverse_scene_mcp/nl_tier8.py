@@ -28,6 +28,42 @@ _LESSON = re.compile(_SESSION_NUMBER + r'\s+(?:lesson|part|block)\s*(\d{1,2})|(?
 _CLAIMS = re.compile(r'(?:check|fact[\s\-]?check)\s+' + _SESSION_NUMBER + r'(?:\s+for\s+(?:mistakes|errors))?', re.I)
 
 
+_ATTR = r'(/[A-Za-z0-9_/]+)\.([A-Za-z_][A-Za-z0-9_:]*)'
+_WHY = re.compile(r'why (?:is|does|has) ' + _ATTR + r'(?:\s.*)?', re.I)
+_WHY_OF = re.compile(r'why (?:is|does) (?:the )?([A-Za-z_][A-Za-z0-9_:]*) (?:of|on) (/[A-Za-z0-9_/]+)(?:\s.*)?', re.I)
+_WHAT_IF = re.compile(r'what if (?:i )?set ' + _ATTR + r' to (.+?)(?: in (?:the )?([A-Za-z0-9_.\-]+?)(?: layer)?)?', re.I)
+
+
+def _value_text(text: str):
+    """'5' -> 5, '[1, 0, 0]' -> list, 'true' -> True, anything else stays text."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        lowered = text.strip().lower()
+        if lowered in ('true', 'false'):
+            return lowered == 'true'
+        return text.strip().strip('"\'')
+
+
+def _value_route(clean: str) -> tuple[str, dict] | None:
+    """'why is /World/Box.size 2', 'why is the size of /World/Box ...', 'what if I set /World/Box.size to 5 in root'."""
+    if len(clean) > 200:
+        return None
+    match = _WHAT_IF.fullmatch(clean)
+    if match:
+        arguments = {'prim_path': match[1], 'attribute': match[2], 'value': _value_text(match[3])}
+        if match[4]:
+            arguments['layer'] = match[4]
+        return 'scene_what_if', arguments
+    match = _WHY.fullmatch(clean)
+    if match:
+        return 'scene_why_value', {'prim_path': match[1], 'attribute': match[2]}
+    match = _WHY_OF.fullmatch(clean)
+    if match:
+        return 'scene_why_value', {'prim_path': match[2], 'attribute': match[1]}
+    return None
+
+
 def _session_route(clean: str) -> tuple[str, dict] | None:
     """Teacher-transcript lessons: 'teach me session 3', 'session 3 lesson 2', 'check session 3 for mistakes'."""
     if len(clean) > 120:
@@ -55,7 +91,7 @@ def parse(text: str) -> dict | None:
     tool = _READ.get(clean.lower())
     arguments = {}
     if tool is None:
-        routed = _session_route(clean)
+        routed = _session_route(clean) or _value_route(clean)
         if routed:
             tool, arguments = routed
     if tool is None:

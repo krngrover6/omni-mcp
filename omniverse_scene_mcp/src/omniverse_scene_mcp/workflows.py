@@ -29,6 +29,27 @@ SAFETY_FOOTER = (
 # name -> {title, description, params: [(name, default, description)], steps: [str]}.
 # Steps are str.format templates over the params.
 PROMPTS: dict[str, dict[str, Any]] = {
+    "why_value": {
+        "title": "Why does this value appear?",
+        "description": "Explain where an attribute's value comes from, then predict and check an override.",
+        "params": [
+            ("prim_path", "/World/Box", "The prim, e.g. /World/Box."),
+            ("attribute", "size", "The attribute name, e.g. size or primvars:displayColor, or 'material'."),
+        ],
+        "steps": [
+            "Call scene_why_value(prim_path='{prim_path}', attribute='{attribute}'). Read the headline aloud in plain "
+            "words: the value, and where it is written.",
+            "Explain the 'beats' list one opinion at a time: what it says and why it loses (layer order or LIVRPS).",
+            "If 'not_authored' or 'computed' is present, explain it separately: a fallback is the schema's built-in "
+            "default; a computed value (inherited visibility, world position, a material bound on an ancestor) is "
+            "worked out by USD and is not an opinion in any layer.",
+            "Ask the user the first 'predict' question and wait for their guess (yes or no, and why).",
+            "Run the matching check_with call (scene_what_if). It runs on in-memory copies only; say so. Compare the "
+            "result with their guess and explain the rule in one or two sentences.",
+            "Offer the second prediction, or another attribute. Never apply a change: to really edit, preview with "
+            "scene_set_attribute(..., dry_run=True) and ask first.",
+        ],
+    },
     "study_session": {
         "title": "Study a teacher's class session",
         "description": "Turn a class recording's subtitles into short lessons, then study them one at a time.",

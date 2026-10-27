@@ -89,6 +89,7 @@ _add("rubric", "rubric_check:check_rubric", "stage", "Learning Python & homework
 _add("semantic_labels", "semantic_audit", "stage", "Live insight")
 _add("semantic_labels", "semantic_labels:add_semantic_labels", "stage", "Scene: change safely", "semantic_labels")
 
+_add("value_story", "scene_why_value:why_value scene_what_if:what_if", "stage", "Live insight")
 _add("session_lessons", "class_transcripts:find_transcripts class_session_plan:session_plan class_lesson:lesson "
      "class_check_claims:check_claims", "local", "Learning Python & homework")
 
