@@ -369,12 +369,10 @@ TOOL_CATALOG: dict[str, list[dict[str, Any]]] = {
               'assignment_check(assignment_id="isaac_session02_warehouse")', False, False),
         _tool("scene_explain", "Explain your scene in plain words: groups, geometry, lights, cameras, materials, "
               "physics and layers, with a glossary.", 'scene_explain(focus_path="/World")', False, False),
-        _tool("router_doctor", "Connection doctor: router, Isaac Sim and Composer bridges, versions, scene target and "
-              "recent errors, with plain next steps. Read-only. Without the router: python -m omniverse_scene_mcp doctor.",
+        _tool("router_doctor", "Read-only connection check of the router and both app bridges, with next steps.",
               "router_doctor()", False, False),
-        _tool("router_workflow","Guided step-by-step workflows (study a session, why does this value appear, daily "
-              "study, fix my error...) as a normal tool, for clients such as Codex that don't show MCP prompts.",
-              "router_workflow(name='why_value', params={'prim_path': '/World/Box', 'attribute': 'size'})", False, False),
+        _tool("router_workflow", "Guided workflows as a normal tool, for clients without MCP prompts (Codex).",
+              "router_workflow(name='why_value', params={...})", False, False),
         _tool("class_sessions","List the mentorship class sessions found in your class folder and revision notes.",
               "class_sessions()", False, False),
         _tool("class_ask", "What did the teacher say about something? The best passages from the class subtitles "

@@ -45,6 +45,37 @@ def _value_text(text: str):
         return text.strip().strip('"\'')
 
 
+_HOMEWORK = re.compile(r'(?:check|grade) (?:my )?(?:session|class) ?0*([345]) homework|'
+                       r'(?:check|grade) (?:my )?homework (?:for|of) (?:session|class) ?0*([345])', re.I)
+_JOINT_KINDS = r'(fixed|revolute|prismatic|spherical|distance)'
+_JOINT_PAIR = re.compile(r'(?:create|add|make) an? ' + _JOINT_KINDS + r' joint (?:between|from) (/[A-Za-z0-9_/]+) '
+                         r'(?:and|to) (/[A-Za-z0-9_/]+)(?: on (?:the )?([xyz])(?: axis)?)?', re.I)
+_JOINT_WORLD = re.compile(r'(?:create|add|make) an? ' + _JOINT_KINDS + r' joint (?:on|for) (/[A-Za-z0-9_/]+)'
+                          r'(?: to the world)?(?: on (?:the )?([xyz])(?: axis)?)?', re.I)
+
+
+def _physics_route(clean: str) -> tuple[str, dict] | None:
+    """'check my session 5 homework', 'create a revolute joint between /World/Base and /World/Wheel on the y axis'."""
+    if len(clean) > 200:
+        return None
+    match = _HOMEWORK.fullmatch(clean)
+    if match:
+        return 'homework_check', {'session': int(match[1] or match[2])}
+    match = _JOINT_PAIR.fullmatch(clean)
+    if match:
+        arguments = {'kind': match[1].lower(), 'body0': match[2], 'body1': match[3]}
+        if match[4]:
+            arguments['axis'] = match[4].upper()
+        return 'scene_create_joint', arguments
+    match = _JOINT_WORLD.fullmatch(clean)
+    if match:
+        arguments = {'kind': match[1].lower(), 'body1': match[2]}
+        if match[3]:
+            arguments['axis'] = match[3].upper()
+        return 'scene_create_joint', arguments
+    return None
+
+
 def _value_route(clean: str) -> tuple[str, dict] | None:
     """'why is /World/Box.size 2', 'why is the size of /World/Box ...', 'what if I set /World/Box.size to 5 in root'."""
     if len(clean) > 200:
@@ -91,7 +122,7 @@ def parse(text: str) -> dict | None:
     tool = _READ.get(clean.lower())
     arguments = {}
     if tool is None:
-        routed = _session_route(clean) or _value_route(clean)
+        routed = _session_route(clean) or _value_route(clean) or _physics_route(clean)
         if routed:
             tool, arguments = routed
     if tool is None:

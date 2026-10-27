@@ -102,6 +102,7 @@ PROFILES: dict[str, tuple[str, ...]] = {
         "scene_tour",
         "scene_why_value",
         "scene_what_if",
+        "homework_*",
         "workspace_learning_index",
     ),
     # Editing and authoring: prims, transforms, layout, materials, lights, cameras, layers, checkpoints, undo.
@@ -176,6 +177,7 @@ PROFILES: dict[str, tuple[str, ...]] = {
         "scene_remove_physics",
         "*physics*",
         "*joint*",
+        "scene_add_drive",
         "*sensor*",
         "*lidar*",
         "*gripper*",
