@@ -2003,9 +2003,10 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
 
     @app.tool(name="sim_step")
     def sim_step(frames: int = 1) -> dict:
-        """CHANGES THE SIMULATION STATE (not authored scene data): advances a paused (or stopped) simulation by frames
+        """CHANGES THE SIMULATION STATE (not authored scene data): advances a paused simulation by frames
         (1-600; larger requests are capped), stepping physics each frame when PhysX is available. Refused while
-        playing (sim_pause first). Call it only when the user asks to step."""
+        playing (sim_pause first) or stopped (sim_play, then sim_pause, then step, so sim_stop can restore every
+        body). Call it only when the user asks to step."""
         if isinstance(frames, bool) or not isinstance(frames, int) or frames < 1:
             return _error("frames must be a whole number from 1 to 600", target="scene", action="simulation_step")
         return _live_payload(router._scene.simulation_step(frames))

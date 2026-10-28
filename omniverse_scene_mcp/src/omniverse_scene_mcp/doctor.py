@@ -283,13 +283,17 @@ def diagnose(
             version = reply.get("version")
             part["rpc_version"] = version
             last = reload_info(root, app["key"])
-            stale_code = bool(last and isinstance(changed, float) and changed > last["finished"] + 1)
+            # The bridge loads the code on disk when the app starts and again on each Script Editor reload,
+            # so whichever happened last is when its code was loaded (a fresh launch needs no reload).
+            loads = [stamp for stamp in (last and last["finished"], _epoch(info.get(owner, {}).get("started"))) if stamp]
+            loaded = max(loads) if loads else None
+            stale_code = bool(loaded and isinstance(changed, float) and changed > loaded + 1)
             if version and version != RPC_VERSION:
                 part.update(status="needs_reload", plain=f"The {app['app']} bridge runs version {version}; the code on "
                             f"disk is {RPC_VERSION}.")
             elif stale_code:
                 part.update(status="needs_reload", plain=f"The {app['app']} bridge is version {version}, but the code changed "
-                            f"after its last reload ({_when(last['finished'])}), so new tools are missing.")
+                            f"after it was last loaded ({_when(loaded)}: app start or reload), so new tools are missing.")
             else:
                 part.update(status="healthy", plain=f"The {app['app']} bridge answers (version {version}).")
             if part["status"] == "needs_reload":

@@ -76,7 +76,20 @@ def test_old_bridge_version_or_code_newer_than_its_reload_needs_a_script_editor_
         stale = _run(Path(tmp), caps=lambda port: {"version": RPC_VERSION},
                      reloads=lambda r, key: {"finished": T0 - 3600, "rpc_version": RPC_VERSION}, **base)
         assert _part(stale, "composer_bridge")["status"] == "needs_reload"
-        assert "after its last reload" in _part(stale, "composer_bridge")["plain"]
+        assert "after it was last loaded" in _part(stale, "composer_bridge")["plain"]
+
+
+def test_app_launched_after_the_code_changed_is_current_without_a_reload():
+    # Seen live: Isaac restarted after a PC crash loads the new code, though its last Script Editor reload is older.
+    with tempfile.TemporaryDirectory() as tmp:
+        base = dict(ports={9905: [100], 9911: [200]}, caps=lambda port: {"version": RPC_VERSION}, report=_health(),
+                    reloads=lambda r, key: {"finished": T0 - 3600, "rpc_version": RPC_VERSION})
+        fresh = _run(Path(tmp), procs={100: {"command_line": ROUTER_CMD, "started": _iso(T0 + 60)},
+                                       200: {"command_line": ISAAC_CMD, "started": _iso(T0 + 120)}}, **base)
+        assert _part(fresh, "isaac_bridge")["status"] == "healthy", fresh
+        old = _run(Path(tmp), procs={100: {"command_line": ROUTER_CMD, "started": _iso(T0 + 60)},
+                                     200: {"command_line": ISAAC_CMD, "started": _iso(T0 - 7200)}}, **base)
+        assert _part(old, "isaac_bridge")["status"] == "needs_reload"  # started and reloaded before the change
 
 
 def test_router_started_before_the_code_changed_needs_a_restart():

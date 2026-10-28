@@ -532,12 +532,15 @@ class FakeSceneBridge:
         return self._sim_result("stop", "Stopped: the timeline was reset to its start time.")
 
     def simulation_step(self, frames: Any = 1) -> dict[str, Any]:
-        """Advance a paused (or stopped) fake timeline by frames time codes (capped at 600); refused while playing."""
+        """Advance a paused fake timeline by frames time codes (capped at 600); refused while playing or stopped."""
         if isinstance(frames, bool) or not isinstance(frames, int) or frames < 1:
             return {"ok": False, "message": "frames must be a whole number from 1 to 600", "mode": "fake", "fake_scene": True}
         if self._timeline_state["playing"]:
             return {"ok": False, "message": "The simulation is playing; call simulation_pause first, then step.",
                     "mode": "fake", "fake_scene": True}
+        if not self._sim_paused:  # like Kit: a stopped timeline must be played and paused first
+            return {"ok": False, "message": "The simulation is stopped; call simulation_play, then simulation_pause, "
+                    "then step (so Stop can put every body back afterwards).", "mode": "fake", "fake_scene": True}
         count = min(frames, MAX_STEP_FRAMES)
         self._sim_paused = True
         self._timeline_state["current_time_code"] = float(self._timeline_state["current_time_code"]) + count

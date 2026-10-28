@@ -149,7 +149,8 @@ class FakeTimeline:
         self.pending = "playing"
 
     def pause(self):
-        self.pending = "paused"
+        # Like Kit (seen live in Isaac 6.1): pausing a stopped timeline does nothing.
+        self.pending = None if self.state == "stopped" else "paused"
 
     def stop(self):
         self.pending = "stopped"
@@ -434,20 +435,35 @@ def test_step_with_physx_steps_each_frame_while_paused():
         assert result["capped"] is False and result["paused"] is True
         assert [round(t, 6) for _dt, t in physx.steps] == [round(2.0 + i / 60, 6) for i in (1, 2, 3)]
         assert all(abs(dt - 1 / 60) < 1e-12 for dt, _t in physx.steps)
-        assert physx.transform_updates == [(False, True, True)]
+        assert physx.transform_updates == [(False, True, True)] * 3  # one write-back per frame
         assert physx.started == 0  # already running: not restarted
         assert abs(result["current_time"] - (2.0 + 3 / 60)) < 1e-9
 
 
-def test_step_from_stopped_pauses_first_and_starts_physx():
+def test_step_from_stopped_is_refused_so_stop_can_restore_poses():
     if _IN_KIT:
         return
     timeline = FakeTimeline(state="stopped")
     physx = FakePhysX(running=False)
     with _fake_kit(omni_timeline=_timeline_module(timeline), omni_physx=_physx_module(physx)):
+        result = extras.simulation_step(5)
+        assert result["ok"] is False and result["stopped"] is True
+        assert "simulation_play, then simulation_pause" in result["message"]
+        assert physx.steps == [] and physx.started == 0 and timeline.set_times == []  # nothing simulated
+
+
+def test_step_after_play_then_pause_starts_physx_and_stop_resets():
+    if _IN_KIT:
+        return
+    timeline = FakeTimeline(state="stopped")
+    physx = FakePhysX(running=False)
+    with _fake_kit(omni_timeline=_timeline_module(timeline), omni_physx=_physx_module(physx)):
+        assert extras.simulation_play()["playing"] is True
+        assert extras.simulation_pause()["paused"] is True
         result = extras.simulation_step()
-        assert result["ok"] is True and result["paused"] is True and result["stopped"] is False
+        assert result["ok"] is True and result["paused"] is True
         assert physx.started == 1 and len(physx.steps) == 1
+        assert extras.simulation_stop()["current_time"] == 0.0
 
 
 def test_step_caps_frames_and_validates_input():

@@ -424,7 +424,7 @@ def simulation_stop() -> dict[str, Any]:
 def simulation_step(frames: Any = 1) -> dict[str, Any]:
     """Advance a paused simulation by frames (1..600; larger requests are capped) and return the new status.
 
-    A stopped timeline is paused first; a playing one is refused (pause it first). Uses PhysX
+    A stopped or playing timeline is refused (play, then pause first). Uses PhysX
     update_simulation per frame when omni.physx is available, else only moves the timeline forward.
     """
     if isinstance(frames, bool) or not isinstance(frames, int):
@@ -441,8 +441,11 @@ def simulation_step(frames: Any = 1) -> dict[str, Any]:
         if before["playing"]:
             return _error("The simulation is playing; call simulation_pause first, then step.", **_strip(before))
         if before["stopped"]:
-            timeline.pause()  # enter the paused state at the current (start) time, as the Pause button does
-            _commit(timeline)
+            # Seen live in Isaac 6.1: stepping a stopped timeline (even after play()+pause() in this same call)
+            # leaves it 'stopped', so Stop never reaches PhysX and the stepped poses stay written in the scene.
+            # Play and pause as separate calls (Kit processes them between frames) make Stop restore everything.
+            return _error("The simulation is stopped; call simulation_play, then simulation_pause, then step "
+                          "(so Stop can put every body back afterwards).", **_strip(before))
         rate = _tcps(timeline)
         dt = 1.0 / rate
         start = _float(_call(timeline, "get_current_time")) or 0.0
@@ -459,7 +462,9 @@ def simulation_step(frames: Any = 1) -> dict[str, Any]:
                 current = start + index * dt
                 timeline.set_current_time(current)
                 physx.update_simulation(dt, current)
-            _call(physx, "update_transformations", False, True, True)
+                # Write poses back every frame, as PhysX's own Step button does: a body that falls asleep
+                # before a single final write-back (a drawer at its limit, a settled door) keeps a stale pose.
+                _call(physx, "update_transformations", False, True, True)
             via = "physx"
         else:
             current = start + frames * dt
