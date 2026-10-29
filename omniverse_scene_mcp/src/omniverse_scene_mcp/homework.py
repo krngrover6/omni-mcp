@@ -251,11 +251,19 @@ def _session5(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
 _CONVEYOR = "isaacsim.asset.gen.conveyor.IsaacConveyor"
 
 
+_SYSTEM_GRAPH_ROOTS = ("/Render", "/Replicator", "/Orchestrator", "/OmniverseKit")
+
+
+def _user_graph_prim(prim: Any) -> bool:
+    """Graphs and nodes the learner made, not Kit's own (seen live: Replicator/render graphs under /Render...)."""
+    return not str(prim.GetPath()).startswith(_SYSTEM_GRAPH_ROOTS)
+
+
 def _graph_nodes(prims: list[Any]) -> list[tuple[Any, str]]:
-    """(node prim, node type id) for every Action Graph node in the scene."""
+    """(node prim, node type id) for every Action Graph node the learner made."""
     nodes = []
     for prim in prims:
-        if prim.GetTypeName() in ("OmniGraphNode", "ComputeNode"):
+        if prim.GetTypeName() in ("OmniGraphNode", "ComputeNode") and _user_graph_prim(prim):
             kind = prim.GetAttribute("node:type")
             nodes.append((prim, str(kind.Get()) if kind and kind.Get() else ""))
     return nodes
@@ -292,7 +300,7 @@ def _session6(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
     """Class session 6: a conveyor loop (kinematic belts driven by Conveyor Belt nodes) that stops a box for 5 s at a
     stopper, then lets it carry on. Hints name the nodes to use; they never hand over the finished graph."""
     rows = []
-    graphs = [p for p in prims if p.GetTypeName() == "OmniGraph"]
+    graphs = [p for p in prims if p.GetTypeName() == "OmniGraph" and _user_graph_prim(p)]
     nodes = _graph_nodes(prims)
     rows.append(_row("action_graph", "An Action Graph exists", 1, "pass" if graphs else "fail",
                      {"graphs": [str(g.GetPath()) for g in graphs][:6]},
@@ -342,7 +350,7 @@ def _session6(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
                 riding.append(str(box.GetPath()))
                 break
     rows.append(_row("box", "A box rests on a belt", 1, "pass" if riding else "partial" if boxes else "fail",
-                     {"boxes": [str(b.GetPath()) for b in boxes][:6], "on_a_belt": riding[:6]},
+                     {"dynamic_bodies": len(boxes), "on_a_belt": riding[:6]},
                      "The box must be a normal (dynamic) rigid body sitting on a belt, or nothing carries it.",
                      ["Make a small cube a rigid body (not kinematic) and place it just above a belt."]))
 
@@ -358,10 +366,31 @@ def _session6(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
                      ["Read the box's xformOp:translate (Read Prim Attribute), compare one axis with the stopper "
                       "position (Compare), and let a Branch decide."]))
 
-    stoppers = [prim for prim, kind in nodes if kind.endswith(("WriteVariable", "WritePrimAttribute"))
-                or (kind == _CONVEYOR and _wired(prim, "inputs:enabled"))]
+    # Seen live: a W-key graph writing a ball's velocity counted as "stopping the belt". Only stops that change the
+    # conveyor's own speed variable, a riding box's velocity, or the belt node's Enabled pin count.
+    by_path = {str(prim.GetPath()): (prim, kind) for prim, kind in nodes}
+    speed_vars = set()
+    for conveyor in complete:
+        for source in _wired(conveyor, "inputs:velocity"):
+            node = by_path.get(source.split(".")[0])
+            if node and node[1].endswith("ReadVariable"):
+                name = node[0].GetAttribute("inputs:variableName")
+                speed_vars.add(str(name.Get()) if name and name.Get() else "")
+
+    def _stops(prim: Any, kind: str) -> bool:
+        if kind.endswith("WriteVariable"):
+            name = prim.GetAttribute("inputs:variableName")
+            return not speed_vars or (bool(name) and str(name.Get()) in speed_vars)
+        if kind.endswith("WritePrimAttribute"):
+            name = prim.GetAttribute("inputs:name")
+            return (bool(name) and str(name.Get()) == "physics:velocity"
+                    and any(target in riding for target in _wired(prim, "inputs:prim")))
+        return kind == _CONVEYOR and bool(_wired(prim, "inputs:enabled"))
+
+    stoppers = [prim for prim, kind in nodes if _stops(prim, kind)]
     rows.append(_row("stop", "Something stops the belt or the box", 2, "pass" if stoppers else "fail",
-                     {"stopping_nodes": [str(p.GetPath()) for p in stoppers][:6]},
+                     {"stopping_nodes": [str(p.GetPath()) for p in stoppers][:6],
+                      "conveyor_speed_variables": sorted(speed_vars)},
                      "Stopping means changing what drives the box: set the belt's speed variable to 0 (Write "
                      "Variable) or switch the Conveyor Belt node off (its Enabled input).",
                      ["Add a Write Variable node that sets the conveyor's speed variable to 0 when the box arrives."]))

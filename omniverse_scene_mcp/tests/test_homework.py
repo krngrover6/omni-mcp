@@ -213,3 +213,30 @@ def test_session6_conveyor_loop_from_one_belt_to_a_full_stop_and_go():
     assert set(_status(full).values()) == {"pass"}, _status(full)
     assert full["passed"] and full["read_only"]
     assert hw.homework_sessions()["sessions"][-1]["session"] == 6
+
+
+def test_session6_stop_must_act_on_the_belt_and_kit_graphs_do_not_count():
+    # Seen live: a W-key graph writing a ball's velocity passed "stop", and /Render graphs counted as the learner's.
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    stage.DefinePrim("/Render/PostProcess/SDGPipeline", "OmniGraph")
+    assert _status(hw.check_homework(stage, 6))["action_graph"] == "fail"
+    stage.DefinePrim("/World/Graph", "OmniGraph")
+    tick = _node(stage, "/World/Graph/OnTick", "omni.graph.action.OnPlaybackTick")
+    belt = _belt(stage, "/World/Belt", (0, 0, 0.05), 0)
+    conveyor = _conveyor(stage, "/World/Graph", "Conveyor", belt, tick)
+    speed = _node(stage, "/World/Graph/ReadSpeed", "omni.graph.core.ReadVariable")
+    _pin(speed, "inputs:variableName").Set("Velocity")
+    _wire(speed, "outputs:value", conveyor, "inputs:velocity")
+    _body(stage, "/World/Ball", (5, 5, 0.5))
+    push = _node(stage, "/World/Graph/PushBall", "omni.graph.nodes.WritePrimAttribute")
+    _pin(push, "inputs:name").Set("physics:velocity")
+    push.CreateRelationship("inputs:prim").SetTargets(["/World/Ball"])
+    other = _node(stage, "/World/Graph/Score", "omni.graph.core.WriteVariable")
+    _pin(other, "inputs:variableName").Set("score")
+    result = hw.check_homework(stage, 6)
+    assert _status(result)["stop"] == "fail", result["results"]
+    stop = _node(stage, "/World/Graph/StopBelt", "omni.graph.core.WriteVariable")
+    _pin(stop, "inputs:variableName").Set("Velocity")
+    rows = {r["rule"]: r for r in hw.check_homework(stage, 6)["results"]}
+    assert rows["stop"]["status"] == "pass" and rows["stop"]["evidence"]["conveyor_speed_variables"] == ["Velocity"]
