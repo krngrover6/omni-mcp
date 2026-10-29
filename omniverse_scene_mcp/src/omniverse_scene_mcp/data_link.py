@@ -132,7 +132,13 @@ def _write(target: str, value: float) -> str:
         graph = og.get_graph_by_path(prim_path)
         variable = graph.find_variable(attribute[len("graph:variable:"):]) if graph else None
         if variable is not None:
-            variable.set(graph.get_default_graph_context(), value)
+            context = graph.get_default_graph_context()
+            # Seen live: a value written here outlived data_link_stop AND Stop/Play (the belt stayed at 0), so the
+            # first write remembers the original and stop_link puts it back.
+            originals = _LINK.setdefault("variable_originals", {})
+            if target not in originals:
+                originals[target] = (variable, context, variable.get(context))
+            variable.set(context, value)
             return "graph variable"
     if attribute.startswith("inputs:") and og is not None:
         try:
@@ -237,6 +243,13 @@ def stop_link() -> dict[str, Any]:
     if handle is not None and hasattr(handle, "unsubscribe"):
         handle.unsubscribe()
     cleared = 0
+    restored = 0
+    for target, (variable, context, original) in sorted(_LINK.pop("variable_originals", {}).items()):
+        try:
+            variable.set(context, original)
+            restored += 1
+        except Exception:  # noqa: BLE001 - the graph was deleted meanwhile
+            continue
     usd = jc._kit_module("omni.usd")
     stage = usd.get_context().get_stage() if usd else None
     for target in sorted(_LINK.get("session_attrs", ())):
@@ -249,4 +262,5 @@ def stop_link() -> dict[str, Any]:
             spec.ClearDefaultValue()
             cleared += 1
     _LINK["running"] = False
-    return {"ok": True, "was_running": was, "updates": _LINK.get("updates", 0), "session_values_cleared": cleared}
+    return {"ok": True, "was_running": was, "updates": _LINK.get("updates", 0), "session_values_cleared": cleared,
+            "graph_variables_restored": restored}

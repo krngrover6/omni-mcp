@@ -83,3 +83,24 @@ def test_json_feed_is_reread_and_bad_input_is_refused():
     assert not dl.start_link(str(feed), [{"column": "lux", "target": "World"}])["ok"]
     assert not dl.preview_source(str(folder / "x.txt"))["ok"]
     assert features.FEATURES["data_link_start"].mutates and not features.FEATURES["data_link_preview"].mutates
+
+
+def test_stop_puts_graph_variables_back():
+    # Seen live: the belt stayed at speed 0 after data_link_stop and even after Stop/Play.
+    import sys
+
+    state = {"value": 0.2}
+    variable = types.SimpleNamespace(get=lambda ctx: state["value"], set=lambda ctx, v: state.update(value=v))
+    graph = types.SimpleNamespace(find_variable=lambda name: variable, get_default_graph_context=lambda: "ctx")
+    og = types.SimpleNamespace(get_graph_by_path=lambda path: graph)
+    saved = jc._kit_module
+    jc._kit_module = lambda name: og if name == "omni.graph.core" else None
+    try:
+        dl._LINK.clear()
+        assert dl._write("/World/G.graph:variable:Velocity", 0.0) == "graph variable" and state["value"] == 0.0
+        dl._write("/World/G.graph:variable:Velocity", 0.5)
+        stopped = dl.stop_link()
+        assert stopped["graph_variables_restored"] == 1 and state["value"] == 0.2, (stopped, state)
+    finally:
+        jc._kit_module = saved
+        dl._LINK.clear()
