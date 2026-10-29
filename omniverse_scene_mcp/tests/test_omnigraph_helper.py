@@ -642,6 +642,19 @@ def test_apply_recipe_refuses_outside_kit_or_on_another_stage():
     invalid = apply_recipe(stage, "print_on_play", dry_run=False, text="")
     assert invalid["ok"] is False and invalid["dry_run"] is True
 
+    # Seen live in Isaac 6.1: og built the graph, then failed on a value; the half-built graph must not stay behind.
+    class HalfBuilt:
+        class Controller(_FakeController):
+            @classmethod
+            def edit(cls, graph_id, edits):
+                stage.DefinePrim(graph_id["graph_path"], "OmniGraph")
+                raise RuntimeError("Failed to set value")
+
+    half = _with_kit({"og": HalfBuilt, "live_stage": stage, "usdrt": None},
+                     lambda: apply_recipe(stage, "print_on_play", dry_run=False, **args))
+    assert half["ok"] is False and "removed" in half["note"], half
+    assert not stage.GetPrimAtPath(half["plan"]["graph_path"])
+
 
 def test_module_never_imports_omni_graph():
     if _IN_KIT:

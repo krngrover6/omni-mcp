@@ -1602,8 +1602,8 @@ def _rigid_problems(stage: Any, prim: Any, plan: _Plan, *, want_kinematic: bool)
     kinematic = prim.GetAttribute("physics:kinematicEnabled")
     is_kinematic = bool(kinematic and kinematic.Get())
     if want_kinematic and not is_kinematic:
-        plan.warnings.append(f"Make {path} kinematic (scene_set_attribute physics:kinematicEnabled = true): a belt "
-                             "must stay put while it carries things, as in class.")
+        plan.warnings.append(f"Make {path} kinematic (scene_make_rigid_body with kinematic=True): a belt must stay "
+                             "put while it carries things, as in class.")
     if not want_kinematic and is_kinematic:
         plan.warnings.append(f"{path} is kinematic, so physics ignores the velocity this graph writes; turn kinematic off.")
     scene = any(item.GetTypeName() == "PhysicsScene" for item in stage.Traverse()) if stage is not None else True
@@ -1713,8 +1713,10 @@ def _plan_conveyor(stage: Any, plan: _Plan, params: dict[str, Any]) -> str | Non
     plan.wire("ReadSpeed.outputs:value", "ConveyorNode.inputs:velocity", "data", "the belt speed")
     plan.value("ReadSpeed.inputs:variableName", "Velocity", "which graph variable to read")
     plan.value("ConveyorNode.inputs:conveyorPrim", [belt], "the belt (a target input)", target=True)
-    plan.value("ConveyorNode.inputs:direction", [float(v) for v in direction], "belt-local direction",
-               type_name="float[3]")
+    if [float(v) for v in direction] != [1.0, 0.0, 0.0]:
+        # No type_name: direction already has a fixed float[3] type. Seen live in Isaac 6.1: passing the type for a
+        # fixed-type pin made og refuse the value; Isaac's own Create Conveyor leaves the default (1, 0, 0) alone.
+        plan.value("ConveyorNode.inputs:direction", [float(v) for v in direction], "belt-local direction")
     plan.explanation += [
         f"While playing -> each frame the Conveyor Belt node gives {belt} a surface velocity of Velocity m/s along "
         f"{list(direction)}: the belt stays still (kinematic) but anything resting on it slides along.",
@@ -1816,7 +1818,8 @@ def _python_script(plan: _Plan) -> str:
         lines.append("        # Graph variables: (name, type, starting value); edit them live in the graph's Variables panel")
         lines.append("        keys.CREATE_VARIABLES: [")
         for item in plan.variables:
-            lines.append(f"            ({item['name']!r}, {item['type']!r}, {item['default']!r}),  # {item['why']}")
+            default = tuple(item["default"]) if isinstance(item["default"], list) else item["default"]
+            lines.append(f"            ({item['name']!r}, {item['type']!r}, {default!r}),  # {item['why']}")
         lines.append("        ],")
     if plan.attributes:
         lines.append("        # Step 2. Extra (dynamic) attributes: the name decides input or output")
@@ -1836,7 +1839,7 @@ def _python_script(plan: _Plan) -> str:
         if item.get("target"):
             value = "[" + ", ".join(f"usdrt.Sdf.Path({path!r})" for path in item["value"]) + "]"
         else:
-            value = repr(item["value"])
+            value = repr(tuple(item["value"]) if isinstance(item["value"], list) else item["value"])
         typed = f", {item['type']!r}" if item.get("type") else ""
         lines.append(f"            ({item['attribute']!r}, {value}{typed}),  # {item['why']}")
     lines += [
@@ -1887,7 +1890,10 @@ def _build_edit(og: Any, usdrt: Any, plan: dict[str, Any]) -> dict[str, Any]:
     keys = og.Controller.Keys
     edit: dict[Any, Any] = {keys.CREATE_NODES: [(node["name"], node["type"]) for node in plan["nodes"]]}
     if plan.get("variables"):
-        edit[keys.CREATE_VARIABLES] = [(item["name"], item["type"], item["default"]) for item in plan["variables"]]
+        # OmniGraph rejects a list default for a tuple type (seen live); a tuple works.
+        edit[keys.CREATE_VARIABLES] = [(item["name"], item["type"], tuple(item["default"])
+                                        if isinstance(item["default"], list) else item["default"])
+                                       for item in plan["variables"]]
     if plan["attributes"]:
         edit[keys.CREATE_ATTRIBUTES] = [(item["attribute"], item["type"]) for item in plan["attributes"]]
     edit[keys.CONNECT] = [(item["from"], item["to"]) for item in plan["connections"]]
@@ -1897,6 +1903,9 @@ def _build_edit(og: Any, usdrt: Any, plan: dict[str, Any]) -> dict[str, Any]:
         if item.get("target"):
             make = getattr(getattr(usdrt, "Sdf", None), "Path", None) if usdrt is not None else None
             value = [make(path) if callable(make) else path for path in value]
+        elif isinstance(value, list):
+            # Seen live in Isaac 6.1: og refuses a list for a tuple input such as the conveyor's float[3] direction.
+            value = tuple(value)
         values.append((item["attribute"], value, item["type"]) if item.get("type") else (item["attribute"], value))
     edit[keys.SET_VALUES] = values
     return edit
@@ -1927,8 +1936,18 @@ def apply_recipe(stage: Any, name: str, *, dry_run: bool = True, graph_path: str
     try:
         result = og.Controller.edit(dict(plan["graph"]), edit)
     except Exception as exc:  # noqa: BLE001 - og.OmniGraphError and friends
+        # Seen live in Isaac 6.1: a failed value left a half-built graph. The path was new (plan_recipe never reuses
+        # one), so removing it touches nothing of the user's.
+        removed = False
+        try:
+            if stage.GetPrimAtPath(plan["graph_path"]):
+                removed = bool(stage.RemovePrim(plan["graph_path"]))
+        except Exception:  # noqa: BLE001
+            removed = False
         return {"ok": False, "dry_run": False, "error": f"og.Controller.edit failed: {type(exc).__name__}: {exc}",
-                "note": "OmniGraph may have left a partly built graph; press Ctrl+Z once to remove it.", "plan": plan}
+                "note": ("The partly built graph was removed; nothing is left behind." if removed else
+                         "OmniGraph may have left a partly built graph; press Ctrl+Z once to remove it."),
+                "plan": plan}
     created = []
     try:
         for node in result[1]:

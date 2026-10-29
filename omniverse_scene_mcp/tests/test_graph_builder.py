@@ -47,6 +47,15 @@ class _Controller:
 
     @classmethod
     def edit(cls, graph, edits):
+        # Like the real og (seen live): on an EXISTING graph (given as a path) short names such as
+        # "Node.inputs:x" cannot be looked up; only nodes created in the same edit can be named that way.
+        if isinstance(graph, str):
+            created = {name for name, _type in edits.get("create_nodes", [])}
+            for section in ("connect", "disconnect", "set_values"):
+                for item in edits.get(section, []):
+                    for end in (item[:2] if section != "set_values" else item[:1]):
+                        if not str(end).startswith("/") and str(end).split(".")[0] not in created:
+                            raise RuntimeError(f"Failed trying to look up attribute with ({end}, node=None)")
         cls.calls.append((graph, edits))
         return ("graph", [], [], {})
 
@@ -121,10 +130,12 @@ def test_live_steps_send_the_matching_controller_sections():
                              values={"inputs:keyIn": "W"}, dry_run=False),
          {"create_nodes": [("KeyW", "omni.graph.action.OnKeyboardInput")], "set_values": [("KeyW.inputs:keyIn", "W")]}),
         (lambda: gb.add_variable(stage, graph, "forward", "float[3]", default=[5, 0, 0], dry_run=False),
-         {"create_variables": [("forward", "float[3]", [5, 0, 0])]}),
+         {"create_variables": [("forward", "float[3]", (5, 0, 0))]}),  # a tuple: OmniGraph rejects a list (seen live)
         (lambda: gb.set_value(stage, graph, "OnTick.inputs:onlyPlayback", True, dry_run=False),
-         {"set_values": [("OnTick.inputs:onlyPlayback", True)]}),
-        (lambda: gb.delete_node(stage, graph, "OnTick", dry_run=False), {"delete_nodes": ["OnTick"]}),
+         {"set_values": [("/World/ActionGraph/OnTick.inputs:onlyPlayback", True)]}),  # full paths (seen live)
+        (lambda: gb.delete_node(stage, graph, "OnTick", dry_run=False), {"delete_nodes": ["/World/ActionGraph/OnTick"]}),
+        (lambda: gb.connect(stage, graph, "OnTick.outputs:tick", "OnTick.inputs:onlyPlayback", dry_run=False),
+         {"connect": [("/World/ActionGraph/OnTick.outputs:tick", "/World/ActionGraph/OnTick.inputs:onlyPlayback")]}),
     ]
     for step, expected in steps:
         result = _live(stage, step)
@@ -152,4 +163,11 @@ def test_session6_recipes_plan_variables_and_warn_about_missing_physics():
     assert "kinematic" in warnings and "collider" in warnings and "isaacsim.asset.gen.conveyor" in warnings
     edit = ogh._build_edit(_Og, None, belt)
     assert edit["create_variables"] == [("Velocity", "float", -2.0)]
+    keys_edit = ogh._build_edit(_Og, None, keys)
+    assert ("forward", "float[3]", (5.0, 0.0, 0.0)) in keys_edit["create_variables"], keys_edit["create_variables"]
     assert ("OnTick.outputs:tick", "ConveyorNode.inputs:onStep") in edit["connect"]
+    # Seen live: the default direction is left alone (as Isaac's Create Conveyor does); another one is sent as a
+    # tuple without a type name (og refused a list, and a type name on this fixed-type pin).
+    assert not any(item[0] == "ConveyorNode.inputs:direction" for item in edit["set_values"]), edit["set_values"]
+    turned = ogh._build_edit(_Og, None, ogh.plan_recipe("conveyor", stage=stage, belt="/World/Belt", direction=[0, 1, 0]))
+    assert ("ConveyorNode.inputs:direction", (0.0, 1.0, 0.0)) in turned["set_values"], turned["set_values"]

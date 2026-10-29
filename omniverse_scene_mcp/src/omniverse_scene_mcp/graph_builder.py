@@ -23,8 +23,14 @@ from .exam.progress import workspace_root
 ISAAC_FOLDER = "isaacsim-6.1.0"
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 _PIN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\.((?:inputs|outputs|state):[A-Za-z0-9_:]+)$")
-VARIABLE_TYPES = ("bool", "int", "float", "double", "token", "string", "float3", "double3", "float[3]", "int[]",
-                  "float[]", "double[]", "token[]", "path", "matrixd[4]")
+VARIABLE_TYPES = ("bool", "int", "float", "double", "token", "string", "float[3]", "double[3]", "int[]", "float[]",
+                  "double[]", "token[]", "path", "matrixd[4]")
+
+
+def og_value(value: Any) -> Any:
+    """A JSON list as OmniGraph wants a tuple value. Seen live in Isaac 6.1: a float[3] variable default given as a
+    list failed with "type is not compatible with <class 'list'>" and left a half-made variable behind."""
+    return tuple(og_value(item) for item in value) if isinstance(value, list) else value
 
 
 # --------------------------------------------------------------------------------------------------- node search
@@ -113,6 +119,23 @@ def _describe_node(og: Any, path: str) -> dict[str, Any]:
         return pins
     except Exception as exc:  # noqa: BLE001 - a description is a bonus, never a failure
         return {"note": f"Pins could not be listed: {type(exc).__name__}"}
+
+
+def _full(graph_path: str, pin: str) -> str:
+    """NodeName.inputs:x as /Graph/NodeName.inputs:x. Seen live: og.Controller.edit on an EXISTING graph cannot look
+    up short names ("node=None, graph=None"); they only work in the same edit that creates the node."""
+    return pin if pin.startswith("/") else f"{graph_path}/{pin}"
+
+
+def _kit_value(value: Any) -> Any:
+    """Prim paths for a prim-picker (target) pin become usdrt.Sdf.Path objects, as og expects; lists become tuples."""
+    if isinstance(value, list) and value and all(isinstance(v, str) and v.startswith("/") for v in value):
+        usdrt = ogh._kit_modules().get("usdrt")
+        make = getattr(getattr(usdrt, "Sdf", None), "Path", None) if usdrt is not None else None
+        if callable(make):
+            return [make(v) for v in value]
+        return value
+    return og_value(value)
 
 
 def _run(og: Any, stage: Any, graph_path: str, edits: dict[str, Any], message: str,
@@ -208,7 +231,7 @@ def add_node(stage: Any, graph_path: str, name: str, node_type: str, *, values: 
         return refusal
     edits: dict[str, Any] = {"create_nodes": [(name, node_type)]}
     if values:
-        edits["set_values"] = [(f"{name}.{pin}", value) for pin, value in values.items()]
+        edits["set_values"] = [(f"{name}.{pin}", _kit_value(value)) for pin, value in values.items()]
     result = _run(og, stage, graph_path, edits, f"Added {name} ({node_type}).", describe=f"{graph_path}/{name}")
     return {**result, "python": python}
 
@@ -231,13 +254,14 @@ def connect(stage: Any, graph_path: str, source: str, target: str, *, dry_run: b
         return {"ok": False, "error": "Wires go FROM an output pin TO an input pin (source outputs:..., target inputs:...)."}
     plan = {"graph_path": graph_path, "from": source, "to": target,
             "explained": "Execution pins (white) decide WHEN a node runs; data pins carry values. Types must match."}
-    python = _python(graph_path, "connect", f"({source!r}, {target!r})")
+    python = _python(graph_path, "connect", f"({_full(graph_path, source)!r}, {_full(graph_path, target)!r})")
     if dry_run is not False:
         return _preview(plan, python, [])
     og, refusal = _kit(stage)
     if refusal:
         return refusal
-    return {**_run(og, stage, graph_path, {"connect": [(source, target)]}, f"Connected {source} -> {target}."),
+    wire = (_full(graph_path, source), _full(graph_path, target))
+    return {**_run(og, stage, graph_path, {"connect": [wire]}, f"Connected {source} -> {target}."),
             "python": python}
 
 
@@ -246,13 +270,14 @@ def disconnect(stage: Any, graph_path: str, source: str, target: str, *, dry_run
     problem = _check_graph(stage, graph_path) or _check_pin(stage, graph_path, source) or _check_pin(stage, graph_path, target)
     if problem:
         return {"ok": False, "error": problem}
-    python = _python(graph_path, "disconnect", f"({source!r}, {target!r})")
+    python = _python(graph_path, "disconnect", f"({_full(graph_path, source)!r}, {_full(graph_path, target)!r})")
     if dry_run is not False:
         return _preview({"graph_path": graph_path, "remove": f"{source} -> {target}"}, python, [])
     og, refusal = _kit(stage)
     if refusal:
         return refusal
-    return {**_run(og, stage, graph_path, {"disconnect": [(source, target)]}, f"Removed {source} -> {target}."),
+    wire = (_full(graph_path, source), _full(graph_path, target))
+    return {**_run(og, stage, graph_path, {"disconnect": [wire]}, f"Removed {source} -> {target}."),
             "python": python}
 
 
@@ -266,7 +291,7 @@ def set_value(stage: Any, graph_path: str, pin: str, value: Any, *, value_type: 
     if ".inputs:" not in pin:
         return {"ok": False, "error": "Only input pins take values (NodeName.inputs:...)."}
     item = (pin, value, value_type) if value_type else (pin, value)
-    python = _python(graph_path, "set_values", repr(item))
+    python = _python(graph_path, "set_values", repr((_full(graph_path, pin), *item[1:])))
     warnings = [] if value_type or not isinstance(value, list) else [
         "A list on a flexible pin may need value_type (e.g. 'float[3]' for a velocity) to avoid an 'unresolved type'."]
     if dry_run is not False:
@@ -274,7 +299,8 @@ def set_value(stage: Any, graph_path: str, pin: str, value: Any, *, value_type: 
     og, refusal = _kit(stage)
     if refusal:
         return refusal
-    return {**_run(og, stage, graph_path, {"set_values": [item]}, f"Set {pin} = {value!r}."), "python": python}
+    live_item = (_full(graph_path, pin), _kit_value(value), *item[2:])
+    return {**_run(og, stage, graph_path, {"set_values": [live_item]}, f"Set {pin} = {value!r}."), "python": python}
 
 
 def add_variable(stage: Any, graph_path: str, name: str, value_type: str, *, default: Any = None,
@@ -288,7 +314,7 @@ def add_variable(stage: Any, graph_path: str, name: str, value_type: str, *, def
         return {"ok": False, "error": "name must be a simple word such as forward or speed."}
     if value_type not in VARIABLE_TYPES:
         return {"ok": False, "error": f"value_type must be one of {', '.join(VARIABLE_TYPES)}."}
-    item = (name, value_type, default) if default is not None else (name, value_type)
+    item = (name, value_type, og_value(default)) if default is not None else (name, value_type)
     python = _python(graph_path, "create_variables", repr(item))
     plan = {"graph_path": graph_path, "variable": name, "type": value_type, "default": default,
             "how_to_use": f"Add a node of type omni.graph.core.ReadVariable with inputs:variableName = {name!r}."}
@@ -308,11 +334,12 @@ def delete_node(stage: Any, graph_path: str, name: str, *, dry_run: bool = True)
         return {"ok": False, "error": problem}
     if not isinstance(name, str) or _node_prim(stage, graph_path, name) is None:
         return {"ok": False, "error": f"{graph_path} has no node named {name!r}."}
-    python = _python(graph_path, "delete_nodes", repr(name))
+    python = _python(graph_path, "delete_nodes", repr(f"{graph_path}/{name}"))
     if dry_run is not False:
         return _preview({"graph_path": graph_path, "delete": f"{graph_path}/{name}"}, python,
                         ["Its wires go too."])
     og, refusal = _kit(stage)
     if refusal:
         return refusal
-    return {**_run(og, stage, graph_path, {"delete_nodes": [name]}, f"Deleted {name}."), "python": python}
+    return {**_run(og, stage, graph_path, {"delete_nodes": [f"{graph_path}/{name}"]}, f"Deleted {name}."),
+            "python": python}
