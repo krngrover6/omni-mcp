@@ -1310,6 +1310,18 @@ RECIPES: dict[str, dict[str, Any]] = {
                    "graph_path": "optional new graph path"},
         "required": ("robot", "sensor_prim", "obstacle"),
     },
+    "color_sort": {
+        "summary": "Class session 13: sort packages by colour. When a package enters the detection zone, the graph "
+        "SEES its colour, DECIDES its bin (e.g. red -> Bin A) and ACTS by pushing it toward that bin. A Script Node "
+        "does it for every package in the group.",
+        "params": {"packages": "group holding the packages (default /World/Packages, as scene_spawn_packages makes)",
+                   "bins": "{colour: bin prim path}, e.g. {'red': '/World/BinA', 'blue': '/World/BinB'}",
+                   "zone_min": "detection zone corner [x, y, z] (world)", "zone_max": "the opposite corner",
+                   "speed": "push speed toward the bin, m/s (default 1.5)",
+                   "hop": "small upward speed so it clears the belt edge, m/s (default 1.0)",
+                   "graph_path": "optional new graph path"},
+        "required": ("bins", "zone_min", "zone_max"),
+    },
     "conveyor": {
         "summary": "Class session 6: a conveyor belt. A kinematic rigid-body belt moves what lies on it; the speed "
         "is a graph variable (Velocity) you can change while it plays. Same graph as Isaac's own Create Conveyor.",
@@ -1331,6 +1343,7 @@ _DEFAULT_GRAPH = {
     "differential_drive": "/World/Graphs/DifferentialDrive",
     "drive_sequence": "/World/Graphs/DriveSequence",
     "obstacle_stop": "/World/Graphs/ObstacleStop",
+    "color_sort": "/World/Graphs/ColorSort",
 }
 
 
@@ -1971,6 +1984,71 @@ def _plan_obstacle_stop(stage: Any, plan: _Plan, params: dict[str, Any]) -> str 
     return None
 
 
+_COLOR_SORT_SCRIPT = 'import json\nimport omni.timeline\nimport omni.usd\nfrom pxr import Gf, Usd, UsdGeom, UsdPhysics\n\nSORTED = set()      # packages already sent to a bin during this Play\nLAST_TIME = [0.0]   # to notice Stop -> Play (the clock goes back to 0)\n\n\ndef setup(db):\n    db.outputs.sorted = 0\n\n\ndef where(prim):\n    # world position, whatever the package\'s parent is\n    return UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()\n\n\ndef see_color(prim):\n    # PERCEPTION stand-in: the package\'s colour, as a camera + classifier would report it\n    token = prim.GetAttribute("package:color")\n    if token and token.Get():\n        return str(token.Get())\n    colors = UsdGeom.Gprim(prim).GetDisplayColorAttr().Get() if prim.IsA(UsdGeom.Gprim) else None\n    if colors:\n        r, g, b = colors[0]\n        return max((("red", r), ("green", g), ("blue", b)), key=lambda item: item[1])[0]\n    return None\n\n\ndef compute(db):\n    now = omni.timeline.get_timeline_interface().get_current_time()\n    if now < LAST_TIME[0]:          # the simulation restarted: forget the last run\n        SORTED.clear()\n        db.outputs.sorted = 0\n    LAST_TIME[0] = now\n    stage = omni.usd.get_context().get_stage()\n    group = stage.GetPrimAtPath(db.inputs.packages)\n    if not group:\n        return True\n    routes = json.loads(db.inputs.routes or "{}")\n    low, high = db.inputs.zone_min, db.inputs.zone_max\n    for prim in group.GetChildren():\n        path = str(prim.GetPath())\n        if path in SORTED or not prim.HasAPI(UsdPhysics.RigidBodyAPI):\n            continue\n        here = where(prim)\n        if not all(low[i] <= here[i] <= high[i] for i in range(3)):\n            continue                 # not in the detection zone yet\n        color = see_color(prim)      # SENSE\n        bin_path = routes.get(color) # DECIDE\n        if not bin_path or not stage.GetPrimAtPath(bin_path):\n            continue\n        target = where(stage.GetPrimAtPath(bin_path))\n        push = Gf.Vec3d(target[0] - here[0], target[1] - here[1], 0.0)\n        if push.GetLength() < 1e-6:\n            continue\n        push = push.GetNormalized() * db.inputs.speed\n        UsdPhysics.RigidBodyAPI(prim).CreateVelocityAttr().Set(Gf.Vec3f(push[0], push[1], db.inputs.hop))  # ACT\n        SORTED.add(path)\n        db.outputs.sorted = db.outputs.sorted + 1\n    return True\n\n\ndef cleanup(db):\n    SORTED.clear()\n'
+
+
+def _plan_color_sort(stage: Any, plan: _Plan, params: dict[str, Any]) -> str | None:
+    packages = params.get("packages", "/World/Packages")
+    error, group = _check_prim(stage, packages, plan, "packages")
+    if error:
+        return error
+    bins = params.get("bins")
+    if not isinstance(bins, dict) or not bins or not all(isinstance(k, str) and isinstance(v, str) for k, v in bins.items()):
+        return "bins must map colour names to bin prim paths, e.g. {'red': '/World/BinA', 'blue': '/World/BinB'}."
+    for colour, path in bins.items():
+        error, _bin = _check_prim(stage, path, plan, f"bin for {colour}")
+        if error:
+            return error
+    corners = []
+    for key in ("zone_min", "zone_max"):
+        value = params.get(key)
+        if (not isinstance(value, (list, tuple)) or len(value) != 3
+                or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value)):
+            return f"{key} must be three numbers [x, y, z] (world)."
+        corners.append([float(v) for v in value])
+    if any(lo >= hi for lo, hi in zip(*corners)):
+        return "zone_max must be bigger than zone_min on every axis."
+    try:
+        speed = _number(params, "speed", 1.5)
+        hop = _number(params, "hop", 1.0, positive=False)
+    except ValueError as exc:
+        return str(exc)
+    if group is not None:
+        colours = {str(child.GetAttribute("package:color").Get()) for child in group.GetChildren()
+                   if child.GetAttribute("package:color") and child.GetAttribute("package:color").Get()}
+        unsorted = sorted(colours - set(bins))
+        if unsorted:
+            plan.warnings.append(f"Packages come in {sorted(colours)}, but no bin is given for {unsorted}: they ride on.")
+    import json as _json
+    plan.node("OnTick", "omni.graph.action.OnPlaybackTick", "fires every frame while Play runs")
+    plan.node("Sorter", "omni.graph.scriptnode.ScriptNode", "checks each package: in the zone? which colour? push")
+    for pin, kind, why in (("inputs:packages", "token", "the package group"),
+                           ("inputs:routes", "string", "colour -> bin path, as JSON text"),
+                           ("inputs:zone_min", "double[3]", "detection zone corner"),
+                           ("inputs:zone_max", "double[3]", "detection zone opposite corner"),
+                           ("inputs:speed", "double", "push speed"), ("inputs:hop", "double", "small upward speed"),
+                           ("outputs:sorted", "int", "how many packages were sorted this Play")):
+        plan.attribute(f"Sorter.{pin}", kind, why)
+    plan.wire("OnTick.outputs:tick", "Sorter.inputs:execIn", "execution", "check the packages every frame")
+    plan.value("Sorter.inputs:script", _COLOR_SORT_SCRIPT, "the sorting code (setup/compute/cleanup)")
+    plan.value("Sorter.inputs:packages", str(packages), "which group to watch")
+    plan.value("Sorter.inputs:routes", _json.dumps(bins), "which bin each colour goes to")
+    plan.value("Sorter.inputs:zone_min", corners[0], "detection zone corner")
+    plan.value("Sorter.inputs:zone_max", corners[1], "detection zone opposite corner")
+    plan.value("Sorter.inputs:speed", speed, "push speed in m/s")
+    plan.value("Sorter.inputs:hop", hop, "upward speed in m/s")
+    routes = ", ".join(f"{colour} -> {path}" for colour, path in bins.items())
+    plan.explanation += [
+        f"Every frame while playing, for each package in {packages} that is inside the zone {corners[0]} .. "
+        f"{corners[1]}: SENSE its colour -> DECIDE its bin ({routes}) -> ACT: set its velocity toward that bin "
+        f"at {speed:g} m/s with a {hop:g} m/s hop. Each package is sorted once per Play.",
+        "Perception here reads the package's colour data, like a perfect camera + classifier. In class session 13 a "
+        "camera does the seeing (see sdg_* for labelled images); the decide and act steps stay the same.",
+        "Open the Sorter node's Script field to read or change the code: compute() runs every frame.",
+    ]
+    return None
+
+
 _PLANNERS = {
     "key_sets_variant": _plan_key_sets_variant,
     "event_sets_variant": _plan_event_sets_variant,
@@ -1982,6 +2060,7 @@ _PLANNERS = {
     "differential_drive": _plan_differential_drive,
     "drive_sequence": _plan_drive_sequence,
     "obstacle_stop": _plan_obstacle_stop,
+    "color_sort": _plan_color_sort,
 }
 
 

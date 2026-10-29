@@ -180,3 +180,66 @@ def test_diagnose_sees_colliders_inside_instanced_parts():
     geometry.SetInstanceable(True)
     codes = [f["code"] for f in dt.diagnose(stage, "physics")["findings"] if f["prim"] == "/World/Arm/Link"]
     assert "no_collider" not in codes, codes
+
+
+def _run_sorter(stage, code, inputs, times):
+    """Execute the colour-sort Script Node code against a USD stage, with fake omni.usd / omni.timeline."""
+    import sys
+    import types
+    clock = {"now": 0.0}
+    usd = types.ModuleType("omni.usd")
+    usd.get_context = lambda: types.SimpleNamespace(get_stage=lambda: stage)
+    timeline = types.ModuleType("omni.timeline")
+    timeline.get_timeline_interface = lambda: types.SimpleNamespace(get_current_time=lambda: clock["now"])
+    omni = types.ModuleType("omni")  # a fresh fake package: "import omni.timeline" then reads omni.timeline
+    omni.usd, omni.timeline = usd, timeline
+    saved = {name: sys.modules.get(name) for name in ("omni", "omni.usd", "omni.timeline")}
+    sys.modules.update({"omni": omni, "omni.usd": usd, "omni.timeline": timeline})
+    try:
+        scope = {}
+        exec(compile(code, "<sorter>", "exec"), scope)
+        db = types.SimpleNamespace(inputs=types.SimpleNamespace(**inputs), outputs=types.SimpleNamespace(sorted=0))
+        scope["setup"](db)
+        counts = []
+        for now in times:
+            clock["now"] = now
+            assert scope["compute"](db) is True
+            counts.append(db.outputs.sorted)
+        return counts
+    finally:
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+
+def test_color_sort_recipe_routes_each_package_to_its_bin_once_per_play():
+    stage = _stage()
+    made = spawner.spawn_packages(stage, count=6, seed=4, colors=["red", "blue"], region_min=[-0.5, -0.5, 0.2],
+                                  region_max=[0.5, 0.5, 0.6], dry_run=False)
+    assert made["ok"], made
+    for name, y in (("BinA", 2.0), ("BinB", -2.0)):
+        UsdGeom.XformCommonAPI(UsdGeom.Cube.Define(stage, f"/World/{name}")).SetTranslate(Gf.Vec3d(0, y, 0))
+    bins = {"red": "/World/BinA", "blue": "/World/BinB"}
+    plan = ogh.plan_recipe("color_sort", stage=stage, bins=bins, zone_min=[-1, -1, 0], zone_max=[1, 1, 1])
+    assert plan["ok"], plan
+    assert ("Sorter.inputs:zone_min", "double[3]") in [(a["attribute"], a["type"]) for a in plan["attributes"]]
+    edit = ogh._build_edit(type("Og", (), {"Controller": _Controller}), None, plan)
+    assert ("Sorter.inputs:zone_min", (-1.0, -1.0, 0.0)) in edit["set_values"]  # tuple for a double[3] pin
+    code = next(v["value"] for v in plan["values"] if v["attribute"] == "Sorter.inputs:script")
+    inputs = {"packages": "/World/Packages", "routes": json.dumps(bins), "zone_min": (-1, -1, 0), "zone_max": (1, 1, 1),
+              "speed": 1.5, "hop": 1.0}
+    counts = _run_sorter(stage, code, inputs, [0.0, 0.1, 0.2])
+    assert counts == [6, 6, 6], counts  # all six sorted on the first frame, never twice
+    for prim in stage.GetPrimAtPath("/World/Packages").GetChildren():
+        velocity = UsdPhysics.RigidBodyAPI(prim).GetVelocityAttr().Get()
+        colour = prim.GetAttribute("package:color").Get()
+        assert (velocity[1] > 0) == (colour == "red") and velocity[2] == 1.0, (colour, velocity)
+    assert _run_sorter(stage, code, inputs, [5.0, 0.0])[-1] == 6  # Stop -> Play: the clock went back, so it re-sorts
+    missing = ogh.plan_recipe("color_sort", stage=stage, bins={"red": "/World/BinA"}, zone_min=[-1, -1, 0],
+                              zone_max=[1, 1, 1])
+    assert missing["ok"] and any("blue" in w for w in missing["warnings"]), missing["warnings"]
+    assert not ogh.plan_recipe("color_sort", stage=stage, bins={"red": "/World/Nope"}, zone_min=[-1, -1, 0],
+                               zone_max=[1, 1, 1])["ok"]
+    assert not ogh.plan_recipe("color_sort", stage=stage, bins=bins, zone_min=[1, 1, 1], zone_max=[0, 0, 0])["ok"]
