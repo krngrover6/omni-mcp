@@ -330,11 +330,16 @@ def diagnose(
 
     statuses = [p["status"] for p in parts if p["part"] in ("router", "isaac_bridge", "composer_bridge")]
     healthy_bridge = any(p["status"] == "healthy" for p in parts if p["part"].endswith("_bridge"))
+    # Seen live: an open app whose bridge only needed a reload was reported as "open Isaac Sim or Composer".
+    stale_bridge = any(p["status"] == "needs_reload" for p in parts if p["part"].endswith("_bridge"))
     verdict = ("ready" if router.get("status") == "healthy" and healthy_bridge
+               else "needs_reload" if router.get("status") == "healthy" and stale_bridge
                else "router_only" if router.get("status") == "healthy"
                else "needs_attention")
     headline = {
         "ready": "Ready: the router is running and at least one app bridge answers.",
+        "needs_reload": ("The router is running and the app is open, but its bridge runs older code: reload it "
+                         "(step below). Tools that existed before still work meanwhile."),
         "router_only": "The router is running, but no app bridge answers yet: open Isaac Sim or Composer.",
         "needs_attention": "Something needs attention; follow the steps below in order.",
     }[verdict]

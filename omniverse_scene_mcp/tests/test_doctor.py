@@ -77,6 +77,9 @@ def test_old_bridge_version_or_code_newer_than_its_reload_needs_a_script_editor_
                      reloads=lambda r, key: {"finished": T0 - 3600, "rpc_version": RPC_VERSION}, **base)
         assert _part(stale, "composer_bridge")["status"] == "needs_reload"
         assert "after it was last loaded" in _part(stale, "composer_bridge")["plain"]
+        # Seen live: the headline said "open Isaac Sim or Composer" although the app was open and only needed a reload.
+        assert stale["verdict"] == "needs_reload" and "reload" in stale["headline"], stale["headline"]
+        assert "open Isaac Sim or Composer" not in stale["headline"]
 
 
 def test_app_launched_after_the_code_changed_is_current_without_a_reload():

@@ -72,6 +72,8 @@ PROFILES: dict[str, tuple[str, ...]] = {
         "explain_error",
         "python_show",
         "learning_today",
+        "learning_exam_day",
+        "learning_isaac_lab",
         "scene_undo_last",
         "usd_knowledge",
         "workspace_context",

@@ -3207,6 +3207,17 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
             return _error(str(exc).strip("'\""), workflows=workflows.prompt_names())
         return {"ok": True, "name": name, "steps": steps}
 
+    # Read-only tools say so (MCP readOnlyHint), so Codex and other clients can run them without an approval prompt
+    # for every look-up; editing tools keep asking.
+    from mcp.types import ToolAnnotations
+
+    from .help import read_only_tools
+
+    read_only = read_only_tools()
+    for tool in app._tool_manager.list_tools():
+        if tool.name in read_only:
+            tool.annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
+
     profiles.install_compact_outputs(app)
     profiles.advertise_tool_list_changed(app)
     stash, profile_report = profiles.apply_profile_to_app(app)

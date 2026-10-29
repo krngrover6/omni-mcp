@@ -52,7 +52,7 @@ def test_small_default_discovers_and_calls_hidden_tools_with_validation():
     with _profile(None):
         app = build_server()
     names = [t.name for t in asyncio.run(app.list_tools())]
-    assert 18 <= len(names) <= 25
+    assert 18 <= len(names) <= 30
     assert 'router_call_tool' in names and 'sensor_catalog' not in names
     meta = app._tool_manager.get_tool('router_call_tool')
     result = asyncio.run(meta.run({'name': 'sensor_catalog'}))
@@ -73,7 +73,7 @@ def test_workflows_are_a_normal_always_on_tool_for_clients_without_prompts():
     with _profile(None):
         app = build_server()
     names = [t.name for t in asyncio.run(app.list_tools())]
-    assert 'router_workflow' in names and len(names) <= 25
+    assert "router_workflow" in names and len(names) <= 30
     tool = app._tool_manager.get_tool('router_workflow')
     listed = asyncio.run(tool.run({}))
     assert {'why_value', 'study_session'} <= {w['name'] for w in listed['workflows']}

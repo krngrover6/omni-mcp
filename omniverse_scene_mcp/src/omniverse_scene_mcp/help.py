@@ -32,6 +32,20 @@ SAFETY = (
 )
 
 
+# Not scene edits, but they still change app or session state, so they must not claim to be read-only.
+CHANGES_STATE = frozenset({
+    "router_enable_tools", "router_set_scene_target", "scene_animation_play", "scene_animation_stop",
+    "scene_select", "sensor_read", "learning_practice_start", "learning_practice_next",
+})
+
+
+def read_only_tools() -> set[str]:
+    """Tools that change nothing (no scene edit, no saved file, no app state): safe to mark readOnlyHint, so clients
+    such as Codex can run them without asking each time."""
+    return {entry["name"] for entries in TOOL_CATALOG.values() for entry in entries
+            if not entry["mutates"] and entry["name"] not in CHANGES_STATE}
+
+
 def _tool(name: str, what: str, example: str, mutates: bool, needs_bridge: bool) -> dict[str, Any]:
     return {"name": name, "what": what, "example": example, "mutates": mutates, "needs_bridge": needs_bridge}
 
