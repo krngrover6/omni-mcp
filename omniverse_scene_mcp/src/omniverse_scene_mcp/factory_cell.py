@@ -32,12 +32,18 @@ def _layout(origin: list[float], colours: list[str]) -> dict[str, Any]:
     def at(x: float, y: float, z: float) -> list[float]:
         return [round(ox + x, 4), round(oy + y, 4), round(oz + z, 4)]
 
+    import math
+
     bins = {colour: at(0.45 + 0.45 * i, 1.15, 0.025) for i, colour in enumerate(colours)}
+    # Face the pick spot (0.85, 0) from the base (0.75, 0.6). Seen live: with the package 76 degrees to the
+    # arm's side the hand arrived tilted and never held it; a cube straight ahead was picked 5 mm from target.
+    facing = round(math.degrees(math.atan2(0.0 - 0.6, 0.85 - 0.75)), 1)
     return {
         "belt": {"position": at(0.0, 0.0, 0.05), "size": [2.4, 0.4, 0.1]},
         "stopper": {"position": at(0.95, 0.0, 0.15), "size": [0.05, 0.4, 0.15]},
         "pick_spot": at(0.85, 0.0, 0.13),
         "franka": at(0.75, 0.6, 0.0),
+        "franka_yaw": facing,
         "bins": bins,
         "camera": at(0.85, 0.0, 2.0),
         "packages_region": (at(-1.1, -0.12, 0.25), at(-0.6, 0.12, 0.35)),
@@ -100,7 +106,9 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
          "at": layout["camera"]},
         {"part": "packages", "path": f"{root}/Packages", "what": f"{packages} boxes, 5-6 cm, colours {colours}",
          "at": region_min},
-        {"part": "franka", "path": f"{root}/Franka", "what": "Franka arm (ready robot)", "at": layout["franka"]},
+        {"part": "franka", "path": f"{root}/Franka",
+         "what": f"Franka arm (ready robot), turned {layout['franka_yaw']} degrees to face the pick spot",
+         "at": layout["franka"]},
         {"part": "belt_graph", "path": f"{root}/BeltGraph", "what": f"Conveyor Belt node at {belt_speed} m/s",
          "at": None},
     ]
@@ -142,6 +150,8 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
     robot = robot_import.add_ready_robot(stage, "franka", f"{root}/Franka", position=layout["franka"], dry_run=False)
     if not robot.get("ok"):
         return undo("franka", robot.get("error"))
+    arm = UsdGeom.Xformable(stage.GetPrimAtPath(f"{root}/Franka"))
+    arm.AddRotateZOp(opSuffix="facePickSpot").Set(float(layout["franka_yaw"]))  # after translate: turns in place
     graph = omnigraph_helper.apply_recipe(stage, "conveyor", dry_run=False, graph_path=f"{root}/BeltGraph",
                                           belt=f"{root}/Belt", velocity=float(belt_speed))
     if not graph.get("ok"):
