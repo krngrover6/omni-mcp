@@ -3109,6 +3109,28 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         except (KeyError, TypeError, ValueError, ToolError) as exc:
             return _error(str(exc))
 
+    @app.tool(name="scene_safe_edit")
+    async def scene_safe_edit(tool: str, arguments: dict[str, Any] | None = None, confirm: str | None = None,
+                              checkpoint: bool = True) -> dict:
+        """The safe way to change the scene, in two calls. 1) scene_safe_edit(tool='scene_move', arguments={...}):
+        checks the arguments, snapshots the prims, previews the edit (nothing changes) and returns a confirm code.
+        Show the preview to the user. 2) Only if they agree: the same call plus confirm='<code>': refuses if those
+        prims changed since the preview, takes a checkpoint when the saved file matches the scene, applies, and
+        reports before -> after with the exact undo call. Works with any tool that has a dry_run preview; never
+        saves. Leave dry_run out of arguments."""
+        from . import safe_edit
+
+        def schema_of(name: str) -> dict | None:
+            registry = dict(stash.hidden) if stash is not None else {}
+            registry.update(app._tool_manager._tools)
+            found = registry.get(name)
+            return found.parameters if found is not None else None
+
+        async def call(name: str, args: dict[str, Any]) -> Any:
+            return await stash.call(name, args)
+
+        return await safe_edit.safe_edit(call, schema_of, tool, arguments, confirm=confirm, checkpoint=checkpoint)
+
     @app.tool(name="router_doctor")
     def router_doctor() -> dict:
         """Read-only connection doctor: is the router healthy and running the latest code, do the Isaac Sim (9911) and

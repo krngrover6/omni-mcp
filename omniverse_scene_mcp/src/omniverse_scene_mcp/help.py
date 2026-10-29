@@ -215,6 +215,10 @@ TOOL_CATALOG: dict[str, list[dict[str, Any]]] = {
         _tool("sim_step", "Advance a paused simulation by a number of frames (1-600).", "sim_step(frames=10)", True, True),
     ],
     "Undo": [
+        _tool("scene_safe_edit", "Change the scene safely: preview any dry-run edit for a confirm code, then apply "
+              "with it (refused if the prims changed); checkpoint, before -> after and undo.",
+              "scene_safe_edit(tool='scene_move', arguments={'path': '/World/Box', 'translation': [0, 0, 1]})",
+              True, True),
         _tool("scene_undo_last", "Undo the most recent scene change made through the router; dry_run=True (the "
               "default) shows what would be restored.", "scene_undo_last(dry_run=True)", True, True),
         _tool("scene_undo_history", "List the recent scene changes made through the router that can be undone.",

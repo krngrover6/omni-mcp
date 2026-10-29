@@ -685,7 +685,7 @@ def test_help_catalog_covers_every_registered_tool_and_router_help_answers():
         undo = call("router_help", topic="undo")
         assert undo["match"] == "group" and {tool["name"] for tool in undo["tools"]} == {
             "scene_undo_last", "scene_undo_history", "scene_journal", "scene_journal_explain", "scene_journal_summary",
-            "scene_journal_clear",
+            "scene_journal_clear", "scene_safe_edit",
         }
         docs = call("router_help", topic="docs_search")
         assert docs["match"] == "tool" and docs["group"] == "Knowledge & docs" and "extension_info" in docs["see_also"]

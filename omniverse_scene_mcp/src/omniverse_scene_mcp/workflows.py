@@ -29,6 +29,25 @@ SAFETY_FOOTER = (
 # name -> {title, description, params: [(name, default, description)], steps: [str]}.
 # Steps are str.format templates over the params.
 PROMPTS: dict[str, dict[str, Any]] = {
+    "safe_edit": {
+        "title": "Change my scene safely",
+        "description": "Preview, confirm, checkpoint, apply and check one scene edit, with undo ready.",
+        "params": [
+            ("request", "move /World/Box up by 1 m", "The change in plain words."),
+        ],
+        "steps": [
+            "Work out which editing tool does '{request}' (router_route or router_help if unsure) and its exact "
+            "arguments (router_list_tools(pattern=..., include_schema=True)). Read the prim first with scene_inspect.",
+            "Call scene_safe_edit(tool=..., arguments={{...}}) without confirm. Nothing changes yet.",
+            "Tell the user in plain words what the preview will do, and what the safety net is (safety_net: a "
+            "checkpoint, undo, or why one is missing). Ask: apply it?",
+            "Only after a clear yes, call scene_safe_edit again with the same tool and arguments plus "
+            "confirm='<code>'. If it says the prims changed since the preview, preview again.",
+            "Read 'changes' back to the user (before -> after). If they don't like it, follow safety_net.undo "
+            "(scene_undo_last, preview first) or the 'restore' hint.",
+            "Remind them the scene is not saved yet; they save when happy (ask before calling scene_save).",
+        ],
+    },
     "predict_result": {
         "title": "Predict the result",
         "description": "Train LIVRPS: guess which opinion wins on small generated scenes, then on your own scene.",

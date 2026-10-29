@@ -39,6 +39,8 @@ enabled_tools = [
   "router_call_tool",
   "router_workflow",
   "router_doctor",
+  # the safe way to change the scene: preview, confirm code, checkpoint, apply, before -> after, undo.
+  "scene_safe_edit",
 ]
 
 # ---------------------------------------------------------------------------------------------------------------
