@@ -145,6 +145,52 @@ except Exception as exc:
     write_result()
     sys.exit(3)
 
+if payload.get("isaac"):
+    # Isaac Sim exercises: the same code you type in Isaac's Script Editor works here. omni.usd hands back this
+    # practice stage; omni.timeline only records Play/Pause/Stop (nothing simulates in this sandbox).
+    import types as _types
+
+    class _Context:
+        def get_stage(self):
+            return stage
+
+    class _Timeline:
+        def __init__(self):
+            self._state, self._time = "stopped", 0.0
+
+        def play(self):
+            self._state = "playing"
+            print("[timeline] play")
+
+        def pause(self):
+            self._state = "paused"
+            print("[timeline] pause")
+
+        def stop(self):
+            self._state, self._time = "stopped", 0.0
+            print("[timeline] stop")
+
+        def is_playing(self):
+            return self._state == "playing"
+
+        def is_stopped(self):
+            return self._state == "stopped"
+
+        def get_current_time(self):
+            return self._time
+
+        def set_current_time(self, value):
+            self._time = float(value)
+
+    _timeline = _Timeline()
+    _omni = _types.ModuleType("omni")
+    _omni_usd = _types.ModuleType("omni.usd")
+    _omni_usd.get_context = lambda: _Context()
+    _omni_timeline = _types.ModuleType("omni.timeline")
+    _omni_timeline.get_timeline_interface = lambda: _timeline
+    _omni.usd, _omni.timeline = _omni_usd, _omni_timeline
+    sys.modules.update({"omni": _omni, "omni.usd": _omni_usd, "omni.timeline": _omni_timeline})
+
 namespace = {"__name__": "__main__", "__builtins__": __builtins__, "stage": stage}
 result["started"] = True
 try:
@@ -297,6 +343,55 @@ def run_attempt(exercise_id: str, code: str, *, timeout_s: float = DEFAULT_TIMEO
         _remove_tree(tmp)
 
 
+TRIAL_SCENE = ('#usda 1.0\n(\n    metersPerUnit = 1\n    upAxis = "Z"\n    defaultPrim = "World"\n)\n\ndef Xform "World"\n{\n    def Cube "Box"\n    {\n        double size = 0.5\n    }\n}\n')
+
+
+def trial_run(code: str, *, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict[str, Any]:
+    """Run an Isaac Sim Script Editor script on a throwaway practice scene (World + Box, Z-up, metres) in a separate
+    process and report what it did: prims it created or removed, what it printed, and any error explained. Your real
+    scenes are never touched; omni.usd gives the practice scene and omni.timeline only records Play/Stop."""
+    exercise = {"id": "trial", "title": "Trial run", "setup": {"scene": TRIAL_SCENE}, "checks": [], "isaac": True,
+                "hints": ["Read the error explanation, fix that line, and try again."], "report_vars": []}
+    if not isinstance(code, str) or not code.strip():
+        return _not_run(exercise, "code must be a string of Python source")
+    if len(code) > MAX_CODE_CHARS:
+        return _not_run(exercise, f"code is longer than {MAX_CODE_CHARS} characters")
+    try:
+        timeout = max(MIN_TIMEOUT_S, min(MAX_TIMEOUT_S, float(timeout_s)))
+    except (TypeError, ValueError):
+        return _not_run(exercise, "timeout_s must be a number of seconds")
+    pxr_path = _pxr_path()
+    if Usd is None or pxr_path is None:
+        return _not_run(exercise, "USD Python bindings (pxr, usd-core) are not installed for this Python")
+    before = {"/World", "/World/Box"}
+    tmp = tempfile.mkdtemp(prefix="ousd_trial_", dir=TEMP_PARENT)
+    try:
+        work = os.path.join(tmp, "work")
+        child_tmp = os.path.join(tmp, "tmp")
+        os.mkdir(work)
+        os.mkdir(child_tmp)
+        _write_setup(exercise, work)
+        run = _run_child(code, exercise, work, child_tmp, pxr_path, timeout)
+        graded = _grade(exercise, run, work, timeout, code)
+        after: set[str] = set()
+        try:
+            stage = Usd.Stage.Open(os.path.join(work, SCENE_FILE))
+            after = {str(prim.GetPath()) for prim in stage.Traverse()} if stage else set()
+            del stage
+        except Exception:  # noqa: BLE001 - a broken scene is reported through graded's error
+            after = set()
+        created, removed = sorted(after - before), sorted(before - after) if after else []
+        return {
+            "ok": True, "ran": graded.get("error") is None, "error": graded.get("error"),
+            "created_prims": created[:60], "created_count": len(created), "removed_prims": removed,
+            "stdout": graded.get("stdout", ""),
+            "note": "Ran on a practice scene (World + Box); in Isaac Sim the same code changes the open scene. "
+                    "Physics does not run here, so check motion in Isaac itself.",
+        }
+    finally:
+        _remove_tree(tmp)
+
+
 def _not_run(exercise: dict[str, Any], message: str) -> dict[str, Any]:
     return {
         "ok": False,
@@ -388,6 +483,7 @@ def _run_child(
         "scene_file": SCENE_FILE,
         "result_file": RESULT_FILE,
         "report_vars": list(exercise.get("report_vars", [])),
+        "isaac": bool(exercise.get("isaac")),
     }).encode("utf-8")
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
     started = time.monotonic()

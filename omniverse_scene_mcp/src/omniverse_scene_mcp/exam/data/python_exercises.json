@@ -3,7 +3,8 @@
   "description": "Original beginner-to-intermediate OpenUSD Python exercises. Each runs on a throwaway practice scene (scene.usda plus any setup files) in a temporary folder; checks are evaluated on the saved result.",
   "levels": [
     "beginner",
-    "intermediate"
+    "intermediate",
+    "isaac"
   ],
   "exercises": [
     {
@@ -1069,6 +1070,191 @@
           "path": "/World/Box.primvars:displayColor",
           "exists": true,
           "hint": "The sublayer's displayColor opinion should be baked into delivery.usda."
+        }
+      ]
+    },
+    {
+      "id": "isaac01-get-stage",
+      "title": "Get the open scene in Isaac Sim",
+      "level": "isaac",
+      "isaac": true,
+      "objective_ids": [
+        "5.4"
+      ],
+      "goal": "In Isaac Sim, scripts reach the open scene with omni.usd.get_context().get_stage(). Get it into my_stage, then count every prim in it (stage.Traverse() walks them all) into prim_count.",
+      "setup": {
+        "scene": "#usda 1.0\n(\n    metersPerUnit = 1\n    upAxis = \"Z\"\n)\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n        double size = 0.5\n    }\n\n    def Xform \"Robot\"\n    {\n        def Cube \"Base\"\n        {\n        }\n    }\n}\n"
+      },
+      "starter_code": "# This is Isaac Sim Script Editor code (class session 7). Here it runs on a throwaway practice scene:\n# omni.usd.get_context().get_stage() gives you that scene, exactly as it gives the open scene in Isaac.\nimport omni.usd\n\nmy_stage = None   # TODO: get the open scene\nprim_count = None  # TODO: count the prims in my_stage\n",
+      "hints": [
+        "omni.usd.get_context() is the app's USD context; .get_stage() returns the scene.",
+        "len(list(my_stage.Traverse())) counts every prim.",
+        "my_stage = omni.usd.get_context().get_stage(); prim_count = len(list(my_stage.Traverse()))"
+      ],
+      "solution": "import omni.usd\n\nmy_stage = omni.usd.get_context().get_stage()   # the open scene\nprim_count = len(list(my_stage.Traverse()))       # World, Box, Robot, Base\n",
+      "report_vars": [
+        "prim_count"
+      ],
+      "checks": [
+        {
+          "type": "variable",
+          "name": "prim_count",
+          "equals": 4,
+          "hint": "Traverse() visits World, Box, Robot and Base: 4 prims."
+        }
+      ]
+    },
+    {
+      "id": "isaac02-find-and-read",
+      "title": "Find a prim by path and read an attribute",
+      "level": "isaac",
+      "isaac": true,
+      "objective_ids": [
+        "5.4"
+      ],
+      "goal": "Find /World/Box with GetPrimAtPath, check it is valid (a wrong path gives an invalid prim, not an error), then read its size attribute into box_size.",
+      "setup": {
+        "scene": "#usda 1.0\n(\n    metersPerUnit = 1\n    upAxis = \"Z\"\n)\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n        double size = 0.5\n    }\n\n    def Xform \"Robot\"\n    {\n        def Cube \"Base\"\n        {\n        }\n    }\n}\n"
+      },
+      "starter_code": "# This is Isaac Sim Script Editor code (class session 7). Here it runs on a throwaway practice scene:\n# omni.usd.get_context().get_stage() gives you that scene, exactly as it gives the open scene in Isaac.\nimport omni.usd\n\nstage = omni.usd.get_context().get_stage()\nbox = None       # TODO: find /World/Box\nbox_size = None  # TODO: read its 'size'\n",
+      "hints": [
+        "stage.GetPrimAtPath('/World/Box') finds it; box.IsValid() tells you whether the path was right.",
+        "box.GetAttribute('size').Get() reads the value."
+      ],
+      "solution": "import omni.usd\n\nstage = omni.usd.get_context().get_stage()\nbox = stage.GetPrimAtPath('/World/Box')   # a wrong path gives an invalid prim, not an error\nif not box.IsValid():\n    print('Wrong path!')\nbox_size = box.GetAttribute('size').Get()  # read the value: 0.5\n",
+      "report_vars": [
+        "box_size"
+      ],
+      "checks": [
+        {
+          "type": "variable",
+          "name": "box_size",
+          "equals": 0.5,
+          "hint": "The scene authors size = 0.5 on /World/Box."
+        }
+      ]
+    },
+    {
+      "id": "isaac03-move-prim",
+      "title": "Move a prim from a script",
+      "level": "isaac",
+      "isaac": true,
+      "objective_ids": [
+        "5.2"
+      ],
+      "goal": "Move /World/Robot/Base to (1, 0, 0.5) with UsdGeom.XformCommonAPI, as you would to place a robot part from the Script Editor.",
+      "setup": {
+        "scene": "#usda 1.0\n(\n    metersPerUnit = 1\n    upAxis = \"Z\"\n)\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n        double size = 0.5\n    }\n\n    def Xform \"Robot\"\n    {\n        def Cube \"Base\"\n        {\n        }\n    }\n}\n"
+      },
+      "starter_code": "# This is Isaac Sim Script Editor code (class session 7). Here it runs on a throwaway practice scene:\n# omni.usd.get_context().get_stage() gives you that scene, exactly as it gives the open scene in Isaac.\nimport omni.usd\nfrom pxr import Gf, UsdGeom\n\nstage = omni.usd.get_context().get_stage()\nbase = stage.GetPrimAtPath('/World/Robot/Base')\n# TODO: move it to (1, 0, 0.5)\n",
+      "hints": [
+        "UsdGeom.XformCommonAPI(base).SetTranslate(...)",
+        "Positions are Gf.Vec3d(x, y, z)."
+      ],
+      "solution": "import omni.usd\nfrom pxr import Gf, UsdGeom\n\nstage = omni.usd.get_context().get_stage()\nbase = stage.GetPrimAtPath('/World/Robot/Base')\n# XformCommonAPI writes xformOp:translate for us; positions are doubles (Gf.Vec3d)\nUsdGeom.XformCommonAPI(base).SetTranslate(Gf.Vec3d(1, 0, 0.5))\n",
+      "checks": [
+        {
+          "type": "world_translation",
+          "path": "/World/Robot/Base",
+          "equals": [
+            1,
+            0,
+            0.5
+          ],
+          "hint": "SetTranslate(Gf.Vec3d(1, 0, 0.5)) on the XformCommonAPI of /World/Robot/Base."
+        }
+      ]
+    },
+    {
+      "id": "isaac04-many-boxes",
+      "title": "Create many boxes with a loop (session 7 homework)",
+      "level": "isaac",
+      "isaac": true,
+      "objective_ids": [
+        "5.2"
+      ],
+      "goal": "Create 5 cubes /World/Boxes/Box_0 ... Box_4 in a row: Box_i at (i, 0, 0.5). A for loop with range(5) writes all five; f-strings build the paths.",
+      "setup": {
+        "scene": "#usda 1.0\n(\n    metersPerUnit = 1\n    upAxis = \"Z\"\n)\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n        double size = 0.5\n    }\n\n    def Xform \"Robot\"\n    {\n        def Cube \"Base\"\n        {\n        }\n    }\n}\n"
+      },
+      "starter_code": "# This is Isaac Sim Script Editor code (class session 7). Here it runs on a throwaway practice scene:\n# omni.usd.get_context().get_stage() gives you that scene, exactly as it gives the open scene in Isaac.\nimport omni.usd\nfrom pxr import Gf, UsdGeom\n\nstage = omni.usd.get_context().get_stage()\nUsdGeom.Xform.Define(stage, '/World/Boxes')\n# TODO: a loop that creates Box_0 ... Box_4\n",
+      "hints": [
+        "for i in range(5): ... runs the block 5 times with i = 0, 1, 2, 3, 4.",
+        "cube = UsdGeom.Cube.Define(stage, f'/World/Boxes/Box_{i}')",
+        "UsdGeom.XformCommonAPI(cube).SetTranslate(Gf.Vec3d(i, 0, 0.5))"
+      ],
+      "solution": "import omni.usd\nfrom pxr import Gf, UsdGeom\n\nstage = omni.usd.get_context().get_stage()\nUsdGeom.Xform.Define(stage, '/World/Boxes')\nfor i in range(5):\n    cube = UsdGeom.Cube.Define(stage, f'/World/Boxes/Box_{i}')   # Box_0 ... Box_4\n    UsdGeom.XformCommonAPI(cube).SetTranslate(Gf.Vec3d(i, 0, 0.5))\n",
+      "checks": [
+        {
+          "type": "prim_exists",
+          "path": "/World/Boxes/Box_0",
+          "hint": "The loop should start at Box_0."
+        },
+        {
+          "type": "prim_exists",
+          "path": "/World/Boxes/Box_4",
+          "hint": "range(5) ends at 4: Box_4."
+        },
+        {
+          "type": "prim_type",
+          "path": "/World/Boxes/Box_2",
+          "equals": "Cube",
+          "hint": "Use UsdGeom.Cube.Define so each one is a Cube."
+        },
+        {
+          "type": "world_translation",
+          "path": "/World/Boxes/Box_4",
+          "equals": [
+            4,
+            0,
+            0.5
+          ],
+          "hint": "Box_i goes to (i, 0, 0.5): Box_4 at (4, 0, 0.5)."
+        }
+      ]
+    },
+    {
+      "id": "isaac05-physics-and-play",
+      "title": "Give a box physics and start the simulation",
+      "level": "isaac",
+      "isaac": true,
+      "objective_ids": [
+        "5.4"
+      ],
+      "goal": "Make /World/Box fall like in class: add a PhysicsScene at /physicsScene, apply RigidBodyAPI and CollisionAPI to the box, then press Play from code with omni.timeline.",
+      "setup": {
+        "scene": "#usda 1.0\n(\n    metersPerUnit = 1\n    upAxis = \"Z\"\n)\n\ndef Xform \"World\"\n{\n    def Cube \"Box\"\n    {\n        double size = 0.5\n    }\n\n    def Xform \"Robot\"\n    {\n        def Cube \"Base\"\n        {\n        }\n    }\n}\n"
+      },
+      "starter_code": "# This is Isaac Sim Script Editor code (class session 7). Here it runs on a throwaway practice scene:\n# omni.usd.get_context().get_stage() gives you that scene, exactly as it gives the open scene in Isaac.\nimport omni.timeline\nimport omni.usd\nfrom pxr import UsdPhysics\n\nstage = omni.usd.get_context().get_stage()\nbox = stage.GetPrimAtPath('/World/Box')\n# TODO 1: a PhysicsScene at /physicsScene\n# TODO 2: rigid body + collider on the box\n# TODO 3: start the simulation\n",
+      "hints": [
+        "UsdPhysics.Scene.Define(stage, '/physicsScene')",
+        "UsdPhysics.RigidBodyAPI.Apply(box) and UsdPhysics.CollisionAPI.Apply(box)",
+        "omni.timeline.get_timeline_interface().play()"
+      ],
+      "solution": "import omni.timeline\nimport omni.usd\nfrom pxr import UsdPhysics\n\nstage = omni.usd.get_context().get_stage()\nbox = stage.GetPrimAtPath('/World/Box')\nUsdPhysics.Scene.Define(stage, '/physicsScene')   # without it nothing simulates\nUsdPhysics.RigidBodyAPI.Apply(box)                # it moves with gravity\nUsdPhysics.CollisionAPI.Apply(box)                # it has a solid shape\nomni.timeline.get_timeline_interface().play()     # same as pressing Play\n",
+      "checks": [
+        {
+          "type": "prim_type",
+          "path": "/physicsScene",
+          "equals": "PhysicsScene",
+          "hint": "UsdPhysics.Scene.Define(stage, '/physicsScene')"
+        },
+        {
+          "type": "has_api",
+          "path": "/World/Box",
+          "api": "PhysicsRigidBodyAPI",
+          "hint": "UsdPhysics.RigidBodyAPI.Apply(box)"
+        },
+        {
+          "type": "has_api",
+          "path": "/World/Box",
+          "api": "PhysicsCollisionAPI",
+          "hint": "UsdPhysics.CollisionAPI.Apply(box)"
+        },
+        {
+          "type": "stdout_contains",
+          "text": "[timeline] play",
+          "hint": "Start it with omni.timeline.get_timeline_interface().play()"
         }
       ]
     }

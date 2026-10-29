@@ -36,6 +36,7 @@ SAFETY = (
 CHANGES_STATE = frozenset({
     "router_enable_tools", "router_set_scene_target", "scene_animation_play", "scene_animation_stop",
     "scene_select", "sensor_read", "learning_practice_start", "learning_practice_next",
+    "python_trial_run",  # runs the learner's code (in a sandbox), so it must not claim to be read-only
 })
 
 
