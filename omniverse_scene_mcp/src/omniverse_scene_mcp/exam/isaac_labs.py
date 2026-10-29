@@ -38,6 +38,8 @@ def _ui(say: str, look: str) -> dict[str, Any]:
 
 # Taught before any exam objective: the learner may know nothing about Isaac Sim or USD yet.
 FOUNDATIONS = ("basics_isaac", "basics_usd")
+# Labs for the mentorship class sessions (Isaac Sim skills that are not NCP-OUSD objectives).
+CLASS_LABS = {"action_graph": 6}
 
 
 def _labs() -> dict[str, dict[str, Any]]:
@@ -124,6 +126,95 @@ def _labs() -> dict[str, dict[str, Any]]:
                       "My read now shows translation x = 2: we both see the same stage."),
             ],
             "try_yourself": "Say MyCube's path out loud, then name two of its attributes and their values.",
+        },
+        "action_graph": {
+            "title": "Class session 6: Action Graph from scratch (press W to push a cube)",
+            "objectives": [],
+            "class_session": 6,
+            "words": {
+                "Action Graph": "a picture-program: boxes joined by wires that say 'when this happens, do that', "
+                                "instead of typed code",
+                "node": "one box in the graph that does one job (wait for a key, write a value, add two numbers)",
+                "pin": "a little dot on a node's side: inputs on the left (what it needs), outputs on the right "
+                       "(what it gives)",
+                "execution wire": "a white wire that says WHEN the next node runs, like a domino knocking the next",
+                "data wire": "a coloured wire that carries a VALUE (a number, a vector) from one node to another",
+                "event node": "a node that starts a chain when something happens: a key press, every frame (tick)",
+                "graph variable": "a named value stored in the graph that any node can read, and that you can "
+                                  "change while it runs, like a dial on a machine",
+                "velocity": "speed with a direction, e.g. (2, 0, 0) = 2 metres per second along X",
+            },
+            "concept": (
+                "In class the teacher made a cube move with the W key without writing code. An Action Graph is a set "
+                "of nodes joined by wires. Execution (white) wires decide WHEN something happens: 'when W is "
+                "pressed -> write a value'. Data wires carry WHAT the value is: 'the value comes from the variable "
+                "forward'. The cube needs physics (a rigid body) so that writing its velocity makes it move, and "
+                "something to land on (a floor with a collider)."),
+            "steps": [
+                _edit("scene_add_physics_scene", {},
+                      "Nothing visible: the scene now has gravity and physics. (Skip if it says one exists.)",
+                      "Turn physics on for the scene."),
+                _edit("scene_create", {"path": "/World/AG", "type_name": "Xform"}, "A group AG appears.",
+                      "Make a group for this lab."),
+                _edit("scene_create", {"path": "/World/AG/Floor", "type_name": "Cube"}, "A big grey cube.",
+                      "Make a floor (a flattened cube)."),
+                _edit("scene_move", {"path": "/World/AG/Floor", "translation": [0, -4, -0.05],
+                                     "scale": [3, 3, 0.05]},
+                      "It flattens into a 6 x 6 m slab just under the ground line.", "Flatten it."),
+                _edit("scene_make_collider", {"prim_path": "/World/AG/Floor"},
+                      "Nothing visible: things can now land on the floor.", "Give the floor a collider."),
+                _edit("scene_create", {"path": "/World/AG/Cube", "type_name": "Cube"}, "A cube appears.",
+                      "Make the cube we will push."),
+                _edit("scene_move", {"path": "/World/AG/Cube", "translation": [0, -4, 0.5],
+                                     "scale": [0.25, 0.25, 0.25]},
+                      "A small 0.5 m cube floats above the floor.", "Make it small and lift it."),
+                _edit("scene_make_rigid_body", {"prim_path": "/World/AG/Cube"},
+                      "Nothing yet: press Play and it would fall onto the floor (then press Stop).",
+                      "Give the cube physics (a rigid body with a collider)."),
+                _edit("graph_create", {"graph_path": "/World/AG/Graph"},
+                      "A Graph prim appears. Right-click it in the Stage panel > Open Graph to see the empty canvas.",
+                      "Make an empty Action Graph."),
+                _edit("graph_add_node", {"graph_path": "/World/AG/Graph", "name": "KeyW",
+                                         "node_type": "omni.graph.action.OnKeyboardInput",
+                                         "values": {"inputs:keyIn": "W"}},
+                      "An 'On Keyboard Input' box appears on the canvas; its outputs include Pressed and Released.",
+                      "Add the EVENT node: it fires when W is pressed."),
+                _edit("graph_add_variable", {"graph_path": "/World/AG/Graph", "name": "forward",
+                                             "value_type": "float[3]", "default": [2, 0, 0]},
+                      "In the graph window's Variables panel, 'forward' appears with (2, 0, 0).",
+                      "Add a graph VARIABLE: the push direction and speed."),
+                _edit("graph_add_node", {"graph_path": "/World/AG/Graph", "name": "ReadForward",
+                                         "node_type": "omni.graph.core.ReadVariable",
+                                         "values": {"inputs:variableName": "forward"}},
+                      "A 'Read Variable' box appears; its Value output carries (2, 0, 0).",
+                      "Add a node that READS the variable."),
+                _edit("graph_add_node", {"graph_path": "/World/AG/Graph", "name": "Push",
+                                         "node_type": "omni.graph.nodes.WritePrimAttribute",
+                                         "values": {"inputs:name": "physics:velocity", "inputs:usdWriteBack": True}},
+                      "A 'Write Prim Attribute' box appears. It will write the cube's velocity.",
+                      "Add the node that DOES the job: write a value into an attribute."),
+                _edit("graph_set_value", {"graph_path": "/World/AG/Graph", "pin": "Push.inputs:prim",
+                                          "value": ["/World/AG/Cube"]},
+                      "Push's Prim input now shows /World/AG/Cube.", "Tell it WHICH prim: the cube."),
+                _edit("graph_connect", {"graph_path": "/World/AG/Graph", "source": "KeyW.outputs:pressed",
+                                        "target": "Push.inputs:execIn"},
+                      "A white EXECUTION wire joins Pressed to Push: 'when W is pressed, run Push'.",
+                      "Wire WHEN: the key press starts the write."),
+                _edit("graph_connect", {"graph_path": "/World/AG/Graph", "source": "ReadForward.outputs:value",
+                                        "target": "Push.inputs:value"},
+                      "A coloured DATA wire carries (2, 0, 0) into Push's Value.",
+                      "Wire WHAT: the value to write comes from the variable."),
+                _read("graph_inspect", {"root_path": "/World/AG/Graph"},
+                      "The flow reads: 'When key W is pressed -> Write Prim Attribute writes physics:velocity = "
+                      "variable forward on /World/AG/Cube'.", "Ask the graph to explain itself."),
+                _ui("Press Play (left toolbar). Click once inside the viewport so it has the keyboard, then press W.",
+                    "The cube slides along X at 2 m/s. (Press Stop to put it back.)"),
+                _ui("In the graph window's Variables panel, change forward to (0, 2, 0). Press Play, click the "
+                    "viewport, press W.",
+                    "Now it slides along Y: you changed the behaviour without touching a node, as in class."),
+            ],
+            "try_yourself": "Add an S key that pushes backwards: an On Keyboard Input (S), a new variable back = "
+                            "(-2, 0, 0), a Read Variable and a Write Prim Attribute. Which two wires do you need?",
         },
         "surprising_renders": {
             "title": "Why did it vanish? Visibility, purpose and stale extents",
@@ -383,6 +474,7 @@ def list_labs() -> dict[str, Any]:
                                   "steps": len(lab["steps"])} for key, lab in labs.items()],
             "study_stage": f"{STUDY_FOLDER}/{STUDY_STAGE}",
             "start_here": list(FOUNDATIONS),
+            "class_labs": {name: f"class session {session}" for name, session in CLASS_LABS.items()},
             "note": "Beginners do the foundation labs (start_here) first, before any exam objective."}
 
 

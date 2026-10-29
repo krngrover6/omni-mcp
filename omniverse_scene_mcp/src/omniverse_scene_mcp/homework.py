@@ -1,4 +1,4 @@
-"""Homework checkers for mentorship sessions 3-5, read-only.
+"""Homework checkers for mentorship sessions 3-6, read-only.
 
 Each check looks for what the homework asks for by meaning (references, materials, rigid bodies, joint types and
 drives), not by exact prim paths, so any reasonable scene layout is graded. Results follow assignments.py: each rule
@@ -248,10 +248,147 @@ def _session5(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
     return rows
 
 
+_CONVEYOR = "isaacsim.asset.gen.conveyor.IsaacConveyor"
+
+
+def _graph_nodes(prims: list[Any]) -> list[tuple[Any, str]]:
+    """(node prim, node type id) for every Action Graph node in the scene."""
+    nodes = []
+    for prim in prims:
+        if prim.GetTypeName() in ("OmniGraphNode", "ComputeNode"):
+            kind = prim.GetAttribute("node:type")
+            nodes.append((prim, str(kind.Get()) if kind and kind.Get() else ""))
+    return nodes
+
+
+def _wired(prim: Any, pin: str) -> list[str]:
+    """Sources wired into an input pin, or targets of a relationship pin (e.g. inputs:conveyorPrim)."""
+    attribute = prim.GetAttribute(pin)
+    if attribute and attribute.GetConnections():
+        return [str(path) for path in attribute.GetConnections()]
+    relation = prim.GetRelationship(pin)
+    return [str(path) for path in relation.GetTargets()] if relation else []
+
+
+def _feeds_from(nodes: list[tuple[Any, str]], source_node: Any, pin: str) -> list[str]:
+    """Nodes whose inputs are wired FROM source_node's output pin (who runs after it)."""
+    wanted = f"{source_node.GetPath()}.{pin}"
+    hits = []
+    for prim, _kind in nodes:
+        for attribute in prim.GetAttributes():
+            if attribute.GetName().startswith("inputs:") and wanted in [str(p) for p in attribute.GetConnections()]:
+                hits.append(str(prim.GetPath()))
+    return hits
+
+
+def _yaw(prim: Any) -> float:
+    matrix = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    x_axis = matrix.TransformDir((1, 0, 0))
+    import math
+    return round(math.degrees(math.atan2(x_axis[1], x_axis[0])), 1)
+
+
+def _session6(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
+    """Class session 6: a conveyor loop (kinematic belts driven by Conveyor Belt nodes) that stops a box for 5 s at a
+    stopper, then lets it carry on. Hints name the nodes to use; they never hand over the finished graph."""
+    rows = []
+    graphs = [p for p in prims if p.GetTypeName() == "OmniGraph"]
+    nodes = _graph_nodes(prims)
+    rows.append(_row("action_graph", "An Action Graph exists", 1, "pass" if graphs else "fail",
+                     {"graphs": [str(g.GetPath()) for g in graphs][:6]},
+                     "Everything in this homework is driven by an Action Graph.",
+                     ["Right-click the Stage panel > Create > Visual Scripting > Action Graph (or graph_create)."]))
+
+    conveyors = [prim for prim, kind in nodes if kind == _CONVEYOR]
+    complete = [c for c in conveyors if _wired(c, "inputs:conveyorPrim") and _wired(c, "inputs:onStep")]
+    rows.append(_row("conveyor_nodes", "Conveyor Belt nodes are set up", 2,
+                     "pass" if complete else "partial" if conveyors else "fail",
+                     {"conveyor_nodes": len(conveyors), "complete": [str(c.GetPath()) for c in complete][:6]},
+                     "A Conveyor Belt node only moves things when it has a belt (Conveyor Prim) and an event "
+                     "wired into On Step, as the class saw: nothing moved until it was connected.",
+                     ["Add a Conveyor Belt node (graph_node_search 'conveyor'), set its Conveyor Prim to a belt and "
+                      "wire On Playback Tick's tick into its On Step."]))
+
+    belt_paths = sorted({t for c in complete for t in _wired(c, "inputs:conveyorPrim")})
+    belts = [stage.GetPrimAtPath(p) for p in belt_paths if stage.GetPrimAtPath(p)]
+    bad = [str(b.GetPath()) for b in belts if not (_rigid(b) and _collider(b) and _kinematic(b))]
+    rows.append(_row("belt_physics", "Every belt is a kinematic rigid body with a collider", 2,
+                     "pass" if belts and not bad else "partial" if belts else "fail",
+                     {"belts": belt_paths[:6], "not_ready": bad[:6]},
+                     "A belt must be a rigid body (so PhysX drives its surface), have a collider (so the box can "
+                     "rest on it) and be kinematic (so it stays put instead of falling, as in class).",
+                     ["For each belt: scene_make_rigid_body(prim_path=..., kinematic=True) adds all three."]))
+
+    yaws = sorted({_yaw(b) for b in belts})
+    loop_status = "pass" if len(belts) >= 3 and len(yaws) >= 2 else "partial" if len(belts) >= 2 else "fail"
+    rows.append(_row("loop", "The belts form a loop", 2, loop_status,
+                     {"belts": len(belts), "directions_deg": yaws[:8]},
+                     "The homework is a loop: several belts turned to different directions (the class rotated "
+                     "copies by -90 degrees about Z) so the box comes back round.",
+                     ["Duplicate a belt (scene_duplicate), turn the copy -90 degrees about Z (scene_move rotation), "
+                      "line it up at the end of the first, and give it its own Conveyor Belt node."]))
+
+    belt_set = set(belt_paths)
+    boxes = [p for p in prims if _rigid(p) and not _kinematic(p) and str(p.GetPath()) not in belt_set
+             and p.IsA(UsdGeom.Gprim)]
+    cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render"])
+    riding = []
+    for box in boxes:
+        center = cache.ComputeWorldBound(box).ComputeAlignedRange().GetMidpoint()
+        for belt in belts:
+            area = cache.ComputeWorldBound(belt).ComputeAlignedRange()
+            if (area.GetMin()[0] <= center[0] <= area.GetMax()[0] and area.GetMin()[1] <= center[1] <= area.GetMax()[1]
+                    and center[2] >= area.GetMax()[2] - 1e-3):
+                riding.append(str(box.GetPath()))
+                break
+    rows.append(_row("box", "A box rests on a belt", 1, "pass" if riding else "partial" if boxes else "fail",
+                     {"boxes": [str(b.GetPath()) for b in boxes][:6], "on_a_belt": riding[:6]},
+                     "The box must be a normal (dynamic) rigid body sitting on a belt, or nothing carries it.",
+                     ["Make a small cube a rigid body (not kinematic) and place it just above a belt."]))
+
+    kinds = Counter(kind for _prim, kind in nodes)
+    detect = [k for k in kinds if k.endswith((".Branch", ".Compare")) or "Contact" in k or "Trigger" in k]
+    reads = [k for k in kinds if k.endswith("ReadPrimAttribute")]
+    rows.append(_row("detect", "The graph can tell when the box reaches the stopper", 2,
+                     "pass" if detect else "partial" if reads else "fail",
+                     {"deciding_nodes": detect[:6], "reading_nodes": reads[:3]},
+                     "To stop at the stopper, the graph must notice the box got there: read its position and "
+                     "compare it with the stopper's, or use a contact/trigger sensor (the class's 'detection, "
+                     "position or ray' options).",
+                     ["Read the box's xformOp:translate (Read Prim Attribute), compare one axis with the stopper "
+                      "position (Compare), and let a Branch decide."]))
+
+    stoppers = [prim for prim, kind in nodes if kind.endswith(("WriteVariable", "WritePrimAttribute"))
+                or (kind == _CONVEYOR and _wired(prim, "inputs:enabled"))]
+    rows.append(_row("stop", "Something stops the belt or the box", 2, "pass" if stoppers else "fail",
+                     {"stopping_nodes": [str(p.GetPath()) for p in stoppers][:6]},
+                     "Stopping means changing what drives the box: set the belt's speed variable to 0 (Write "
+                     "Variable) or switch the Conveyor Belt node off (its Enabled input).",
+                     ["Add a Write Variable node that sets the conveyor's speed variable to 0 when the box arrives."]))
+
+    delays = [prim for prim, kind in nodes if kind.endswith(".Delay")]
+    durations = [float(d.GetAttribute("inputs:duration").Get() or 0) for d in delays if d.GetAttribute("inputs:duration")]
+    five = [value for value in durations if 4.5 <= value <= 5.5]
+    rows.append(_row("wait_5s", "It waits 5 seconds", 2, "pass" if five else "partial" if delays else "fail",
+                     {"delay_nodes": len(delays), "durations_s": durations[:6]},
+                     "The homework stops the box for 5 seconds; a Delay node waits that long before carrying on.",
+                     ["Add a Delay node (graph_node_search 'delay') and set its Duration to 5."]))
+
+    resumed = [str(d.GetPath()) for d in delays if _feeds_from(nodes, d, "outputs:finished")]
+    rows.append(_row("resume", "After the wait, the belt starts again", 2,
+                     "pass" if resumed else "partial" if delays else "fail",
+                     {"delays_wired_onward": resumed[:6]},
+                     "After the 5 s the box must move on, so the Delay's Finished output has to trigger "
+                     "something that restores the speed.",
+                     ["Wire the Delay's Finished output into a Write Variable that sets the speed back."]))
+    return rows
+
+
 SESSIONS = {
     3: ("Session 3: upgrade your warehouse with real assets", _session3),
     4: ("Session 4: bowling, knock every pin down", _session4),
     5: ("Session 5: drawers, a self-closing door and a ground robot", _session5),
+    6: ("Session 6: a conveyor loop that stops the box for 5 seconds", _session6),
 }
 
 
@@ -262,14 +399,14 @@ def homework_sessions() -> dict[str, Any]:
 
 
 def check_homework(stage: Any, session: int) -> dict[str, Any]:
-    """Read-only: grade the open scene against a session's homework (3, 4 or 5). Each check is pass, partial, fail
+    """Read-only: grade the open scene against a session's homework (3, 4, 5 or 6). Each check is pass, partial, fail
     or unknown with evidence and how to fix it; next_step names the most useful thing to do now."""
     if Usd is None:
         return {"ok": False, "error": "pxr (USD) is not available"}
     if stage is None:
         return {"ok": False, "error": "No stage is open"}
     if isinstance(session, bool) or session not in SESSIONS:
-        return {"ok": False, "error": "session must be 3, 4 or 5 (Session 2's warehouse is assignment_check)"}
+        return {"ok": False, "error": "session must be 3, 4, 5 or 6 (Session 2's warehouse is assignment_check)"}
     dirty = {layer.identifier: layer.dirty for layer in stage.GetUsedLayers()}
     title, checker = SESSIONS[session]
     rows = checker(stage, _prims(stage))

@@ -114,13 +114,15 @@ def test_bad_session_and_no_stage():
     assert not hw.check_homework(Usd.Stage.CreateInMemory(), 2)["ok"]
     assert not hw.check_homework(Usd.Stage.CreateInMemory(), True)["ok"]
     assert not hw.check_homework(None, 5)["ok"]
-    assert [s["session"] for s in hw.homework_sessions()["sessions"]] == [3, 4, 5]
+    assert [s["session"] for s in hw.homework_sessions()["sessions"]] == [3, 4, 5, 6]
+    assert not hw.check_homework(Usd.Stage.CreateInMemory(), 7)["ok"]
     assert features.FEATURES["homework_check"].mutates is False
 
 
 def test_phrases_for_homework_and_joints():
     cases = {
         "check my session 5 homework": ("homework_check", {"session": 5}),
+        "grade my homework for session 6": ("homework_check", {"session": 6}),
         "grade my homework for session 4": ("homework_check", {"session": 4}),
         "create a revolute joint between /World/Base and /World/Wheel on the y axis": (
             "scene_create_joint", {"kind": "revolute", "body0": "/World/Base", "body1": "/World/Wheel", "axis": "Y",
@@ -148,3 +150,66 @@ def test_existing_routes_are_unchanged():
     finally:
         nl_tier8._physics_route = original
     assert not [p for p in phrases if before[p] != after[p]]
+
+
+def _node(stage, path, kind):
+    prim = stage.DefinePrim(path, "OmniGraphNode")
+    prim.CreateAttribute("node:type", Sdf.ValueTypeNames.Token).Set(kind)
+    return prim
+
+
+def _pin(prim, name, type_name=Sdf.ValueTypeNames.Token):
+    return prim.CreateAttribute(name, type_name)
+
+
+def _wire(source, pin, target, target_pin):
+    _pin(target, target_pin).AddConnection(f"{source.GetPath()}.{pin}")
+
+
+def _belt(stage, path, t, yaw):
+    belt = _body(stage, path, t)
+    UsdGeom.XformCommonAPI(belt).SetScale(Gf.Vec3f(1, 0.3, 0.05))
+    UsdGeom.XformCommonAPI(belt).SetRotate(Gf.Vec3f(0, 0, yaw))
+    belt.GetPrim().CreateAttribute("physics:kinematicEnabled", Sdf.ValueTypeNames.Bool).Set(True)
+    return belt.GetPrim()
+
+
+def _conveyor(stage, graph, name, belt, tick):
+    node = _node(stage, f"{graph}/{name}", hw._CONVEYOR)
+    node.CreateRelationship("inputs:conveyorPrim").SetTargets([belt.GetPath()])
+    _wire(tick, "outputs:tick", node, "inputs:onStep")
+    return node
+
+
+def test_session6_conveyor_loop_from_one_belt_to_a_full_stop_and_go():
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1)
+    stage.DefinePrim("/World/Graph", "OmniGraph")
+    tick = _node(stage, "/World/Graph/OnTick", "omni.graph.action.OnPlaybackTick")
+    first = _belt(stage, "/World/Belt1", (0, 0, 0.05), 0)
+    _conveyor(stage, "/World/Graph", "Conveyor1", first, tick)
+    _body(stage, "/World/Box", (0, 0, 0.3)).GetPrim()
+    UsdGeom.XformCommonAPI(stage.GetPrimAtPath("/World/Box")).SetScale(Gf.Vec3f(0.1, 0.1, 0.1))
+    one = hw.check_homework(stage, 6)
+    status = _status(one)
+    assert one["ok"] and status["conveyor_nodes"] == "pass" and status["belt_physics"] == "pass", status
+    assert status["box"] == "pass" and status["loop"] == "fail" and status["wait_5s"] == "fail", status
+    assert "Delay" in " ".join(r["how_to_fix"][0] for r in one["results"] if r["rule"] == "wait_5s")
+    # a loop: two more belts turned -90 degrees each, with their own conveyor nodes
+    for index, (t, yaw) in enumerate((((2, 0, 0.05), -90), ((2, -2, 0.05), -180)), start=2):
+        _conveyor(stage, "/World/Graph", f"Conveyor{index}", _belt(stage, f"/World/Belt{index}", t, yaw), tick)
+    # detect -> stop -> wait 5 s -> resume
+    read = _node(stage, "/World/Graph/ReadBox", "omni.graph.nodes.ReadPrimAttribute")
+    compare = _node(stage, "/World/Graph/AtStopper", "omni.graph.nodes.Compare")
+    _wire(read, "outputs:value", compare, "inputs:a")
+    stop = _node(stage, "/World/Graph/Stop", "omni.graph.core.WriteVariable")
+    delay = _node(stage, "/World/Graph/Wait", "omni.graph.action.Delay")
+    _pin(delay, "inputs:duration", Sdf.ValueTypeNames.Double).Set(5.0)
+    _wire(stop, "outputs:execOut", delay, "inputs:execIn")
+    resume = _node(stage, "/World/Graph/Resume", "omni.graph.core.WriteVariable")
+    _wire(delay, "outputs:finished", resume, "inputs:execIn")
+    full = hw.check_homework(stage, 6)
+    assert set(_status(full).values()) == {"pass"}, _status(full)
+    assert full["passed"] and full["read_only"]
+    assert hw.homework_sessions()["sessions"][-1]["session"] == 6
