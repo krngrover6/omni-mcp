@@ -2297,6 +2297,40 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         areas, Python practice), your streak and a catch-up hint. Nothing is written."""
         return exam_reminder.today_brief(_brief_store(), minutes=minutes)
 
+    @app.tool(name="learning_exam_week")
+    def learning_exam_week(days: int = 7) -> dict:
+        """Read-only: the last `days` (3-14) before your NCP-OUSD exam date as a day-by-day agenda built from your
+        saved progress: two timed full mocks each followed by a review day, drills on the domains with the most marks
+        at risk (weight x missed), a light last day and an exam-day pacing checklist, plus a ready / not-yet verdict
+        with reasons. Every step names the tool to call. Nothing is started or written."""
+        from .exam import dashboard as exam_dashboard_module
+        from .exam import exam_week
+
+        try:
+            data = exam_dashboard_module.dashboard_data(progress_store, mock_store=mock_store)
+        except Exception as exc:  # noqa: BLE001 - an unreadable store is reported, not raised
+            return _error(f"Could not read your exam progress: {type(exc).__name__}: {exc}")
+        return exam_week.exam_week(data, days=days)
+
+    @app.tool(name="learning_interview_questions")
+    def learning_interview_questions(topic: str | None = None, level: str | None = None, count: int = 5,
+                                     seed: int | None = None) -> dict:
+        """Read-only: job-interview practice questions on OpenUSD, composition, performance, physics, Isaac Sim,
+        pipelines, debugging and your own projects (answers withheld). topic and level ('junior' or 'mid') filter;
+        seed fixes the shuffle. Answer out loud, then type it into learning_interview_answer for feedback."""
+        from .exam import interview
+
+        return interview.questions(topic=topic, level=level, count=count, seed=seed)
+
+    @app.tool(name="learning_interview_answer")
+    def learning_interview_answer(question_id: str, answer: str) -> dict:
+        """Read-only coaching for one interview answer: the key points you covered and missed, a score and rating,
+        tips (length, a concrete example) and a short model answer plus a likely follow-up question. Keyword-based:
+        it checks which ideas came up, not whether every sentence is right. Nothing is saved."""
+        from .exam import interview
+
+        return interview.grade(question_id, answer)
+
     @app.tool(name="learning_reminder_setup")
     def learning_reminder_setup(at: str = "19:00") -> dict:
         """Read-only, creates NOTHING: returns the PowerShell commands YOU can copy to create (and later remove) a daily

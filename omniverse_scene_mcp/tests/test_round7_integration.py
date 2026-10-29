@@ -168,7 +168,7 @@ def _test_phrases():
 def test_round7_tools_are_registered_with_safe_defaults_and_catalogued():
     with _server() as call:
         tools = {tool.name: tool for tool in call.app._tool_manager.list_tools()}
-        assert NEW_TOOLS <= set(tools) and len(tools) == 161 + len(__import__("omniverse_scene_mcp.features", fromlist=["FEATURES"]).FEATURES), len(tools)
+        assert NEW_TOOLS <= set(tools) and len(tools) == 164 + len(__import__("omniverse_scene_mcp.features", fromlist=["FEATURES"]).FEATURES), len(tools)
         for name in LAYOUT_TOOLS:
             properties = tools[name].parameters["properties"]
             assert properties["dry_run"]["default"] is True, name

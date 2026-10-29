@@ -81,6 +81,7 @@ PROFILES: dict[str, tuple[str, ...]] = {
         "learning_today",
         "learning_reminder_setup",
         "learning_exam_*",
+        "learning_interview_*",
         "learning_mock_exam_*",
         "learning_composition_puzzle*",
         "learning_drill_*",
