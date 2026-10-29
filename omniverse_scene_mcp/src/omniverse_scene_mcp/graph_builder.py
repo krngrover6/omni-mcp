@@ -300,7 +300,17 @@ def set_value(stage: Any, graph_path: str, pin: str, value: Any, *, value_type: 
     if refusal:
         return refusal
     live_item = (_full(graph_path, pin), _kit_value(value), *item[2:])
-    return {**_run(og, stage, graph_path, {"set_values": [live_item]}, f"Set {pin} = {value!r}."), "python": python}
+    values = [live_item]
+    note = f"Set {pin} = {value!r}."
+    node_name, pin_name = pin.split(".", 1)
+    node = _node_prim(stage, graph_path, node_name)
+    kind = node.GetAttribute("node:type").Get() if node is not None and node.GetAttribute("node:type") else None
+    if kind == "omni.graph.scriptnode.ScriptNode" and pin_name in ("inputs:script", "inputs:scriptPath", "inputs:usePath"):
+        # Seen live in Isaac 6.1: a Script Node compiles its code once and keeps it until its
+        # state:omni_initialized flag is cleared (the node's Reset button), so new code was silently ignored.
+        values.append((_full(graph_path, f"{node_name}.state:omni_initialized"), False))
+        note += " The Script Node was reset, so the new code compiles on the next frame."
+    return {**_run(og, stage, graph_path, {"set_values": values}, note), "python": python}
 
 
 def add_variable(stage: Any, graph_path: str, name: str, value_type: str, *, default: Any = None,

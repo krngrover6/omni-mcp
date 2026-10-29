@@ -230,16 +230,43 @@ def test_color_sort_recipe_routes_each_package_to_its_bin_once_per_play():
     code = next(v["value"] for v in plan["values"] if v["attribute"] == "Sorter.inputs:script")
     inputs = {"packages": "/World/Packages", "routes": json.dumps(bins), "zone_min": (-1, -1, 0), "zone_max": (1, 1, 1),
               "speed": 1.5, "hop": 1.0}
-    counts = _run_sorter(stage, code, inputs, [0.0, 0.1, 0.2])
-    assert counts == [6, 6, 6], counts  # all six sorted on the first frame, never twice
-    for prim in stage.GetPrimAtPath("/World/Packages").GetChildren():
+    packages = stage.GetPrimAtPath("/World/Packages").GetChildren()
+    assert _run_sorter(stage, code, inputs, [0.0]) == [6]  # all six sorted on the first frame
+    for prim in packages:  # first push: toward the bin, with the hop
         velocity = UsdPhysics.RigidBodyAPI(prim).GetVelocityAttr().Get()
         colour = prim.GetAttribute("package:color").Get()
         assert (velocity[1] > 0) == (colour == "red") and velocity[2] == 1.0, (colour, velocity)
-    assert _run_sorter(stage, code, inputs, [5.0, 0.0])[-1] == 6  # Stop -> Play: the clock went back, so it re-sorts
+    # Seen live: one push and friction stopped packages short of their bins, so later frames keep steering.
+    assert _run_sorter(stage, code, inputs, [0.0, 0.1, 0.2]) == [6, 6, 6]  # never counted twice
+    for prim in packages:
+        velocity = UsdPhysics.RigidBodyAPI(prim).GetVelocityAttr().Get()
+        assert abs(velocity[1]) > 1.0 and abs(velocity[2] + 0.2) < 1e-6, velocity  # float32
+    first = packages[0]
+    target = "/World/BinA" if first.GetAttribute("package:color").Get() == "red" else "/World/BinB"
+    UsdGeom.XformCommonAPI(first).SetTranslate(Gf.Vec3d(0, 2.0 if target.endswith("A") else -2.0, 0.3))
+    _run_sorter(stage, code, {**inputs, "zone_min": (-3, -3, 0), "zone_max": (3, 3, 1)}, [0.0])  # zone covers the bin
+    stopped = UsdPhysics.RigidBodyAPI(first).GetVelocityAttr().Get()
+    assert stopped[0] == 0 and stopped[1] == 0 and abs(stopped[2] + 0.2) < 1e-6, stopped  # arrived: stopped
+    # Stop -> Play: the clock goes back, so it re-sorts (5: the first package now sits outside the zone, on its bin)
+    assert _run_sorter(stage, code, inputs, [5.0, 0.0]) == [5, 5]
     missing = ogh.plan_recipe("color_sort", stage=stage, bins={"red": "/World/BinA"}, zone_min=[-1, -1, 0],
                               zone_max=[1, 1, 1])
     assert missing["ok"] and any("blue" in w for w in missing["warnings"]), missing["warnings"]
     assert not ogh.plan_recipe("color_sort", stage=stage, bins={"red": "/World/Nope"}, zone_min=[-1, -1, 0],
                                zone_max=[1, 1, 1])["ok"]
     assert not ogh.plan_recipe("color_sort", stage=stage, bins=bins, zone_min=[1, 1, 1], zone_max=[0, 0, 0])["ok"]
+
+
+def test_changing_script_node_code_resets_it_so_the_new_code_compiles():
+    # Seen live: new code set on a running Script Node was ignored until its state:omni_initialized flag was cleared.
+    stage = _stage_with_graph()
+    node = stage.DefinePrim("/World/ActionGraph/Sorter", "OmniGraphNode")
+    node.CreateAttribute("node:type", Sdf.ValueTypeNames.Token).Set("omni.graph.scriptnode.ScriptNode")
+    result = _live(stage, lambda: gb.set_value(stage, "/World/ActionGraph", "Sorter.inputs:script", "x = 1",
+                                               dry_run=False))
+    assert result["ok"] and "reset" in result["message"], result
+    assert _Controller.calls[0][1]["set_values"] == [("/World/ActionGraph/Sorter.inputs:script", "x = 1"),
+                                                     ("/World/ActionGraph/Sorter.state:omni_initialized", False)]
+    other = _live(stage, lambda: gb.set_value(stage, "/World/ActionGraph", "OnTick.inputs:onlyPlayback", True,
+                                              dry_run=False))
+    assert len(_Controller.calls[0][1]["set_values"]) == 1 and "reset" not in other["message"]
