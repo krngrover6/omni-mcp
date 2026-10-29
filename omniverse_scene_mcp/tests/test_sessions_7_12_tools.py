@@ -295,6 +295,16 @@ def test_color_sort_camera_mode_reads_colours_from_the_picture():
     assert made == [("/World/TopCam", (480, 640), ["rgb"])]  # one sensor, made once
     for prim in stage.GetPrimAtPath("/World/Packages").GetChildren():
         assert UsdPhysics.RigidBodyAPI(prim).GetVelocityAttr().Get()[1] > 0  # went to the RED bin, as seen
+    # Seen live: sRGB pixels of a blue box sat between blue and purple; a grey floor counted as purple.
+    for picture, expected in (((104, 153, 235), [0]), ((180, 180, 180), [0])):  # sRGB blue -> BLUE bin; grey -> none
+        frames[:] = [[[picture] * 640 for _ in range(480)]]
+        made.clear()
+        counts = _run_sorter(stage, code, inputs, [0.0], modules={"isaacsim.sensors.experimental.rtx": rtx})
+        if picture == (104, 153, 235):
+            assert counts == [4] and all(UsdPhysics.RigidBodyAPI(p).GetVelocityAttr().Get()[1] < 0
+                                         for p in stage.GetPrimAtPath("/World/Packages").GetChildren()), counts
+        else:
+            assert counts == expected, counts
     UsdGeom.XformCommonAPI(camera).SetTranslate(Gf.Vec3d(0, 0, -5))  # now the packages are behind it
     frames[:] = [[[(200, 30, 25)] * 640 for _ in range(480)]]
     assert _run_sorter(stage, code, inputs, [0.0], modules={"isaacsim.sensors.experimental.rtx": rtx}) == [0]
