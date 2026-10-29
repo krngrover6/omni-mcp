@@ -108,6 +108,15 @@ _add("physics_extras", "scene_add_payload:add_payload scene_load_payloads:load_p
      "scene_add_payload scene_load_payloads scene_unload_payloads scene_create_physics_material "
      "scene_bind_physics_material scene_set_rigid_body_properties")
 _add("homework", "homework_check:check_homework", "stage", "Learning Python & homework")
+_add("spawner", "scene_spawn_packages:spawn_packages", "stage", "Scene: change safely", "scene_spawn_packages")
+_add("graph_builder", "graph_add_attribute:add_attribute graph_add_script_node:add_script_node", "stage",
+     "Scene: change safely", "graph_add_attribute graph_add_script_node")
+_add("joint_control", "robot_live_spin:live_spin", "kit", "Robots", "robot_live_spin")
+_add("debug_trainer", "scene_diagnose:diagnose", "stage", "Live insight")
+_add("debug_trainer", "debug_challenge_list:list_challenges debug_challenge_answer:check_answer", "local",
+     "Learning Python & homework")
+_add("debug_trainer", "debug_challenge_make:make_challenge", "local", "Learning Python & homework",
+     "debug_challenge_make")
 _add("homework", "homework_sessions", "local", "Learning Python & homework")
 _add("value_story","scene_why_value:why_value scene_what_if:what_if", "stage", "Live insight")
 _add("session_lessons", "class_transcripts:find_transcripts class_session_plan:session_plan class_lesson:lesson "

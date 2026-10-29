@@ -461,6 +461,9 @@ class FakeArticulation:
     def set_dof_position_targets(self, positions, *, dof_indices=None):
         FakeArticulation.calls.append(("set_dof_position_targets", positions, dof_indices))
 
+    def set_dof_velocity_targets(self, velocities, *, dof_indices=None):
+        FakeArticulation.calls.append(("set_dof_velocity_targets", velocities, dof_indices))
+
 
 def _experimental_module():
     FakeArticulation.calls = []
@@ -611,3 +614,20 @@ def test_real_franka_joint_table_read_only():
     home = jc.set_drive_targets(stage, "/" + stage.GetDefaultPrim().GetName(), jc.pose_targets("home")["targets"])
     assert home["ok"] and not any(step["clamped"] for step in home["plan"])
     assert layer.ExportToString() == before and not layer.dirty
+
+
+def test_live_spin_sends_wheel_velocities_in_radians_per_second():
+    # Class session 9: equal wheel speeds drive straight, 0 stops.
+    if _IN_KIT:
+        return
+    with _fake_isaac(omni_timeline=_timeline_module("playing"), isaacsim_core_experimental_prims=_experimental_module()):
+        dry = _json(jc.live_spin("/World/Arm", {"shoulder": 180}))
+        assert dry["ok"] and dry["dry_run"] and not any(c[0] == "set_dof_velocity_targets" for c in FakeArticulation.calls)
+        done = jc.live_spin("/World/Arm", {"shoulder": 180, "slide": 0.2}, dry_run=False)
+        assert done["ok"] and done["applied"], done
+        name, speeds, indices = FakeArticulation.calls[-1]
+        assert name == "set_dof_velocity_targets" and indices == [0, 1]
+        assert math.isclose(speeds[0][0], math.pi) and math.isclose(speeds[0][1], 0.2)
+        assert not jc.live_spin("/World/Arm", {"elbow": 10}, dry_run=False)["ok"]
+    with _fake_isaac(omni_timeline=_timeline_module("stopped"), isaacsim_core_experimental_prims=_experimental_module()):
+        assert not jc.live_spin("/World/Arm", {"shoulder": 10}, dry_run=False)["ok"]

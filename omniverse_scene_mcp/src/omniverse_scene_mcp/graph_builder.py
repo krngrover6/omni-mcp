@@ -343,3 +343,164 @@ def delete_node(stage: Any, graph_path: str, name: str, *, dry_run: bool = True)
         return refusal
     return {**_run(og, stage, graph_path, {"delete_nodes": [f"{graph_path}/{name}"]}, f"Deleted {name}."),
             "python": python}
+
+
+# --------------------------------------------------------------------------------------------------- script nodes
+SCRIPT_TEMPLATES: dict[str, dict[str, Any]] = {
+    "move_on_trigger": {
+        "about": "Each time it is triggered, moves a prim by an offset (class session 8's practical test).",
+        "pins": {"inputs:prim_path": "token", "inputs:offset": "double[3]"},
+        "defaults": {"inputs:offset": [0.0, 0.0, 0.5]},
+        "code": (
+            "import omni.usd\n"
+            "from pxr import Gf, UsdGeom\n"
+            "\n\n"
+            "def setup(db):\n"
+            "    # Runs once, when the graph starts (like Arduino's setup).\n"
+            "    pass\n"
+            "\n\n"
+            "def compute(db):\n"
+            "    # Runs every time an execution wire triggers this node.\n"
+            "    stage = omni.usd.get_context().get_stage()\n"
+            "    prim = stage.GetPrimAtPath(db.inputs.prim_path)\n"
+            "    if not prim or not prim.IsValid():\n"
+            "        db.log_warning(f'No prim at {db.inputs.prim_path!r}: check the prim_path input.')\n"
+            "        return False\n"
+            "    xform = UsdGeom.XformCommonAPI(prim)\n"
+            "    translation = xform.GetXformVectors(0)[0]          # where it is now\n"
+            "    dx, dy, dz = db.inputs.offset                      # how far to move it\n"
+            "    xform.SetTranslate(Gf.Vec3d(translation[0] + dx, translation[1] + dy, translation[2] + dz))\n"
+            "    return True                                        # True = it worked; execOut fires next\n"
+            "\n\n"
+            "def cleanup(db):\n"
+            "    # Runs once, when the node is deleted or the graph stops.\n"
+            "    pass\n"
+        ),
+    },
+    "counter": {
+        "about": "Counts how many times it was triggered; the count is an output other nodes can read.",
+        "pins": {"outputs:count": "int"},
+        "defaults": {},
+        "code": (
+            "def setup(db):\n"
+            "    db.outputs.count = 0\n"
+            "\n\n"
+            "def compute(db):\n"
+            "    db.outputs.count = db.outputs.count + 1   # outputs keep their value between triggers\n"
+            "    return True\n"
+            "\n\n"
+            "def cleanup(db):\n"
+            "    pass\n"
+        ),
+    },
+    "spawn_package": {
+        "about": "Each time it is triggered, drops one random-coloured package with physics at a spawn point "
+                 "(a package generator, class session 8).",
+        "pins": {"inputs:parent": "token", "inputs:spawn_at": "double[3]"},
+        "defaults": {"inputs:parent": "/World/Spawned", "inputs:spawn_at": [0.0, 0.0, 1.0]},
+        "code": (
+            "import random\n"
+            "import omni.usd\n"
+            "from pxr import Gf, UsdGeom, UsdPhysics\n"
+            "\n\n"
+            "def setup(db):\n"
+            "    pass\n"
+            "\n\n"
+            "def compute(db):\n"
+            "    stage = omni.usd.get_context().get_stage()\n"
+            "    parent = db.inputs.parent\n"
+            "    if not stage.GetPrimAtPath(parent):\n"
+            "        UsdGeom.Xform.Define(stage, parent)\n"
+            "    index = len(stage.GetPrimAtPath(parent).GetChildren()) + 1\n"
+            "    cube = UsdGeom.Cube.Define(stage, f'{parent}/Package_{index:03d}')\n"
+            "    cube.CreateSizeAttr(0.2)\n"
+            "    x, y, z = db.inputs.spawn_at\n"
+            "    UsdGeom.XformCommonAPI(cube).SetTranslate(Gf.Vec3d(x + random.uniform(-0.05, 0.05), y, z))\n"
+            "    color = random.choice([(0.85, 0.15, 0.12), (0.15, 0.7, 0.25), (0.15, 0.35, 0.9)])\n"
+            "    cube.CreateDisplayColorAttr([Gf.Vec3f(*color)])\n"
+            "    UsdPhysics.RigidBodyAPI.Apply(cube.GetPrim())\n"
+            "    UsdPhysics.CollisionAPI.Apply(cube.GetPrim())\n"
+            "    return True\n"
+            "\n\n"
+            "def cleanup(db):\n"
+            "    pass\n"
+        ),
+    },
+}
+ATTRIBUTE_TYPES = VARIABLE_TYPES + ("double[3][]", "float[3][]", "int[3]", "uint")
+
+
+def add_attribute(stage: Any, graph_path: str, pin: str, value_type: str, *, dry_run: bool = True) -> dict[str, Any]:
+    """Preview (or add) a custom pin on a node that allows them, such as a Script Node: Node.inputs:speed or
+    Node.outputs:count, with a type such as 'double', 'token' or 'double[3]'."""
+    problem = _check_graph(stage, graph_path)
+    if problem:
+        return {"ok": False, "error": problem}
+    match = _PIN.match(pin) if isinstance(pin, str) else None
+    if not match or match.group(2).startswith("state:"):
+        return {"ok": False, "error": "pin must look like NodeName.inputs:speed or NodeName.outputs:count."}
+    if _node_prim(stage, graph_path, match.group(1)) is None:
+        return {"ok": False, "error": f"{graph_path} has no node named {match.group(1)}."}
+    if value_type not in ATTRIBUTE_TYPES:
+        return {"ok": False, "error": f"value_type must be one of {', '.join(ATTRIBUTE_TYPES)}."}
+    python = _python(graph_path, "create_attributes", repr((_full(graph_path, pin), value_type)))
+    if dry_run is not False:
+        return _preview({"graph_path": graph_path, "pin": pin, "type": value_type}, python, [])
+    og, refusal = _kit(stage)
+    if refusal:
+        return refusal
+    return {**_run(og, stage, graph_path, {"create_attributes": [(_full(graph_path, pin), value_type)]},
+                   f"Added pin {pin} ({value_type}).", describe=f"{graph_path}/{match.group(1)}"), "python": python}
+
+
+def add_script_node(stage: Any, graph_path: str, name: str, template: str = "move_on_trigger", *,
+                    values: dict[str, Any] | None = None, trigger_key: str | None = None,
+                    dry_run: bool = True) -> dict[str, Any]:
+    """Preview (or add) a Script Node (Python inside the graph) from a template: its custom pins, its
+    setup/compute/cleanup code and starting values. trigger_key (e.g. 'T') also adds an On Keyboard Input that fires
+    it. Templates: move_on_trigger, counter, spawn_package. Edit the code afterwards in the node's Script field."""
+    problem = _check_graph(stage, graph_path)
+    if problem:
+        return {"ok": False, "error": problem}
+    if template not in SCRIPT_TEMPLATES:
+        return {"ok": False, "error": f"Unknown template {template!r}. Templates: {', '.join(SCRIPT_TEMPLATES)}."}
+    if not isinstance(name, str) or not _NAME.match(name):
+        return {"ok": False, "error": "name must be a simple word such as MoveBox."}
+    if _node_prim(stage, graph_path, name) is not None:
+        return {"ok": False, "error": f"{graph_path} already has a node named {name}."}
+    spec = SCRIPT_TEMPLATES[template]
+    merged = {**spec["defaults"], **(values or {})}
+    unknown = [pin for pin in merged if pin not in spec["pins"]]
+    if unknown:
+        return {"ok": False, "error": f"{template} has no pins {unknown}; it has {sorted(spec['pins'])}."}
+    if trigger_key is not None and trigger_key not in ogh.KEYBOARD_KEYS:
+        return {"ok": False, "error": "trigger_key must be a key name such as 'T' or 'Up'."}
+    trigger = f"Key{trigger_key}" if trigger_key else None
+    if trigger and _node_prim(stage, graph_path, trigger) is not None:
+        return {"ok": False, "error": f"{graph_path} already has a node named {trigger}."}
+    edits: dict[str, Any] = {
+        "create_nodes": [(name, "omni.graph.scriptnode.ScriptNode")]
+                        + ([(trigger, "omni.graph.action.OnKeyboardInput")] if trigger else []),
+        "create_attributes": [(f"{name}.{pin}", kind) for pin, kind in spec["pins"].items()],
+        "set_values": [(f"{name}.inputs:script", spec["code"])]
+                      + [(f"{name}.{pin}", og_value(value)) for pin, value in merged.items()]
+                      + ([(f"{trigger}.inputs:keyIn", trigger_key)] if trigger else []),
+    }
+    if trigger:
+        edits["connect"] = [(f"{trigger}.outputs:pressed", f"{name}.inputs:execIn")]
+    plan = {"graph_path": graph_path, "node": f"{graph_path}/{name}", "template": template, "about": spec["about"],
+            "pins": spec["pins"], "values": merged, "trigger": trigger, "code": spec["code"],
+            "how_it_runs": "setup() once at start, compute() each time execIn fires (return True), cleanup() at the "
+                           "end. Read inputs as db.inputs.<name>, write outputs as db.outputs.<name>."}
+    python = ("import omni.graph.core as og\nkeys = og.Controller.Keys\n"
+              f"og.Controller.edit({graph_path!r}, {{\n"
+              + "".join(f"    keys.{key.upper()}: {value!r},\n" for key, value in edits.items()) + "})\n")
+    if dry_run is not False:
+        return _preview(plan, python, ["Press Play, click the viewport, then press the trigger key."] if trigger else
+                        ["Wire an event (e.g. On Keyboard Input 'Pressed') into its execIn, or it never runs."])
+    og, refusal = _kit(stage)
+    if refusal:
+        return refusal
+    result = _run(og, stage, graph_path, edits, f"Added Script Node {name} ({template}).",
+                  describe=f"{graph_path}/{name}")
+    return {**result, "python": python, "code": spec["code"]}

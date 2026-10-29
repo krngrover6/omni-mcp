@@ -916,6 +916,9 @@ class _Experimental:
     def set_targets(self, values: list[float], indices: list[int]) -> None:
         self.view.set_dof_position_targets([values], dof_indices=indices)
 
+    def set_velocity_targets(self, values: list[float], indices: list[int]) -> None:
+        self.view.set_dof_velocity_targets([values], dof_indices=indices)
+
 
 class _Deprecated:
     api = "isaacsim.core.prims.SingleArticulation (deprecated since Isaac Sim 6.0)"
@@ -951,6 +954,13 @@ class _Deprecated:
         positions = numpy.array(values, dtype=float) if numpy is not None else list(values)
         joints = numpy.array(indices, dtype=int) if numpy is not None else list(indices)
         self.view.apply_action(types.ArticulationAction(joint_positions=positions, joint_indices=joints))
+
+    def set_velocity_targets(self, values: list[float], indices: list[int]) -> None:
+        types = _kit_module("isaacsim.core.utils.types")
+        numpy = _kit_module("numpy")
+        speeds = numpy.array(values, dtype=float) if numpy is not None else list(values)
+        joints = numpy.array(indices, dtype=int) if numpy is not None else list(indices)
+        self.view.apply_action(types.ArticulationAction(joint_velocities=speeds, joint_indices=joints))
 
 
 def _open_live(robot_root: Any) -> tuple[Any, dict[str, Any] | None, str | None, float]:
@@ -1123,6 +1133,60 @@ def live_move(robot_root: str, targets: Any, *, dry_run: bool = True) -> dict[st
     )
     if state == "paused":
         result["note"] += " The simulation is paused: press Play or step to see it move."
+    return result
+
+
+def live_spin(robot_root: str, velocities: Any, *, dry_run: bool = True) -> dict[str, Any]:
+    """KIT-ONLY, SIMULATION STATE. Plan (dry_run=True) or send joint VELOCITY targets to a simulating robot, e.g.
+    wheels: {'left_wheel_joint': 360, 'right_wheel_joint': 360} drives a two-wheel robot forward.
+
+    velocities: {joint name: degrees per second for hinges / metres per second for sliders}. Equal wheel speeds go
+    straight, opposite ones turn on the spot, 0 stops. Works on joints whose drive is a velocity drive (stiffness 0,
+    damping > 0), as robot wheels are. Not authored to USD: Stop resets the robot.
+    """
+    dry = _dry(dry_run)
+    base = {"action": "live_spin", "robot_root": robot_root, "dry_run": dry, "applied": False}
+    try:
+        values = _target_values(velocities)
+    except _Refusal as refusal:
+        return {**_refuse(str(refusal).replace("targets", "velocities")), **base}
+    live, refusal, state, mpu = _open_live(robot_root)
+    if refusal is not None:
+        return {**refusal, **base}
+    try:
+        names, kinds = live.names(), live.kinds()
+    except Exception as exc:  # noqa: BLE001
+        return {**_refuse(f"Reading the articulation failed: {type(exc).__name__}: {exc}"), **base}
+    plan, indices, native = [], [], []
+    for key, value in values.items():
+        name = key.rsplit("/", 1)[-1]
+        if name not in names:
+            return {**_refuse(f"Unknown joint '{key}'. This robot's DOFs are: {', '.join(names)}."), **base,
+                    "api": live.api}
+        index = names.index(name)
+        if index in indices:
+            return {**_refuse(f"{name} is given twice."), **base}
+        kind = kinds[index] if index < len(kinds) else "unknown"
+        if kind == "unknown":
+            return {**_refuse(f"PhysX does not report whether {name} turns or slides, so no unit conversion is safe."),
+                    **base}
+        raw = math.radians(value) if kind == "revolute" else value / mpu
+        indices.append(index)
+        native.append(raw)
+        plan.append({"joint": name, "index": index, "unit": UNIT[kind] + "/second", "velocity": _num(value, 6),
+                     "physx_value": _num(raw, 9), "physx_unit": "radians/second" if kind == "revolute" else
+                     "stage units/second"})
+    result: dict[str, Any] = {**base, "ok": True, "api": live.api, "timeline": state, "plan": plan, "warnings": []}
+    if dry:
+        result["next_step"] = "Dry run: nothing was sent to PhysX. Call again with dry_run=False to drive."
+        return result
+    try:
+        live.set_velocity_targets(native, indices)
+    except Exception as exc:  # noqa: BLE001
+        return {**result, **_refuse(f"Sending the velocities failed: {type(exc).__name__}: {exc}")}
+    result["applied"] = True
+    result["note"] = ("Sent to PhysX (simulation state, not USD): the joints spin up to these speeds over the next "
+                      "steps and keep going until you send 0. Stop resets the robot.")
     return result
 
 

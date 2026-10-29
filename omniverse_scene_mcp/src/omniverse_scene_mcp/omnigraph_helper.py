@@ -271,6 +271,10 @@ _t("omni.graph.nodes.ConstantBool", "Constant Bool", "nodes_core", 1, "constant"
    "Holds one fixed true/false value.")
 _t("omni.graph.nodes.ConstantPath", "Constant Path", "nodes", 1, "constant",
    "Holds one fixed path text, such as a prim path.")
+_t("isaacsim.core.nodes.IsaacReadWorldPose", "Isaac Read World Pose", "isaac_core_nodes", 2, "data",
+   "Reads a prim's position, rotation and scale in WORLD space (not relative to its parent).", targets=("prim",))
+_t("omni.graph.nodes.Distance3D", "Distance3D", "nodes_core", 1, "data",
+   "Computes the straight-line distance between two 3D points.")
 _t("omni.graph.nodes.Compare", "Compare", "nodes_core", 1, "data",
    "Compares two values (equal, less than, ...) and gives true or false.", outputs=("result",))
 _t("omni.graph.nodes.ToString", "To String", "nodes_core", 1, "data",
@@ -1276,6 +1280,36 @@ RECIPES: dict[str, dict[str, Any]] = {
                    "graph_path": "optional new graph path"},
         "required": ("prim", "attribute"),
     },
+    "differential_drive": {
+        "summary": "Class session 9: drive a two-wheel robot (Jetbot by default) with W/S (forward/back) and A/D "
+        "(turn). Keys set speed/turn variables; a Differential Controller turns them into wheel speeds.",
+        "params": {"robot": "the robot's articulation root, e.g. /World/Jetbot",
+                   "wheel_joints": "[left, right] joint names (default Jetbot's left_wheel_joint, right_wheel_joint)",
+                   "wheel_radius": "metres (Jetbot 0.03)", "wheel_distance": "metres between wheels (Jetbot 0.1125)",
+                   "speed": "forward speed m/s (default 0.3)", "turn": "turn rate rad/s (default 1.5)",
+                   "graph_path": "optional new graph path"},
+        "required": ("robot",),
+    },
+    "drive_sequence": {
+        "summary": "Class session 9: a fixed route, e.g. move -> stop -> turn -> move. Each step sets speed and "
+        "turn variables, then a Delay waits its seconds; a Differential Controller drives the wheels.",
+        "params": {"robot": "the robot's articulation root, e.g. /World/Jetbot",
+                   "steps": "list of {linear (m/s), angular (rad/s), seconds}; default move-stop-turn-move",
+                   "wheel_joints": "[left, right] joint names", "wheel_radius": "metres",
+                   "wheel_distance": "metres", "graph_path": "optional new graph path"},
+        "required": ("robot",),
+    },
+    "obstacle_stop": {
+        "summary": "Class session 10: sense -> decide -> act. Every frame, measure the distance from the robot to an "
+        "obstacle; if it is closer than stop_distance, stop the wheels, otherwise drive forward.",
+        "params": {"robot": "the robot's articulation root, e.g. /World/Jetbot",
+                   "sensor_prim": "a moving part of the robot to measure from, e.g. /World/Jetbot/chassis",
+                   "obstacle": "the obstacle prim, e.g. /World/Obstacle",
+                   "stop_distance": "metres (default 0.5)", "speed": "forward speed m/s (default 0.3)",
+                   "wheel_joints": "[left, right] joint names", "wheel_radius": "metres",
+                   "graph_path": "optional new graph path"},
+        "required": ("robot", "sensor_prim", "obstacle"),
+    },
     "conveyor": {
         "summary": "Class session 6: a conveyor belt. A kinematic rigid-body belt moves what lies on it; the speed "
         "is a graph variable (Velocity) you can change while it plays. Same graph as Isaac's own Create Conveyor.",
@@ -1294,6 +1328,9 @@ _DEFAULT_GRAPH = {
     "keyboard_velocity": "/World/Graphs/KeyboardVelocity",
     "print_attribute": "/World/Graphs/PrintAttribute",
     "conveyor": "/World/Graphs/Conveyor",
+    "differential_drive": "/World/Graphs/DifferentialDrive",
+    "drive_sequence": "/World/Graphs/DriveSequence",
+    "obstacle_stop": "/World/Graphs/ObstacleStop",
 }
 
 
@@ -1330,8 +1367,11 @@ class _Plan:
     def wire(self, source: str, target: str, kind: str, why: str) -> None:
         self.connections.append({"from": source, "to": target, "kind": kind, "why": why})
 
-    def value(self, attribute: str, value: Any, why: str, *, type_name: str | None = None, target: bool = False) -> None:
+    def value(self, attribute: str, value: Any, why: str, *, type_name: str | None = None, target: bool = False,
+              array: bool = False) -> None:
         item = {"attribute": attribute, "value": value, "why": why}
+        if array:
+            item["array"] = True
         if type_name:
             item["type"] = type_name
         if target:
@@ -1726,6 +1766,207 @@ def _plan_conveyor(stage: Any, plan: _Plan, params: dict[str, Any]) -> str | Non
     return None
 
 
+_JETBOT = {"wheel_joints": ["left_wheel_joint", "right_wheel_joint"], "wheel_radius": 0.03, "wheel_distance": 0.1125}
+
+
+def _number(params: dict[str, Any], key: str, default: float, *, positive: bool = True) -> float:
+    value = params.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise ValueError(f"{key} must be a number.")
+    if positive and value <= 0:
+        raise ValueError(f"{key} must be bigger than 0.")
+    return float(value)
+
+
+def _wheels(stage: Any, plan: _Plan, params: dict[str, Any]) -> tuple[str | None, str, list[str], float, float]:
+    """(error, robot path, wheel joint names, wheel radius, wheel distance), with the robot checked on the stage."""
+    error, prim = _check_prim(stage, params.get("robot"), plan, "robot")
+    if error:
+        return error, "", [], 0.0, 0.0
+    joints = params.get("wheel_joints", _JETBOT["wheel_joints"])
+    if not isinstance(joints, list) or len(joints) != 2 or not all(isinstance(j, str) and j for j in joints):
+        return "wheel_joints must be [left joint name, right joint name].", "", [], 0.0, 0.0
+    try:
+        radius = _number(params, "wheel_radius", _JETBOT["wheel_radius"])
+        distance = _number(params, "wheel_distance", _JETBOT["wheel_distance"])
+    except ValueError as exc:
+        return str(exc), "", [], 0.0, 0.0
+    if prim is not None:
+        from pxr import UsdPhysics
+        root = any(p.HasAPI(UsdPhysics.ArticulationRootAPI) for p in Usd.PrimRange(prim))
+        if not root:
+            plan.warnings.append(f"No articulation root under {prim.GetPath()}: the Articulation Controller needs one "
+                                 "(add the robot with robot_add_ready, or scene_add_articulation_root).")
+        names = {p.GetName() for p in Usd.PrimRange(prim) if p.IsA(UsdPhysics.Joint)}
+        missing = [j for j in joints if names and j not in names]
+        if missing:
+            return (f"{prim.GetPath()} has no joints named {missing}; its joints include {sorted(names)[:8]}. "
+                    "Pass wheel_joints."), "", [], 0.0, 0.0
+    return None, str(params["robot"]), list(joints), radius, distance
+
+
+def _driver(plan: _Plan, robot: str, joints: list[str], radius: float, distance: float) -> None:
+    """Every frame: read the linear/angular variables -> Differential Controller -> Articulation Controller."""
+    plan.variable("linear", "double", 0.0, "forward speed in m/s (0 = stand still)")
+    plan.variable("angular", "double", 0.0, "turn rate in rad/s (positive = left)")
+    plan.node("OnTick", "omni.graph.action.OnPlaybackTick", "fires every frame while Play runs")
+    plan.node("ReadLinear", "omni.graph.core.ReadVariable", "reads the forward speed")
+    plan.node("ReadAngular", "omni.graph.core.ReadVariable", "reads the turn rate")
+    plan.node("Differential", "isaacsim.robot.wheeled_robots.DifferentialController",
+              "turns speed + turn rate into a speed for each wheel")
+    plan.node("Wheels", "isaacsim.core.nodes.IsaacArticulationController", "sends the wheel speeds to PhysX")
+    plan.wire("OnTick.outputs:tick", "Differential.inputs:execIn", "execution", "work out wheel speeds every frame")
+    plan.wire("OnTick.outputs:deltaSeconds", "Differential.inputs:dt", "data", "time since the last frame")
+    plan.wire("OnTick.outputs:tick", "Wheels.inputs:execIn", "execution", "send wheel speeds every frame")
+    plan.wire("ReadLinear.outputs:value", "Differential.inputs:linearVelocity", "data", "desired forward speed")
+    plan.wire("ReadAngular.outputs:value", "Differential.inputs:angularVelocity", "data", "desired turn rate")
+    plan.wire("Differential.outputs:velocityCommand", "Wheels.inputs:velocityCommand", "data",
+              "one speed per wheel (rad/s)")
+    plan.value("ReadLinear.inputs:variableName", "linear", "which graph variable to read")
+    plan.value("ReadAngular.inputs:variableName", "angular", "which graph variable to read")
+    plan.value("Differential.inputs:wheelRadius", radius, "wheel radius in metres")
+    plan.value("Differential.inputs:wheelDistance", distance, "distance between the two wheels in metres")
+    plan.value("Wheels.inputs:targetPrim", [robot], "the robot (its articulation root)", target=True)
+    plan.value("Wheels.inputs:jointNames", list(joints), "which joints the speeds go to, in order", array=True)
+
+
+def _plan_differential_drive(stage: Any, plan: _Plan, params: dict[str, Any]) -> str | None:
+    error, robot, joints, radius, distance = _wheels(stage, plan, params)
+    if error:
+        return error
+    try:
+        speed = _number(params, "speed", 0.3)
+        turn = _number(params, "turn", 1.5)
+    except ValueError as exc:
+        return str(exc)
+    _driver(plan, robot, joints, radius, distance)
+    for key, variable, value in (("W", "linear", speed), ("S", "linear", -speed), ("A", "angular", turn),
+                                 ("D", "angular", -turn)):
+        plan.node(f"Key{key}", "omni.graph.action.OnKeyboardInput", f"fires when {key} is pressed or released")
+        plan.node(f"Set{key}", "omni.graph.core.WriteVariable", f"sets {variable} = {value:g}")
+        plan.wire(f"Key{key}.outputs:pressed", f"Set{key}.inputs:execIn", "execution", f"when {key} goes down")
+        plan.value(f"Key{key}.inputs:keyIn", key, "the key")
+        plan.value(f"Set{key}.inputs:variableName", variable, "which variable to change")
+        plan.value(f"Set{key}.inputs:value", value, "the new value", type_name="double")
+    for variable, keys in (("linear", "WS"), ("angular", "AD")):
+        name = f"Zero{variable.capitalize()}"
+        plan.node(name, "omni.graph.core.WriteVariable", f"sets {variable} back to 0")
+        for key in keys:
+            plan.wire(f"Key{key}.outputs:released", f"{name}.inputs:execIn", "execution", f"when {key} comes up")
+        plan.value(f"{name}.inputs:variableName", variable, "which variable to reset")
+        plan.value(f"{name}.inputs:value", 0.0, "stop", type_name="double")
+    plan.explanation += [
+        f"While playing: W/S set linear to +/-{speed:g} m/s, A/D set angular to +/-{turn:g} rad/s; letting go sets "
+        "them back to 0.",
+        "Every frame the Differential Controller turns (linear, angular) into one speed per wheel: equal speeds go "
+        "straight, different speeds turn. The Articulation Controller sends them to the wheel joints.",
+        "Click inside the viewport after pressing Play, or the keys go to another panel.",
+    ]
+    return None
+
+
+_DEFAULT_ROUTE = [{"linear": 0.3, "angular": 0.0, "seconds": 2.0}, {"linear": 0.0, "angular": 0.0, "seconds": 1.0},
+                  {"linear": 0.0, "angular": 1.5, "seconds": 1.05}, {"linear": 0.3, "angular": 0.0, "seconds": 2.0}]
+
+
+def _plan_drive_sequence(stage: Any, plan: _Plan, params: dict[str, Any]) -> str | None:
+    error, robot, joints, radius, distance = _wheels(stage, plan, params)
+    if error:
+        return error
+    steps = params.get("steps", _DEFAULT_ROUTE)
+    if not isinstance(steps, list) or not 1 <= len(steps) <= 12:
+        return "steps must be a list of 1-12 {linear, angular, seconds} steps."
+    clean = []
+    for index, step in enumerate(steps, start=1):
+        if not isinstance(step, dict):
+            return f"step {index} must be {{linear, angular, seconds}}."
+        try:
+            clean.append((_number(step, "linear", 0.0, positive=False), _number(step, "angular", 0.0, positive=False),
+                          _number(step, "seconds", 1.0)))
+        except ValueError as exc:
+            return f"step {index}: {exc}"
+    _driver(plan, robot, joints, radius, distance)
+    plan.node("Start", "omni.graph.action.Once", "lets the first tick through only once")
+    plan.wire("OnTick.outputs:tick", "Start.inputs:execIn", "execution", "start the route on the first frame")
+    previous = "Start.outputs:once"
+    for index, (linear, angular, seconds) in enumerate(clean, start=1):
+        plan.node(f"Lin{index}", "omni.graph.core.WriteVariable", f"step {index}: speed {linear:g} m/s")
+        plan.node(f"Ang{index}", "omni.graph.core.WriteVariable", f"step {index}: turn {angular:g} rad/s")
+        plan.node(f"Wait{index}", "omni.graph.action.Delay", f"step {index}: hold for {seconds:g} s")
+        plan.wire(previous, f"Lin{index}.inputs:execIn", "execution", f"begin step {index}")
+        plan.wire(f"Lin{index}.outputs:execOut", f"Ang{index}.inputs:execIn", "execution", "then set the turn")
+        plan.wire(f"Ang{index}.outputs:execOut", f"Wait{index}.inputs:execIn", "execution", "then wait")
+        for node, variable, value in ((f"Lin{index}", "linear", linear), (f"Ang{index}", "angular", angular)):
+            plan.value(f"{node}.inputs:variableName", variable, "which variable to set")
+            plan.value(f"{node}.inputs:value", value, "its value for this step", type_name="double")
+        plan.value(f"Wait{index}.inputs:duration", seconds, "seconds to hold this step")
+        previous = f"Wait{index}.outputs:finished"
+    for node, variable in (("StopLin", "linear"), ("StopAng", "angular")):
+        plan.node(node, "omni.graph.core.WriteVariable", f"route done: {variable} = 0")
+        plan.value(f"{node}.inputs:variableName", variable, "which variable to reset")
+        plan.value(f"{node}.inputs:value", 0.0, "stop", type_name="double")
+    plan.wire(previous, "StopLin.inputs:execIn", "execution", "after the last step")
+    plan.wire("StopLin.outputs:execOut", "StopAng.inputs:execIn", "execution", "then stop turning too")
+    route = " -> ".join(f"({lin:g} m/s, {ang:g} rad/s for {sec:g} s)" for lin, ang, sec in clean)
+    plan.explanation += [
+        f"When Play starts, Once lets the first frame through, and the route runs step by step: {route} -> stop.",
+        "Each step writes the two variables, then a Delay holds them; the Delay's Finished output starts the next "
+        "step. Meanwhile the driver part turns the variables into wheel speeds every frame.",
+        "A 90 degree turn at 1.5 rad/s takes about 1.05 s (pi/2 / 1.5).",
+    ]
+    return None
+
+
+def _plan_obstacle_stop(stage: Any, plan: _Plan, params: dict[str, Any]) -> str | None:
+    error, robot, joints, radius, _distance = _wheels(stage, plan, params)
+    if error:
+        return error
+    error, _sensor = _check_prim(stage, params.get("sensor_prim"), plan, "sensor_prim")
+    if error:
+        return error
+    error, _obstacle = _check_prim(stage, params.get("obstacle"), plan, "obstacle")
+    if error:
+        return error
+    try:
+        stop_distance = _number(params, "stop_distance", 0.5)
+        speed = _number(params, "speed", 0.3)
+    except ValueError as exc:
+        return str(exc)
+    wheel = speed / radius
+    sensor, obstacle = str(params["sensor_prim"]), str(params["obstacle"])
+    plan.node("OnTick", "omni.graph.action.OnPlaybackTick", "fires every frame while Play runs")
+    plan.node("RobotPose", "isaacsim.core.nodes.IsaacReadWorldPose", "where the robot is (world space)")
+    plan.node("ObstaclePose", "isaacsim.core.nodes.IsaacReadWorldPose", "where the obstacle is (world space)")
+    plan.node("Gap", "omni.graph.nodes.Distance3D", "how far apart they are (SENSE)")
+    plan.node("TooClose", "omni.graph.nodes.Compare", f"is the gap smaller than {stop_distance:g} m? (DECIDE)")
+    plan.node("Decide", "omni.graph.action.Branch", "chooses stop or go")
+    plan.node("Go", "isaacsim.core.nodes.IsaacArticulationController", "drives forward (ACT)")
+    plan.node("Halt", "isaacsim.core.nodes.IsaacArticulationController", "stops the wheels (ACT)")
+    plan.wire("OnTick.outputs:tick", "Decide.inputs:execIn", "execution", "decide every frame")
+    plan.wire("RobotPose.outputs:translation", "Gap.inputs:a", "data", "robot position")
+    plan.wire("ObstaclePose.outputs:translation", "Gap.inputs:b", "data", "obstacle position")
+    plan.wire("Gap.outputs:distance", "TooClose.inputs:a", "data", "the gap")
+    plan.wire("TooClose.outputs:result", "Decide.inputs:condition", "data", "true = too close")
+    plan.wire("Decide.outputs:execTrue", "Halt.inputs:execIn", "execution", "too close: stop")
+    plan.wire("Decide.outputs:execFalse", "Go.inputs:execIn", "execution", "path clear: drive")
+    plan.value("RobotPose.inputs:prim", [sensor], "the part of the robot to measure from", target=True)
+    plan.value("ObstaclePose.inputs:prim", [obstacle], "the obstacle", target=True)
+    plan.value("TooClose.inputs:b", stop_distance, "the stopping distance in metres", type_name="double")
+    plan.value("TooClose.inputs:operation", "<", "smaller than")
+    for node, value in (("Go", wheel), ("Halt", 0.0)):
+        plan.value(f"{node}.inputs:targetPrim", [robot], "the robot (its articulation root)", target=True)
+        plan.value(f"{node}.inputs:jointNames", list(joints), "the two wheel joints", array=True)
+        plan.value(f"{node}.inputs:velocityCommand", [value, value], "wheel speeds in rad/s", array=True)
+    plan.explanation += [
+        f"Every frame: SENSE the gap between {sensor} and {obstacle} -> DECIDE whether it is under {stop_distance:g} m "
+        f"-> ACT: stop the wheels, or drive forward at {speed:g} m/s ({wheel:.1f} rad/s per wheel).",
+        "This measures the distance from known positions, like a perfect range sensor. A real LiDAR or camera measures "
+        "the same gap from its own data (class session 10); the decide and act parts stay the same.",
+        "World positions matter: a robot part's own translate is relative to the robot, so Isaac Read World Pose is used.",
+    ]
+    return None
+
+
 _PLANNERS = {
     "key_sets_variant": _plan_key_sets_variant,
     "event_sets_variant": _plan_event_sets_variant,
@@ -1734,6 +1975,9 @@ _PLANNERS = {
     "keyboard_velocity": _plan_keyboard_velocity,
     "print_attribute": _plan_print_attribute,
     "conveyor": _plan_conveyor,
+    "differential_drive": _plan_differential_drive,
+    "drive_sequence": _plan_drive_sequence,
+    "obstacle_stop": _plan_obstacle_stop,
 }
 
 
@@ -1839,7 +2083,8 @@ def _python_script(plan: _Plan) -> str:
         if item.get("target"):
             value = "[" + ", ".join(f"usdrt.Sdf.Path({path!r})" for path in item["value"]) + "]"
         else:
-            value = repr(tuple(item["value"]) if isinstance(item["value"], list) else item["value"])
+            value = repr(tuple(item["value"]) if isinstance(item["value"], list) and not item.get("array")
+                         else item["value"])
         typed = f", {item['type']!r}" if item.get("type") else ""
         lines.append(f"            ({item['attribute']!r}, {value}{typed}),  # {item['why']}")
     lines += [
@@ -1903,8 +2148,9 @@ def _build_edit(og: Any, usdrt: Any, plan: dict[str, Any]) -> dict[str, Any]:
         if item.get("target"):
             make = getattr(getattr(usdrt, "Sdf", None), "Path", None) if usdrt is not None else None
             value = [make(path) if callable(make) else path for path in value]
-        elif isinstance(value, list):
+        elif isinstance(value, list) and not item.get("array"):
             # Seen live in Isaac 6.1: og refuses a list for a tuple input such as the conveyor's float[3] direction.
+            # Arrays (token[], double[]) keep their list.
             value = tuple(value)
         values.append((item["attribute"], value, item["type"]) if item.get("type") else (item["attribute"], value))
     edit[keys.SET_VALUES] = values

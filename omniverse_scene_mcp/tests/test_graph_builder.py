@@ -39,6 +39,7 @@ class _Controller:
 
     class Keys:
         CONNECT = "connect"
+        CREATE_ATTRIBUTES = "create_attributes"
         CREATE_NODES = "create_nodes"
         CREATE_VARIABLES = "create_variables"
         DELETE_NODES = "delete_nodes"
