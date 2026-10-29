@@ -29,6 +29,29 @@ SAFETY_FOOTER = (
 # name -> {title, description, params: [(name, default, description)], steps: [str]}.
 # Steps are str.format templates over the params.
 PROMPTS: dict[str, dict[str, Any]] = {
+    "study_day_isaac": {
+        "title": "Study today: concept, then hands-on in Isaac Sim",
+        "description": "One plan day: learn each objective in plain words, practise it in Isaac Sim, then quiz.",
+        "params": [
+            ("day", "", "Plan day number; empty means the next unfinished day."),
+        ],
+        "steps": [
+            "Call learning_exam_day({day}) (leave day out when empty). Tell the learner the day's 2-3 objectives in "
+            "one sentence each.",
+            "Check Isaac: scene_summary. stage_name must end with isaac_study/study.usda; if not, ask the learner to "
+            "do File > New, then File > Save As to C:/Users/krngr/Omniverse/isaac_study/study.usda, and wait.",
+            "For EACH block, one at a time: (a) teach the concept in very simple words with an everyday analogy, "
+            "using the block's explanation and docs; ask the learner to say it back in one sentence. (b) Call "
+            "learning_isaac_lab(objective_id=<the block's objective id>). Teach its concept, then do its steps one "
+            "by one: predict, run (reads directly; edits with scene_safe_edit preview -> yes -> confirm), ask what "
+            "they see in Isaac, compare with 'look'. If the lab says code-only, do the block's exercise instead. "
+            "(c) Do the block's exercise (usd_playground_compose or the puzzle). (d) Ask its quiz questions one at a "
+            "time, grade each with learning_exam_answer and explain wrong answers.",
+            "Never apply an edit without the learner's yes. Never save the study stage without asking.",
+            "Finish with learning_exam_day_complete(day=<the day>), a 3-line recap of what they learned, and name "
+            "the next lesson.",
+        ],
+    },
     "safe_edit": {
         "title": "Change my scene safely",
         "description": "Preview, confirm, checkpoint, apply and check one scene edit, with undo ready.",

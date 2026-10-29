@@ -323,12 +323,10 @@ TOOL_CATALOG: dict[str, list[dict[str, Any]]] = {
               'learning_drill_status(drill_id="drill-20261022T190000Z-ab12cd")', False, False),
         _tool("learning_today", "What should I do today? A time-boxed study plan from your saved progress; read-only.",
               "learning_today(minutes=60)", False, False),
-        _tool("learning_exam_week", "The last week before the exam, day by day (two mocks, reviews, weak-domain "
-              "drills, exam-day pacing) plus a readiness verdict; read-only.", "learning_exam_week(days=7)", False, False),
-        _tool("learning_interview_questions", "Job-interview practice questions on USD, physics, Isaac Sim and your "
-              "projects; answers withheld.", 'learning_interview_questions(topic="composition")', False, False),
-        _tool("learning_interview_answer", "Feedback on one typed interview answer: key points covered and missed, "
-              "tips and a model answer.", 'learning_interview_answer(question_id="livrps", answer="...")', False, False),
+        _tool("learning_exam_week", "Exam week day by day (mocks, reviews, weak-domain drills) plus readiness.", "learning_exam_week(days=7)", False, False),
+        _tool("learning_isaac_lab", "Hands-on Isaac Sim lab for an exam objective: concept, tool steps, what to see.", 'learning_isaac_lab(objective_id="1.8")', False, False),
+        _tool("learning_interview_questions", "Interview practice questions on USD, physics and Isaac Sim.", 'learning_interview_questions(topic="composition")', False, False),
+        _tool("learning_interview_answer", "Feedback on an interview answer: points missed, tips, model answer.", 'learning_interview_answer(question_id="livrps", answer="...")', False, False),
         _tool("learning_reminder_setup", "Show the PowerShell commands for a daily study reminder; nothing is created.",
               'learning_reminder_setup(at="19:00")', False, False),
     ],

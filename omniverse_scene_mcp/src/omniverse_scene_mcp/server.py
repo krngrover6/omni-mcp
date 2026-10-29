@@ -2312,6 +2312,16 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
             return _error(f"Could not read your exam progress: {type(exc).__name__}: {exc}")
         return exam_week.exam_week(data, days=days)
 
+    @app.tool(name="learning_isaac_lab")
+    def learning_isaac_lab(objective_id: str | None = None, lab_id: str | None = None) -> dict:
+        """Read-only: the hands-on Isaac Sim lab for an NCP-OUSD objective (e.g. '1.8') or a lab id: a plain-language
+        concept, then steps that each name the exact tool and arguments and what to look for in the viewport. Reads
+        are called directly; edits go through scene_safe_edit. Labs run in the study stage isaac_study/study.usda,
+        never a course scene. No arguments lists the labs. Code-only objectives (plugins, resolvers) say so."""
+        from .exam import isaac_labs
+
+        return isaac_labs.lab(objective_id=objective_id, lab_id=lab_id)
+
     @app.tool(name="learning_interview_questions")
     def learning_interview_questions(topic: str | None = None, level: str | None = None, count: int = 5,
                                      seed: int | None = None) -> dict:

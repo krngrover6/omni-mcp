@@ -140,12 +140,13 @@ as slash commands, `/mcp__omniverse_router__daily_study`. Commands: `claude mcp 
 
 ## Ready-made recipes (MCP prompts)
 
-`workflows.py` defines fourteen prompts. A prompt costs nothing until you pick it; then it gives the model a short,
+`workflows.py` defines fifteen prompts. A prompt costs nothing until you pick it; then it gives the model a short,
 numbered plan naming the exact tools, with the safety rules (preview with `dry_run=True`, apply only after you agree,
 never save without asking):
 
 | Prompt | Arguments | What it does |
 |---|---|---|
+| `study_day_isaac` | day | learning_exam_day, then per objective: concept in plain words, learning_isaac_lab hands-on in Isaac (edits via scene_safe_edit), exercise, quiz, day complete |
 | `safe_edit` | request | scene_safe_edit preview > your yes > apply with its confirm code > before -> after, undo ready |
 | `fix_connection` | (none) | router_doctor, then its next steps one at a time, re-checking after each |
 | `predict_result` | difficulty, rounds | LIVRPS puzzles with grading, then predictions on your own scene via scene_what_if |
