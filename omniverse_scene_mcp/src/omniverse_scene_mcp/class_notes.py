@@ -50,6 +50,8 @@ SOURCE_LABELS = {
 }
 ENV_ROOT = "OMNIVERSE_CLASS_NOTES_ROOT"
 DEFAULT_CLASSES_DIR = ("Downloads", "Issac Sim Classes")
+FLAT_ROOT_NAME = "Downloads"  # only its top-level, session-named files are indexed (never all of Downloads)
+_COPY_SUFFIX = re.compile(r" \(\d+\)$")  # "name (1).srt": a browser's duplicate download
 REVISION_FILES = ("REVISION_NOTES.md", "PROJECT_CONTEXT.md")
 
 TIMELINE_NOTE = (
@@ -296,7 +298,8 @@ def default_roots() -> list[Path]:
     if configured:
         classes = [Path(part) for part in configured.split(os.pathsep) if part.strip()]
     else:
-        classes = [Path.home().joinpath(*DEFAULT_CLASSES_DIR)]
+        # Downloads itself is read flat (session-named files only): Sessions 3-6 were saved straight there.
+        classes = [Path.home().joinpath(*DEFAULT_CLASSES_DIR), Path.home() / FLAT_ROOT_NAME]
     return [*classes, workspace_root() / "isaacsim-mentorship"]
 
 
@@ -431,6 +434,9 @@ class ClassNotes:
         entry["files"].append({"source": source, "file": path.name, "passages": passages})
 
     def _discover(self, root: Path) -> Iterable[tuple[Path, str]]:
+        if root.name == FLAT_ROOT_NAME:
+            yield from self._discover_flat(root)
+            return
         root_depth = len(root.parts)
         for current, dirs, files in os.walk(root):
             here = Path(current)
@@ -452,6 +458,22 @@ class ClassNotes:
                         self._skip(path, "not a Gemini notes export")
                 elif suffix == ".pdf" and _session_of(path, root) is not None:
                     self._skip(path, "PDF not indexed (no stdlib text extraction); the .txt export is used")
+
+    def _discover_flat(self, root: Path) -> Iterable[tuple[Path, str]]:
+        """Top-level files of a busy folder (Downloads): only session-named .srt and Gemini .txt, no duplicates."""
+        try:
+            names = sorted(entry.name for entry in os.scandir(root) if entry.is_file())
+        except OSError:
+            return
+        for name in names:
+            path = root / name
+            if _SESSION.search(name) is None or _COPY_SUFFIX.search(path.stem):
+                continue
+            suffix = path.suffix.lower()
+            if suffix == ".srt":
+                yield path, "subtitles"
+            elif suffix == ".txt" and _is_gemini(path):
+                yield path, "gemini_notes"
 
     def _doc(self, session, source, path, part, lo, hi, text, timestamp=None, end=None, section=None) -> dict[str, Any]:
         return {

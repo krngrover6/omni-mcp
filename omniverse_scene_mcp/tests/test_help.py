@@ -117,8 +117,9 @@ def test_help_without_a_topic_returns_every_group_and_the_quick_start():
     assert len(guide["quick_start"]) == 8
     assert set(guide["legend"]) == {"mutates", "needs_bridge", "planned"}
     text = json.dumps(guide)
-    # Guards against runaway size; raised from 60 KB to 64 KB when the joint and homework tools were added.
-    assert len(text) < 64000, len(text)
+    # Guards against runaway size; raised from 60 KB to 64 KB when the joint and homework tools were added, and to
+    # 68 KB for the eight step-by-step Action Graph tools (class session 6). Topic help (router_help('graph')) stays small.
+    assert len(text) < 68000, len(text)
     # The result is a copy: changing it never changes the catalog.
     guide["groups"][0]["tools"][0]["name"] = "changed"
     assert tool_guide.TOOL_CATALOG["Scene: look"][0]["name"] == "scene_summary"

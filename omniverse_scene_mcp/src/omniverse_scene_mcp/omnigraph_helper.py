@@ -72,6 +72,7 @@ _EXT = {
     "scriptnode": "extscache/omni.graph.scriptnode-2.10.2+110.0.0/ogn/nodes.json",
     "isaac_core_nodes": "exts/isaacsim.core.nodes/ogn/nodes.json",
     "isaac_wheeled": "exts/isaacsim.robot.wheeled_robots.nodes/ogn/nodes.json",
+    "isaac_conveyor": "exts/isaacsim.asset.gen.conveyor/ogn/nodes.json",
 }
 _EXT_NAMES = {
     "action_nodes": "omni.graph.action_nodes",
@@ -82,6 +83,7 @@ _EXT_NAMES = {
     "scriptnode": "omni.graph.scriptnode",
     "isaac_core_nodes": "isaacsim.core.nodes",
     "isaac_wheeled": "isaacsim.robot.wheeled_robots.nodes",
+    "isaac_conveyor": "isaacsim.asset.gen.conveyor",
 }
 NODE_TYPES_SOURCE = {
     "kit": "110.0 (extension builds tagged +110.0.0; omni.graph 1.142.5); Composer build kit-app-template/_build is 110.1.2",
@@ -177,6 +179,11 @@ _t("omni.graph.nodes.SetVariantSelection", "Set Variant Selection", "nodes", 3, 
    "Switches a prim's variant set (such as Leather) to the named variant (such as Black).", targets=("prim",))
 _t("omni.graph.nodes.ClearVariantSelection", "Clear Variant Selection", "nodes", 3, "action",
    "Removes the variant selection a layer holds for a prim's variant set.", targets=("prim",))
+# Inputs from isaacsim.asset.gen.conveyor/ogn/docs/OgnIsaacConveyor.rst (Isaac Sim 6.1): conveyorPrim, velocity,
+# direction, onStep, enabled, curved, delta. Needs the isaacsim.asset.gen.conveyor extension enabled.
+_t("isaacsim.asset.gen.conveyor.IsaacConveyor", "Conveyor Belt", "isaac_conveyor", 1, "action",
+   "Moves whatever rests on a kinematic rigid-body belt (conveyorPrim) at a velocity (m/s) along a direction, each "
+   "time onStep fires.", targets=("conveyorPrim",), exec_inputs=("onStep",), exec_outputs=())
 _t("omni.graph.nodes.WritePrimAttribute", "Write Prim Attribute", "nodes", 3, "action",
    "Writes a value into a named attribute of a prim (for example its rotation).", targets=("prim",))
 _t("omni.graph.nodes.WritePrimLocalTransform", "Write Prim Local Transform", "nodes", 1, "action",
@@ -1253,12 +1260,40 @@ RECIPES: dict[str, dict[str, Any]] = {
                    "graph_path": "optional new graph path"},
         "required": (),
     },
+    "keyboard_velocity": {
+        "summary": "Class session 6: W/S/A/D push a rigid body by writing its physics:velocity; the four directions "
+        "are graph variables you can change while it plays.",
+        "params": {"prim": "a dynamic rigid body (not kinematic), e.g. /World/Cube",
+                   "speed": "metres per second (default 5)",
+                   "stop_on_release": "letting go of a key stops the body (default True)",
+                   "graph_path": "optional new graph path"},
+        "required": ("prim",),
+    },
+    "print_attribute": {
+        "summary": "Class session 6: every tick, read one attribute of a prim, turn it into text (To String) and "
+        "print it on the screen, e.g. a cube's physics:velocity.",
+        "params": {"prim": "prim to read, e.g. /World/Cube", "attribute": "attribute name, e.g. physics:velocity",
+                   "graph_path": "optional new graph path"},
+        "required": ("prim", "attribute"),
+    },
+    "conveyor": {
+        "summary": "Class session 6: a conveyor belt. A kinematic rigid-body belt moves what lies on it; the speed "
+        "is a graph variable (Velocity) you can change while it plays. Same graph as Isaac's own Create Conveyor.",
+        "params": {"belt": "the belt prim: a rigid body with a collider, kinematic, e.g. /World/Belt",
+                   "velocity": "metres per second (default 2; negative runs backwards)",
+                   "direction": "belt-local direction [x, y, z] (default [1, 0, 0])",
+                   "graph_path": "optional new graph path"},
+        "required": ("belt",),
+    },
 }
 _DEFAULT_GRAPH = {
     "key_sets_variant": "/World/Graphs/KeySetsVariant",
     "event_sets_variant": "/World/Graphs/EventSetsVariant",
     "on_tick_rotate": "/World/Graphs/OnTickRotate",
     "print_on_play": "/World/Graphs/PrintOnPlay",
+    "keyboard_velocity": "/World/Graphs/KeyboardVelocity",
+    "print_attribute": "/World/Graphs/PrintAttribute",
+    "conveyor": "/World/Graphs/Conveyor",
 }
 
 
@@ -1276,6 +1311,7 @@ class _Plan:
         self.attributes: list[dict[str, Any]] = []
         self.connections: list[dict[str, Any]] = []
         self.values: list[dict[str, Any]] = []
+        self.variables: list[dict[str, Any]] = []
         self.explanation: list[str] = []
         self.checks: list[str] = []
         self.warnings: list[str] = []
@@ -1287,6 +1323,9 @@ class _Plan:
 
     def attribute(self, attribute: str, type_name: str, why: str) -> None:
         self.attributes.append({"attribute": attribute, "type": type_name, "why": why})
+
+    def variable(self, name: str, type_name: str, default: Any, why: str) -> None:
+        self.variables.append({"name": name, "type": type_name, "default": default, "why": why})
 
     def wire(self, source: str, target: str, kind: str, why: str) -> None:
         self.connections.append({"from": source, "to": target, "kind": kind, "why": why})
@@ -1549,11 +1588,150 @@ def _plan_print_on_play(stage: Any, plan: _Plan, params: dict[str, Any]) -> str 
     return None
 
 
+def _rigid_problems(stage: Any, prim: Any, plan: _Plan, *, want_kinematic: bool) -> None:
+    """Warnings (not refusals) about the physics a graph relies on; the learner may add them after the graph."""
+    if prim is None:
+        return
+    from pxr import UsdPhysics
+
+    path = prim.GetPath()
+    if not prim.HasAPI(UsdPhysics.RigidBodyAPI):
+        plan.warnings.append(f"{path} is not a rigid body yet: add one (scene_make_rigid_body) or nothing will move.")
+    if not prim.HasAPI(UsdPhysics.CollisionAPI):
+        plan.warnings.append(f"{path} has no collider: add one (scene_make_collider) so things can rest on or hit it.")
+    kinematic = prim.GetAttribute("physics:kinematicEnabled")
+    is_kinematic = bool(kinematic and kinematic.Get())
+    if want_kinematic and not is_kinematic:
+        plan.warnings.append(f"Make {path} kinematic (scene_set_attribute physics:kinematicEnabled = true): a belt "
+                             "must stay put while it carries things, as in class.")
+    if not want_kinematic and is_kinematic:
+        plan.warnings.append(f"{path} is kinematic, so physics ignores the velocity this graph writes; turn kinematic off.")
+    scene = any(item.GetTypeName() == "PhysicsScene" for item in stage.Traverse()) if stage is not None else True
+    if not scene:
+        plan.warnings.append("The stage has no PhysicsScene (scene_add_physics_scene): nothing simulates without one.")
+
+
+def _plan_keyboard_velocity(stage: Any, plan: _Plan, params: dict[str, Any]) -> str | None:
+    speed = params.get("speed", 5)
+    if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not math.isfinite(float(speed)) or speed <= 0:
+        return "speed must be a positive number of metres per second, such as 5."
+    error, prim = _check_prim(stage, params.get("prim"), plan, "prim")
+    if error:
+        return error
+    _rigid_problems(stage, prim, plan, want_kinematic=False)
+    prim_path, speed = str(params["prim"]), float(speed)
+    stop = bool(params.get("stop_on_release", True))
+    directions = (("W", "forward", [speed, 0.0, 0.0]), ("S", "back", [-speed, 0.0, 0.0]),
+                  ("A", "left", [0.0, speed, 0.0]), ("D", "right", [0.0, -speed, 0.0]))
+    for key, name, vector in directions:
+        plan.variable(name, "float[3]", vector, f"velocity while {key} is held (m/s); change it live")
+        plan.node(f"Key{key}", "omni.graph.action.OnKeyboardInput", f"fires when {key} is pressed or released")
+        plan.node(f"Read_{name}", "omni.graph.core.ReadVariable", f"reads the {name} variable")
+        plan.node(f"Write_{name}", "omni.graph.nodes.WritePrimAttribute", f"writes {name} into physics:velocity")
+        plan.wire(f"Key{key}.outputs:pressed", f"Write_{name}.inputs:execIn", "execution", f"when {key} goes down")
+        plan.wire(f"Read_{name}.outputs:value", f"Write_{name}.inputs:value", "data", f"the {name} velocity")
+        plan.value(f"Key{key}.inputs:keyIn", key, "the key")
+        plan.value(f"Key{key}.inputs:onlyPlayback", True, "only while Play runs (physics is off otherwise)")
+        plan.value(f"Read_{name}.inputs:variableName", name, "which graph variable to read")
+        plan.value(f"Write_{name}.inputs:prim", [prim_path], "the body to push (a target input)", target=True)
+        plan.value(f"Write_{name}.inputs:name", "physics:velocity", "the rigid body's linear velocity attribute")
+        plan.value(f"Write_{name}.inputs:usdWriteBack", True, "write into USD so physics picks it up")
+    if stop:
+        plan.variable("stop", "float[3]", [0.0, 0.0, 0.0], "velocity when no key is held")
+        plan.node("Read_stop", "omni.graph.core.ReadVariable", "reads the stop variable")
+        plan.node("Write_stop", "omni.graph.nodes.WritePrimAttribute", "writes (0, 0, 0) into physics:velocity")
+        plan.wire("Read_stop.outputs:value", "Write_stop.inputs:value", "data", "zero velocity")
+        for key, _name, _vector in directions:
+            plan.wire(f"Key{key}.outputs:released", "Write_stop.inputs:execIn", "execution", f"when {key} comes up")
+        plan.value("Read_stop.inputs:variableName", "stop", "which graph variable to read")
+        plan.value("Write_stop.inputs:prim", [prim_path], "the body to stop", target=True)
+        plan.value("Write_stop.inputs:name", "physics:velocity", "the rigid body's linear velocity attribute")
+        plan.value("Write_stop.inputs:usdWriteBack", True, "write into USD so physics picks it up")
+    plan.explanation += [
+        f"When W/S/A/D is pressed (while playing) -> Write Prim Attribute sets {prim_path}.physics:velocity to the "
+        "forward/back/left/right variable" + (" ; releasing the key writes the stop variable (0, 0, 0)." if stop else "."),
+        "The four directions are graph VARIABLES: while it plays, change one in the graph editor's Variables panel and "
+        "the next key press uses the new value, just as in class.",
+        "Velocities are along the WORLD axes: after the body turns, W still pushes along world X. Moving along the "
+        "body's own axes needs its rotation matrix (the class's 'local axes' point).",
+    ]
+    return None
+
+
+def _plan_print_attribute(stage: Any, plan: _Plan, params: dict[str, Any]) -> str | None:
+    error, prim = _check_prim(stage, params.get("prim"), plan, "prim")
+    if error:
+        return error
+    attribute = params.get("attribute")
+    if not isinstance(attribute, str) or not attribute.strip():
+        return "attribute must be an attribute name such as physics:velocity or xformOp:translate."
+    if prim is not None and not prim.GetAttribute(attribute):
+        names = sorted(a.GetName() for a in prim.GetAttributes())[:12]
+        return f"{prim.GetPath()} has no attribute {attribute!r}. Some it has: {names}."
+    prim_path = str(params["prim"])
+    plan.node("OnTick", "omni.graph.action.OnTick", "fires every app update")
+    plan.node("Read", "omni.graph.nodes.ReadPrimAttribute", f"reads {attribute}")
+    plan.node("AsText", "omni.graph.nodes.ToString", "turns the value (numbers, a vector...) into text")
+    plan.node("Print", "omni.graph.ui_nodes.PrintText", "shows the text on the screen")
+    plan.wire("OnTick.outputs:tick", "Print.inputs:execIn", "execution", "print on every tick")
+    plan.wire("Read.outputs:value", "AsText.inputs:value", "data", "the attribute's value")
+    plan.wire("AsText.outputs:converted", "Print.inputs:text", "data", "the value as text")
+    plan.value("OnTick.inputs:onlyPlayback", True, "only while Play runs")
+    plan.value("Read.inputs:prim", [prim_path], "the prim to read (a target input)", target=True)
+    plan.value("Read.inputs:name", attribute, "which attribute")
+    plan.value("Print.inputs:toScreen", True, "show it in the viewport")
+    plan.value("Print.inputs:logLevel", "Info", "an Info log line")
+    plan.explanation += [
+        f"Every tick while playing -> read {prim_path}.{attribute} -> To String -> Print Text on the screen.",
+        "Print Text only takes text (a string), so a vector such as a velocity must go through To String first: "
+        "that is the class's 'convert before printing' point.",
+    ]
+    return None
+
+
+def _plan_conveyor(stage: Any, plan: _Plan, params: dict[str, Any]) -> str | None:
+    velocity = params.get("velocity", 2)
+    if isinstance(velocity, bool) or not isinstance(velocity, (int, float)) or not math.isfinite(float(velocity)):
+        return "velocity must be a number of metres per second, such as 2 or -2."
+    direction = params.get("direction", [1.0, 0.0, 0.0])
+    if (not isinstance(direction, (list, tuple)) or len(direction) != 3
+            or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in direction)):
+        return "direction must be three numbers such as [1, 0, 0]."
+    error, prim = _check_prim(stage, params.get("belt"), plan, "belt")
+    if error:
+        return error
+    _rigid_problems(stage, prim, plan, want_kinematic=True)
+    plan.warnings.append("The Conveyor Belt node lives in the isaacsim.asset.gen.conveyor extension: if Isaac says "
+                         "the node type is unknown, enable it in Window > Extensions.")
+    belt = str(params["belt"])
+    plan.variable("Velocity", "float", float(velocity), "belt speed in m/s; change it live (0 stops the belt)")
+    plan.node("OnTick", "omni.graph.action.OnPlaybackTick", "fires every frame while Play runs")
+    plan.node("ConveyorNode", "isaacsim.asset.gen.conveyor.IsaacConveyor", f"moves things lying on {belt}")
+    plan.node("ReadSpeed", "omni.graph.core.ReadVariable", "reads the Velocity variable")
+    plan.wire("OnTick.outputs:tick", "ConveyorNode.inputs:onStep", "execution", "update the belt every frame")
+    plan.wire("OnTick.outputs:deltaSeconds", "ConveyorNode.inputs:delta", "data", "time since the last frame")
+    plan.wire("ReadSpeed.outputs:value", "ConveyorNode.inputs:velocity", "data", "the belt speed")
+    plan.value("ReadSpeed.inputs:variableName", "Velocity", "which graph variable to read")
+    plan.value("ConveyorNode.inputs:conveyorPrim", [belt], "the belt (a target input)", target=True)
+    plan.value("ConveyorNode.inputs:direction", [float(v) for v in direction], "belt-local direction",
+               type_name="float[3]")
+    plan.explanation += [
+        f"While playing -> each frame the Conveyor Belt node gives {belt} a surface velocity of Velocity m/s along "
+        f"{list(direction)}: the belt stays still (kinematic) but anything resting on it slides along.",
+        "For a loop, make several belts, rotate each (e.g. -90 degrees about Z) and run this recipe once per belt.",
+        "Homework idea (class): to stop a box for 5 s, set Velocity to 0, wait (a Delay node), then set it back.",
+    ]
+    return None
+
+
 _PLANNERS = {
     "key_sets_variant": _plan_key_sets_variant,
     "event_sets_variant": _plan_event_sets_variant,
     "on_tick_rotate": _plan_on_tick_rotate,
     "print_on_play": _plan_print_on_play,
+    "keyboard_velocity": _plan_keyboard_velocity,
+    "print_attribute": _plan_print_attribute,
+    "conveyor": _plan_conveyor,
 }
 
 
@@ -1595,6 +1773,7 @@ def plan_recipe(name: str, *, stage: Any = None, graph_path: str | None = None, 
         "graph": {"graph_path": final_path, "evaluator_name": "execution"},
         "nodes": plan.nodes,
         "attributes": plan.attributes,
+        "variables": plan.variables,
         "connections": plan.connections,
         "values": plan.values,
         "explanation": plan.explanation,
@@ -1633,6 +1812,12 @@ def _python_script(plan: _Plan) -> str:
     for node in plan.nodes:
         lines.append(f"            ({node['name']!r}, {node['type']!r}),  # {node['why']}")
     lines.append("        ],")
+    if plan.variables:
+        lines.append("        # Graph variables: (name, type, starting value); edit them live in the graph's Variables panel")
+        lines.append("        keys.CREATE_VARIABLES: [")
+        for item in plan.variables:
+            lines.append(f"            ({item['name']!r}, {item['type']!r}, {item['default']!r}),  # {item['why']}")
+        lines.append("        ],")
     if plan.attributes:
         lines.append("        # Step 2. Extra (dynamic) attributes: the name decides input or output")
         lines.append("        keys.CREATE_ATTRIBUTES: [")
@@ -1701,6 +1886,8 @@ def _same_stage(stage: Any, live: Any) -> bool:
 def _build_edit(og: Any, usdrt: Any, plan: dict[str, Any]) -> dict[str, Any]:
     keys = og.Controller.Keys
     edit: dict[Any, Any] = {keys.CREATE_NODES: [(node["name"], node["type"]) for node in plan["nodes"]]}
+    if plan.get("variables"):
+        edit[keys.CREATE_VARIABLES] = [(item["name"], item["type"], item["default"]) for item in plan["variables"]]
     if plan["attributes"]:
         edit[keys.CREATE_ATTRIBUTES] = [(item["attribute"], item["type"]) for item in plan["attributes"]]
     edit[keys.CONNECT] = [(item["from"], item["to"]) for item in plan["connections"]]

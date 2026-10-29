@@ -34,6 +34,11 @@ _add("omnigraph_helper", "graph_inspect:inspect_graphs", "stage", "Live insight"
 _add("omnigraph_helper", "graph_node_type:describe_node_type graph_recipes:list_recipes", "local", "Knowledge & docs")
 _add("omnigraph_helper", "graph_plan:plan_recipe", "local", "Knowledge & docs")
 _add("omnigraph_helper", "graph_apply:apply_recipe", "stage", "Scene: change safely", "graph_apply")
+_add("graph_builder", "graph_node_search:node_search", "local", "Knowledge & docs")
+_add("graph_builder", "graph_create:create_graph graph_add_node:add_node graph_connect:connect "
+     "graph_disconnect:disconnect graph_set_value:set_value graph_add_variable:add_variable "
+     "graph_delete_node:delete_node", "stage", "Scene: change safely",
+     "graph_create graph_add_node graph_connect graph_disconnect graph_set_value graph_add_variable graph_delete_node")
 _add("message_bus", "event_plan:plan_event event_names:event_name_variants", "local", "Knowledge & docs")
 _add("message_bus", "event_send:send_event event_listen:start_listener event_stop:stop_listener event_status:listener_status",
      "kit", "Simulation & screenshots", "event_send event_listen event_stop")

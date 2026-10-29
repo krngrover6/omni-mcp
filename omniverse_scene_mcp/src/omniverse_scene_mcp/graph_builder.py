@@ -1,0 +1,318 @@
+"""Build an Action Graph one step at a time, the way a class does it: make a graph, add a node, connect two pins,
+set a value, add a graph variable, delete a node. Plus a keyword search over every node the installed Isaac Sim offers.
+
+Why step by step: recipes build a whole graph at once, which is quick but teaches little. Here each call is one
+small, previewed change (dry_run=True by default) with the matching og.Controller.edit Python, so the learner sees
+both the canvas and the code. Edits run inside Kit on the open stage (omni.graph.core); Ctrl+Z undoes each one.
+
+Node search reads the per-extension ogn/nodes.json indexes of the local Isaac Sim install (about 40 small files, read
+once), so it works offline and without Kit.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+from . import omnigraph_helper as ogh
+from .exam.progress import workspace_root
+
+ISAAC_FOLDER = "isaacsim-6.1.0"
+_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+_PIN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\.((?:inputs|outputs|state):[A-Za-z0-9_:]+)$")
+VARIABLE_TYPES = ("bool", "int", "float", "double", "token", "string", "float3", "double3", "float[3]", "int[]",
+                  "float[]", "double[]", "token[]", "path", "matrixd[4]")
+
+
+# --------------------------------------------------------------------------------------------------- node search
+@lru_cache(maxsize=1)
+def _node_index() -> tuple[dict[str, Any], ...]:
+    root = workspace_root() / ISAAC_FOLDER
+    rows: list[dict[str, Any]] = []
+    for pattern in ("exts/*/ogn/nodes.json", "extscache/*/ogn/nodes.json"):
+        for path in sorted(root.glob(pattern)):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            extension = str(data.get("extension") or path.parent.parent.name.split("-")[0])
+            for key, info in (data.get("nodes") or {}).items():
+                node_id = key if "." in key else f"{extension}.{key}"
+                description = info.get("description", "")
+                if isinstance(description, list):
+                    description = " ".join(description)
+                rows.append({"id": node_id, "name": info.get("uiName") or key.split(".")[-1],
+                             "description": str(description).strip(), "extension": extension})
+    return tuple(rows)
+
+
+def node_search(keyword: str, limit: int = 15) -> dict[str, Any]:
+    """Find Action Graph nodes by keyword ('keyboard', 'conveyor', 'print', 'velocity') in the installed Isaac Sim."""
+    if not isinstance(keyword, str) or not keyword.strip():
+        return {"ok": False, "error": "Give a keyword such as 'keyboard', 'conveyor' or 'print'."}
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 50:
+        return {"ok": False, "error": "limit must be 1 to 50."}
+    index = _node_index()
+    if not index:
+        return {"ok": False, "error": f"No node indexes found under {ISAAC_FOLDER}/exts or extscache."}
+    words = keyword.lower().split()
+    scored = []
+    for row in index:
+        name, text = row["name"].lower(), f"{row['id']} {row['name']} {row['description']}".lower()
+        if all(word in text for word in words):
+            score = sum(3 if word in name else 2 if word in row["id"].lower() else 1 for word in words)
+            scored.append((-score, row["id"], row))
+    scored.sort()
+    hits = [{**row, "explained": row["id"] in ogh.NODE_TYPES} for _, _, row in scored[:limit]]
+    return {"ok": True, "keyword": keyword, "total_nodes": len(index), "matches": len(scored), "nodes": hits,
+            "next": "graph_node_type(type_id) explains a node in plain words (when known); graph_add_node adds one."}
+
+
+def _known_type(node_type: str) -> bool:
+    return node_type in ogh.NODE_TYPES or any(row["id"] == node_type for row in _node_index())
+
+
+# --------------------------------------------------------------------------------------------------- Kit plumbing
+def _kit(stage: Any) -> tuple[Any, dict[str, Any] | None]:
+    kit = ogh._kit_modules()
+    og = kit.get("og")
+    if og is None:
+        return None, {"ok": False, "dry_run": False, "message": ogh._NOT_KIT,
+                      "detail": "Graph edits run inside Isaac Sim or USD Composer (omni.graph.core)."}
+    live = kit.get("live_stage")
+    if live is None or not ogh._same_stage(stage, live):
+        return None, {"ok": False, "dry_run": False, "error": "This stage is not the one open in Kit; nothing was "
+                                                              "changed."}
+    return og, None
+
+
+def _graph_prim(stage: Any, graph_path: str) -> Any:
+    prim = stage.GetPrimAtPath(graph_path) if stage is not None else None
+    return prim if prim and prim.IsValid() and prim.GetTypeName() == "OmniGraph" else None
+
+
+def _node_prim(stage: Any, graph_path: str, name: str) -> Any:
+    prim = stage.GetPrimAtPath(f"{graph_path}/{name}")
+    return prim if prim and prim.IsValid() and prim.GetTypeName() in ogh.NODE_PRIM_TYPES else None
+
+
+def _describe_node(og: Any, path: str) -> dict[str, Any]:
+    """The node's pins as og sees them: inputs and outputs with their types (what you can connect)."""
+    try:
+        node = og.Controller.node(path)
+        pins: dict[str, list[str]] = {"inputs": [], "outputs": []}
+        for attribute in node.get_attributes():
+            name = attribute.get_name()
+            kind = "inputs" if name.startswith("inputs:") else "outputs" if name.startswith("outputs:") else None
+            if kind:
+                type_name = attribute.get_resolved_type().get_ogn_type_name()
+                pins[kind].append(f"{name} ({type_name})")
+        return pins
+    except Exception as exc:  # noqa: BLE001 - a description is a bonus, never a failure
+        return {"note": f"Pins could not be listed: {type(exc).__name__}"}
+
+
+def _run(og: Any, stage: Any, graph_path: str, edits: dict[str, Any], message: str,
+         describe: str | None = None) -> dict[str, Any]:
+    keys = og.Controller.Keys
+    real = {getattr(keys, key.upper()): value for key, value in edits.items()}
+    try:
+        og.Controller.edit(graph_path, real)
+    except Exception as exc:  # noqa: BLE001 - og.OmniGraphError and friends
+        return {"ok": False, "dry_run": False, "error": f"og.Controller.edit failed: {type(exc).__name__}: {exc}"}
+    result = {"ok": True, "dry_run": False, "graph_path": graph_path, "message": message + " Ctrl+Z undoes it; "
+              "nothing was saved."}
+    if describe:
+        result["pins"] = _describe_node(og, describe)
+    check = ogh.inspect_graphs(stage, graph_path)
+    result["flow"] = [line for graph in check.get("graphs", []) for line in graph.get("flow", [])]
+    result["problems"] = check.get("problems", [])
+    return result
+
+
+def _python(graph_path: str, key: str, item: str) -> str:
+    return ("import omni.graph.core as og\nkeys = og.Controller.Keys\n"
+            f"og.Controller.edit({graph_path!r}, {{keys.{key.upper()}: [{item}]}})\n")
+
+
+def _preview(plan: dict[str, Any], python: str, warnings: list[str]) -> dict[str, Any]:
+    return {"ok": True, "dry_run": True, "written": False, "would": plan, "python": python, "warnings": warnings,
+            "next_step": "Dry run: nothing changed. Repeat with dry_run=False (or through scene_safe_edit)."}
+
+
+def _check_graph(stage: Any, graph_path: str) -> str | None:
+    if not isinstance(graph_path, str) or not graph_path.startswith("/"):
+        return "graph_path must be an absolute prim path such as /World/ActionGraph."
+    if _graph_prim(stage, graph_path) is None:
+        return f"There is no Action Graph at {graph_path}. Make one first with graph_create."
+    return None
+
+
+# --------------------------------------------------------------------------------------------------- the steps
+def create_graph(stage: Any, graph_path: str = "/World/ActionGraph", *, dry_run: bool = True) -> dict[str, Any]:
+    """Preview (or with dry_run=False make) an empty Action Graph: the canvas the nodes go on."""
+    if not isinstance(graph_path, str) or not graph_path.startswith("/") or "//" in graph_path:
+        return {"ok": False, "error": "graph_path must be an absolute prim path such as /World/ActionGraph."}
+    existing = stage.GetPrimAtPath(graph_path)
+    if existing and existing.IsValid():
+        return {"ok": False, "error": f"{graph_path} already exists; pick another path or add nodes to it."}
+    plan = {"graph_path": graph_path, "evaluator": "execution",
+            "explained": "An execution graph runs only when an event node (On Tick, On Keyboard Input...) fires."}
+    python = ("import omni.graph.core as og\n"
+              f"og.Controller.edit({{'graph_path': {graph_path!r}, 'evaluator_name': 'execution'}}, {{}})\n")
+    if dry_run is not False:
+        return _preview(plan, python, [])
+    og, refusal = _kit(stage)
+    if refusal:
+        return refusal
+    try:
+        og.Controller.edit({"graph_path": graph_path, "evaluator_name": "execution"}, {})
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "dry_run": False, "error": f"og.Controller.edit failed: {type(exc).__name__}: {exc}"}
+    return {"ok": True, "dry_run": False, "graph_path": graph_path, "python": python,
+            "message": f"Made an empty Action Graph at {graph_path}. Open it: right-click it in the Stage panel > "
+                       "Open Graph. Ctrl+Z undoes it."}
+
+
+def add_node(stage: Any, graph_path: str, name: str, node_type: str, *, values: dict[str, Any] | None = None,
+             dry_run: bool = True) -> dict[str, Any]:
+    """Preview (or add) one node of node_type named `name`, optionally setting input values (pin name -> value)."""
+    problem = _check_graph(stage, graph_path)
+    if problem:
+        return {"ok": False, "error": problem}
+    if not isinstance(name, str) or not _NAME.match(name):
+        return {"ok": False, "error": "name must be a simple word such as OnTick or WriteVelocity (letters, digits, _)."}
+    if _node_prim(stage, graph_path, name) is not None:
+        return {"ok": False, "error": f"{graph_path} already has a node named {name}."}
+    if not isinstance(node_type, str) or not _known_type(node_type):
+        hits = node_search(str(node_type).split(".")[-1], limit=5).get("nodes", []) if isinstance(node_type, str) else []
+        return {"ok": False, "error": f"Unknown node type {node_type!r}.",
+                "did_you_mean": [row["id"] for row in hits], "hint": "graph_node_search('keyword') finds node ids."}
+    values = dict(values or {})
+    bad = [pin for pin in values if not str(pin).startswith("inputs:")]
+    if bad:
+        return {"ok": False, "error": f"values keys must be input pins such as 'inputs:velocity', not {bad}."}
+    known = ogh.NODE_TYPES.get(node_type) or {}
+    plan = {"graph_path": graph_path, "node": f"{graph_path}/{name}", "type": node_type,
+            "what_it_does": known.get("plain", ""), "values": values}
+    python = _python(graph_path, "create_nodes", f"({name!r}, {node_type!r})")
+    if values:
+        python += _python(graph_path, "set_values", ", ".join(f"({name + '.' + pin!r}, {v!r})" for pin, v in values.items()))
+    if dry_run is not False:
+        return _preview(plan, python, [])
+    og, refusal = _kit(stage)
+    if refusal:
+        return refusal
+    edits: dict[str, Any] = {"create_nodes": [(name, node_type)]}
+    if values:
+        edits["set_values"] = [(f"{name}.{pin}", value) for pin, value in values.items()]
+    result = _run(og, stage, graph_path, edits, f"Added {name} ({node_type}).", describe=f"{graph_path}/{name}")
+    return {**result, "python": python}
+
+
+def _check_pin(stage: Any, graph_path: str, pin: str) -> str | None:
+    match = _PIN.match(pin) if isinstance(pin, str) else None
+    if not match:
+        return f"{pin!r} must look like NodeName.outputs:tick or NodeName.inputs:execIn."
+    if _node_prim(stage, graph_path, match.group(1)) is None:
+        return f"{graph_path} has no node named {match.group(1)}."
+    return None
+
+
+def connect(stage: Any, graph_path: str, source: str, target: str, *, dry_run: bool = True) -> dict[str, Any]:
+    """Preview (or draw) one wire from an output pin to an input pin, e.g. OnTick.outputs:tick -> Write.inputs:execIn."""
+    problem = _check_graph(stage, graph_path) or _check_pin(stage, graph_path, source) or _check_pin(stage, graph_path, target)
+    if problem:
+        return {"ok": False, "error": problem}
+    if ".inputs:" in source or ".outputs:" in target:
+        return {"ok": False, "error": "Wires go FROM an output pin TO an input pin (source outputs:..., target inputs:...)."}
+    plan = {"graph_path": graph_path, "from": source, "to": target,
+            "explained": "Execution pins (white) decide WHEN a node runs; data pins carry values. Types must match."}
+    python = _python(graph_path, "connect", f"({source!r}, {target!r})")
+    if dry_run is not False:
+        return _preview(plan, python, [])
+    og, refusal = _kit(stage)
+    if refusal:
+        return refusal
+    return {**_run(og, stage, graph_path, {"connect": [(source, target)]}, f"Connected {source} -> {target}."),
+            "python": python}
+
+
+def disconnect(stage: Any, graph_path: str, source: str, target: str, *, dry_run: bool = True) -> dict[str, Any]:
+    """Preview (or remove) one wire between two pins."""
+    problem = _check_graph(stage, graph_path) or _check_pin(stage, graph_path, source) or _check_pin(stage, graph_path, target)
+    if problem:
+        return {"ok": False, "error": problem}
+    python = _python(graph_path, "disconnect", f"({source!r}, {target!r})")
+    if dry_run is not False:
+        return _preview({"graph_path": graph_path, "remove": f"{source} -> {target}"}, python, [])
+    og, refusal = _kit(stage)
+    if refusal:
+        return refusal
+    return {**_run(og, stage, graph_path, {"disconnect": [(source, target)]}, f"Removed {source} -> {target}."),
+            "python": python}
+
+
+def set_value(stage: Any, graph_path: str, pin: str, value: Any, *, value_type: str | None = None,
+              dry_run: bool = True) -> dict[str, Any]:
+    """Preview (or set) one input pin's value. value_type ('float[3]', 'double', 'bool'...) resolves a flexible pin
+    such as Write Prim Attribute's inputs:value; without it, a flexible pin stays 'unresolved' and the node errors."""
+    problem = _check_graph(stage, graph_path) or _check_pin(stage, graph_path, pin)
+    if problem:
+        return {"ok": False, "error": problem}
+    if ".inputs:" not in pin:
+        return {"ok": False, "error": "Only input pins take values (NodeName.inputs:...)."}
+    item = (pin, value, value_type) if value_type else (pin, value)
+    python = _python(graph_path, "set_values", repr(item))
+    warnings = [] if value_type or not isinstance(value, list) else [
+        "A list on a flexible pin may need value_type (e.g. 'float[3]' for a velocity) to avoid an 'unresolved type'."]
+    if dry_run is not False:
+        return _preview({"graph_path": graph_path, "pin": pin, "value": value, "value_type": value_type}, python, warnings)
+    og, refusal = _kit(stage)
+    if refusal:
+        return refusal
+    return {**_run(og, stage, graph_path, {"set_values": [item]}, f"Set {pin} = {value!r}."), "python": python}
+
+
+def add_variable(stage: Any, graph_path: str, name: str, value_type: str, *, default: Any = None,
+                 dry_run: bool = True) -> dict[str, Any]:
+    """Preview (or add) a graph variable: a named value every node in the graph can read (Read Variable) or change
+    (Write Variable), and that you can edit while the simulation runs, like the class's 'forward' = (5, 0, 0)."""
+    problem = _check_graph(stage, graph_path)
+    if problem:
+        return {"ok": False, "error": problem}
+    if not isinstance(name, str) or not _NAME.match(name):
+        return {"ok": False, "error": "name must be a simple word such as forward or speed."}
+    if value_type not in VARIABLE_TYPES:
+        return {"ok": False, "error": f"value_type must be one of {', '.join(VARIABLE_TYPES)}."}
+    item = (name, value_type, default) if default is not None else (name, value_type)
+    python = _python(graph_path, "create_variables", repr(item))
+    plan = {"graph_path": graph_path, "variable": name, "type": value_type, "default": default,
+            "how_to_use": f"Add a node of type omni.graph.core.ReadVariable with inputs:variableName = {name!r}."}
+    if dry_run is not False:
+        return _preview(plan, python, [])
+    og, refusal = _kit(stage)
+    if refusal:
+        return refusal
+    return {**_run(og, stage, graph_path, {"create_variables": [item]}, f"Added variable {name} ({value_type})."),
+            "python": python}
+
+
+def delete_node(stage: Any, graph_path: str, name: str, *, dry_run: bool = True) -> dict[str, Any]:
+    """Preview (or delete) one node and all its wires."""
+    problem = _check_graph(stage, graph_path)
+    if problem:
+        return {"ok": False, "error": problem}
+    if not isinstance(name, str) or _node_prim(stage, graph_path, name) is None:
+        return {"ok": False, "error": f"{graph_path} has no node named {name!r}."}
+    python = _python(graph_path, "delete_nodes", repr(name))
+    if dry_run is not False:
+        return _preview({"graph_path": graph_path, "delete": f"{graph_path}/{name}"}, python,
+                        ["Its wires go too."])
+    og, refusal = _kit(stage)
+    if refusal:
+        return refusal
+    return {**_run(og, stage, graph_path, {"delete_nodes": [name]}, f"Deleted {name}."), "python": python}

@@ -407,3 +407,20 @@ def test_real_class_folder_smoke() -> None:
         if {h["source"] for h in hits} >= {"subtitles", "gemini_notes"}:
             assert hits.timeline_note == TIMELINE_NOTE
     assert notes.ask("ground plane")["ok"] is True
+
+
+def test_downloads_is_read_flat_session_named_files_only() -> None:
+    # Seen 2026-10-29: Sessions 3-6 were saved straight into Downloads, so class_ask could not see them.
+    with tempfile.TemporaryDirectory() as tmp:
+        downloads = Path(tmp) / "Downloads"
+        (downloads / "unrelated" / "Session 9").mkdir(parents=True)
+        (downloads / "Session6(Action Graph Fundamentals)_zoomed_HD.srt").write_text(SRT, encoding="utf-8")
+        (downloads / "Session6(Action Graph Fundamentals)_zoomed_HD (1).srt").write_text(SRT, encoding="utf-8")
+        (downloads / "Session6(Action Graph Fundamentals) - Notes by Gemini.txt").write_text(GEMINI, encoding="utf-8")
+        (downloads / "holiday.srt").write_text(SRT, encoding="utf-8")
+        (downloads / "unrelated" / "Session 9" / "deep.srt").write_text(SRT, encoding="utf-8")
+        notes = ClassNotes([downloads])
+        files = {f["file"] for s in notes.sessions() for f in s["files"]}
+        assert files == {"Session6(Action Graph Fundamentals)_zoomed_HD.srt",
+                         "Session6(Action Graph Fundamentals) - Notes by Gemini.txt"}, files
+        assert [s["session"] for s in notes.sessions()] == [6]
