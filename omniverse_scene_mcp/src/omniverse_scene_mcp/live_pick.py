@@ -18,8 +18,12 @@ from typing import Any
 from . import joint_control as jc
 
 EXAMPLES_EXTENSION = "isaacsim.robot.manipulators.examples"
-TIMEOUT_STEPS = 3600   # physics steps (60 s of simulation at 60 Hz), not wall time: slow laptops run slower
+TIMEOUT_STEPS = 7200   # physics steps (120 s of simulation at 60 Hz), not wall time: slow laptops run slower
 OPEN_STEPS = 30        # open the gripper first for half a second of simulation
+# PickPlaceController's phase timings (isaacsim.robot.manipulators.examples franka/controllers): each phase lasts
+# 1/dt physics steps whether or not the arm has arrived. Seen live: with the object 76 degrees to the arm's side,
+# the arm was still swinging when "go down" and "close" ran, and grabbed air. pace < 1 gives every phase longer.
+EVENTS_DT = [0.008, 0.005, 1, 0.1, 0.05, 0.05, 0.0025, 1, 0.008, 0.08]
 _JOB: dict[str, Any] = {}
 
 
@@ -52,7 +56,7 @@ def _subscribe_physics(callback: Any) -> Any:
     return physx.get_physx_interface().subscribe_physics_step_events(callback)
 
 
-def _make_controller(robot_root: str) -> tuple[Any, Any, Any]:
+def _make_controller(robot_root: str, pace: float = 1.0) -> tuple[Any, Any, Any]:
     """(franka wrapper, PickPlaceController, articulation controller) for the Franka already in the scene."""
     app = jc._kit_module("omni.kit.app")
     if app is None:
@@ -63,18 +67,23 @@ def _make_controller(robot_root: str) -> tuple[Any, Any, Any]:
 
     franka = Franka(prim_path=robot_root, name=f"mcp_live_pick_{abs(hash(robot_root))}")
     franka.initialize()
-    controller = PickPlaceController(name="mcp_live_pick", gripper=franka.gripper, robot_articulation=franka)
+    controller = PickPlaceController(name="mcp_live_pick", gripper=franka.gripper, robot_articulation=franka,
+                                     events_dt=[dt * pace for dt in EVENTS_DT])
     return franka, controller, franka.get_articulation_controller()
 
 
-def live_pick(robot_root: str, object_path: str, place_position: Any, *, dry_run: bool = True) -> dict[str, Any]:
+def live_pick(robot_root: str, object_path: str, place_position: Any, pace: float = 0.5, *,
+              dry_run: bool = True) -> dict[str, Any]:
     """KIT-ONLY, SIMULATION STATE. The Franka at robot_root picks object_path and places it at place_position
-    ([x, y, z] metres, world). dry_run=True checks everything and moves nothing. Needs Play."""
+    ([x, y, z] metres, world). pace (0.2-1): how fast the phases move on; lower gives the arm more time to arrive
+    (needed when the object is far to the arm's side). dry_run=True checks everything and moves nothing. Needs Play."""
     base = {"action": "live_pick", "robot_root": robot_root, "object": object_path, "dry_run": jc._dry(dry_run)}
     try:
         place = _vector(place_position, "place_position")
     except ValueError as exc:
         return {**base, "ok": False, "error": str(exc)}
+    if isinstance(pace, bool) or not isinstance(pace, (int, float)) or not 0.2 <= pace <= 1:
+        return {**base, "ok": False, "error": "pace must be from 0.2 (slow, more time per phase) to 1 (Isaac's default)."}
     if _JOB.get("running"):
         return {**base, "ok": False, "error": "A live pick is already running: wait, or call live_pick_stop."}
     state, problem = jc._timeline_state()
@@ -98,7 +107,7 @@ def live_pick(robot_root: str, object_path: str, place_position: Any, *, dry_run
         plan["next_step"] = "Dry run: nothing moved. Call again with dry_run=False and watch the viewport."
         return plan
     try:
-        franka, controller, articulation = _make_controller(robot_root)
+        franka, controller, articulation = _make_controller(robot_root, float(pace))
     except Exception as exc:  # noqa: BLE001 - missing extension, not a Franka, physics not ready
         return {**base, "ok": False, "error": f"Could not set up the Franka controller: {type(exc).__name__}: {exc}",
                 "hint": "Use the Franka from Create > Robots (its root is the prim with the articulation root)."}

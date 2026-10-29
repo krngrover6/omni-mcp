@@ -48,7 +48,10 @@ def test_csv_follows_the_simulation_clock_with_scale_and_clamp():
     clock = {"t": 0.0}
     step, callbacks, written, restore = _rig(clock)
     try:
-        assert dl.start_link(str(folder / "belt.csv"), mappings)["dry_run"] and not callbacks
+        preview = dl.start_link(str(folder / "belt.csv"), mappings)
+        assert preview["dry_run"] and not callbacks
+        json.dumps(preview, allow_nan=False)  # strict JSON: no Infinity / NaN
+        assert preview["mappings"][0]["min"] is None and preview["mappings"][0]["max"] == 1.0
         assert dl.start_link(str(folder / "belt.csv"), mappings, dry_run=False)["running"]
         step(5.0)   # halfway: 0.2 -> 1.2 gives 0.7
         step(10.0)  # past the end: 1.2, clamped to 1.0

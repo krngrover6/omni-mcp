@@ -145,12 +145,16 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
     if not graph.get("ok"):
         return undo("belt_graph", graph.get("error") or graph)
     created += [f"{root}/Packages", f"{root}/Franka", f"{root}/BeltGraph"]
-    first = (spawned.get("created") or {}).get("packages", [{}])[0].get("path")
+    first_package = ((spawned.get("created") or {}).get("packages") or [{}])[0]
+    first = first_package.get("path")
+    # Seen live: the hint sent a blue package to the red bin; use the package's own colour.
+    target_bin = layout["bins"].get(first_package.get("color"), layout["bins"][colours[0]])
     return {**base, "ok": True, "dry_run": False, "built": True, "created": created,
             "try_it": [
                 "Press Play: the packages drop onto the belt and ride to the stopper.",
                 f"When one rests at the stopper, pick it: robot_live_pick(robot_root='{root}/Franka', "
-                f"object_path='{first}', place_position={layout['bins'][colours[0]][:2] + [0.1]}).",
+                f"object_path='{first}', place_position={target_bin[:2] + [0.1]}) (its "
+                f"{first_package.get('color', colours[0])} bin).",
                 f"Check the whole cell like the class does: homework_check(session=14).",
             ],
             "note": "Nothing is saved. Ctrl+Z or deleting the group removes it; Stop puts moved things back."}

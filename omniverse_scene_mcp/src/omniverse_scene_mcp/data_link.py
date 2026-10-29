@@ -170,7 +170,10 @@ def start_link(source: str, mappings: Any, period: float = 0.5, *, dry_run: bool
         return {**base, "ok": False, "error": "period must be 0.05-10 seconds."}
     if _LINK.get("running"):
         return {**base, "ok": False, "error": "A data link is already running: data_link_stop first."}
-    plan = {**base, "ok": True, "kind": preview["kind"], "mappings": clean}
+    # Seen live: -inf showed as "-Infinity", which is not valid JSON (strict clients such as Codex reject it).
+    shown = [{**m, "min": None if math.isinf(m["min"]) else m["min"], "max": None if math.isinf(m["max"]) else m["max"]}
+             for m in clean]
+    plan = {**base, "ok": True, "kind": preview["kind"], "mappings": shown}
     if base["dry_run"]:
         plan["next_step"] = "Dry run: nothing is linked. Press Play, then call again with dry_run=False."
         return plan

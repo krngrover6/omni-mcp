@@ -41,7 +41,7 @@ def _rig(timeline="playing", positions=None):
     lp._subscribe_physics = _Handle
     gripper = types.SimpleNamespace(forward=lambda action: f"gripper {action}")
     franka = types.SimpleNamespace(get_joint_positions=lambda: [0.0] * 9, gripper=gripper)
-    lp._make_controller = lambda root: (franka, controller, types.SimpleNamespace(apply_action=applied.append))
+    lp._make_controller = lambda root, pace=1.0: (franka, controller, types.SimpleNamespace(apply_action=applied.append))
     jc._kit_module = lambda name: types.SimpleNamespace(array=list) if name == "numpy" else saved[4](name)
 
     def restore():
@@ -86,4 +86,5 @@ def test_live_pick_needs_play_and_warns_about_reach():
         assert lp.live_pick("/World/Franka", "/World/Cube", [0.3, 0.4, 0.05])["warnings"]
     finally:
         restore()
+    assert not lp.live_pick("/World/Franka", "/World/Cube", [0.3, 0.4, 0.05], pace=5)["ok"]
     assert features.FEATURES["robot_live_pick"].mutates and not features.FEATURES["robot_live_pick_status"].mutates
