@@ -99,7 +99,10 @@ def test_live_pick_needs_play_and_warns_about_reach():
 
 def test_packed_neighbours_are_warned_about():
     # Seen live: four packages piled at a stopper ~3 cm apart; the fingers landed on the neighbours.
-    from pxr import Gf, Usd, UsdGeom, UsdPhysics
+    try:
+        from pxr import Gf, Usd, UsdGeom, UsdPhysics
+    except ImportError:  # pxr is an optional extra: skip without it
+        return
 
     stage = Usd.Stage.CreateInMemory()
     for name, y in (("A", 0.0), ("B", 0.06), ("Far", 0.5)):
