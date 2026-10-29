@@ -111,8 +111,13 @@ def test_wheeled_robot_recipes_plan_controllers_variables_and_sense_decide_act()
                            obstacle="/World/Obstacle", stop_distance=0.4)
     assert stop["ok"], stop
     assert any(c["from"] == "Decide.outputs:execTrue" and c["to"] == "Halt.inputs:execIn" for c in stop["connections"])
-    go = next(v for v in stop["values"] if v["attribute"] == "Go.inputs:velocityCommand")
-    assert go["value"] == [10.0, 10.0]  # 0.3 m/s / 0.03 m radius
+    # Seen live: the Articulation Controller wipes commands TYPED into it on Stop, so the decision writes the speed
+    # variable and the controller is fed through a wire (Differential -> Wheels) every frame.
+    assert any(c["from"] == "Differential.outputs:velocityCommand" and c["to"] == "Wheels.inputs:velocityCommand"
+               for c in stop["connections"])
+    assert not any(v["attribute"].endswith("inputs:velocityCommand") for v in stop["values"])
+    go = next(v for v in stop["values"] if v["attribute"] == "Go.inputs:value")
+    assert go["value"] == 0.3 and go["type"] == "double"
     wrong = ogh.plan_recipe("differential_drive", stage=stage, robot="/World/Jetbot", wheel_joints=["a", "b"])
     assert not wrong["ok"] and "no joints named" in wrong["error"]
     assert not ogh.plan_recipe("drive_sequence", stage=stage, robot="/World/Jetbot", steps=[{"seconds": -1}])["ok"]
@@ -159,3 +164,19 @@ def test_every_debug_challenge_is_caught_by_diagnose_and_graded():
         assert dt.check_answer("door_falls_off", "body0 has a typo: /World/Dor")["correct"]
         assert len(dt.check_answer("frozen_box", hint=True)["hints"]) == 2
         assert "kinematic" in dt.check_answer("frozen_box", reveal=True)["cause"]
+
+
+def test_diagnose_sees_colliders_inside_instanced_parts():
+    # Seen live: Franka links keep their collision shapes under instanced prims; diagnose called them collider-less.
+    stage = _stage()
+    UsdPhysics.Scene.Define(stage, "/physicsScene")
+    proto = UsdGeom.Xform.Define(stage, "/Prototypes/Part").GetPrim()
+    shape = UsdGeom.Cube.Define(stage, "/Prototypes/Part/Shape").GetPrim()
+    UsdPhysics.CollisionAPI.Apply(shape)
+    link = UsdGeom.Xform.Define(stage, "/World/Arm/Link").GetPrim()
+    UsdPhysics.RigidBodyAPI.Apply(link)
+    geometry = stage.DefinePrim("/World/Arm/Link/Geometry")
+    geometry.GetReferences().AddInternalReference(proto.GetPath())
+    geometry.SetInstanceable(True)
+    codes = [f["code"] for f in dt.diagnose(stage, "physics")["findings"] if f["prim"] == "/World/Arm/Link"]
+    assert "no_collider" not in codes, codes

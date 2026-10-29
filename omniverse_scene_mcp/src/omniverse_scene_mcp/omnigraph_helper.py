@@ -1918,7 +1918,7 @@ def _plan_drive_sequence(stage: Any, plan: _Plan, params: dict[str, Any]) -> str
 
 
 def _plan_obstacle_stop(stage: Any, plan: _Plan, params: dict[str, Any]) -> str | None:
-    error, robot, joints, radius, _distance = _wheels(stage, plan, params)
+    error, robot, joints, radius, distance = _wheels(stage, plan, params)
     if error:
         return error
     error, _sensor = _check_prim(stage, params.get("sensor_prim"), plan, "sensor_prim")
@@ -1932,16 +1932,18 @@ def _plan_obstacle_stop(stage: Any, plan: _Plan, params: dict[str, Any]) -> str 
         speed = _number(params, "speed", 0.3)
     except ValueError as exc:
         return str(exc)
-    wheel = speed / radius
     sensor, obstacle = str(params["sensor_prim"]), str(params["obstacle"])
-    plan.node("OnTick", "omni.graph.action.OnPlaybackTick", "fires every frame while Play runs")
+    # Seen live in Isaac 6.1: the Articulation Controller empties a velocityCommand TYPED into it when Stop is
+    # pressed (custom_reset), so a fixed command drove only on the first Play. The decision therefore writes the
+    # 'linear' variable, and the shared driver feeds the controller through a wire every frame.
+    _driver(plan, robot, joints, radius, distance)
     plan.node("RobotPose", "isaacsim.core.nodes.IsaacReadWorldPose", "where the robot is (world space)")
     plan.node("ObstaclePose", "isaacsim.core.nodes.IsaacReadWorldPose", "where the obstacle is (world space)")
     plan.node("Gap", "omni.graph.nodes.Distance3D", "how far apart they are (SENSE)")
     plan.node("TooClose", "omni.graph.nodes.Compare", f"is the gap smaller than {stop_distance:g} m? (DECIDE)")
     plan.node("Decide", "omni.graph.action.Branch", "chooses stop or go")
-    plan.node("Go", "isaacsim.core.nodes.IsaacArticulationController", "drives forward (ACT)")
-    plan.node("Halt", "isaacsim.core.nodes.IsaacArticulationController", "stops the wheels (ACT)")
+    plan.node("Go", "omni.graph.core.WriteVariable", f"sets linear = {speed:g} m/s (ACT)")
+    plan.node("Halt", "omni.graph.core.WriteVariable", "sets linear = 0 (ACT)")
     plan.wire("OnTick.outputs:tick", "Decide.inputs:execIn", "execution", "decide every frame")
     plan.wire("RobotPose.outputs:translation", "Gap.inputs:a", "data", "robot position")
     plan.wire("ObstaclePose.outputs:translation", "Gap.inputs:b", "data", "obstacle position")
@@ -1953,16 +1955,18 @@ def _plan_obstacle_stop(stage: Any, plan: _Plan, params: dict[str, Any]) -> str 
     plan.value("ObstaclePose.inputs:prim", [obstacle], "the obstacle", target=True)
     plan.value("TooClose.inputs:b", stop_distance, "the stopping distance in metres", type_name="double")
     plan.value("TooClose.inputs:operation", "<", "smaller than")
-    for node, value in (("Go", wheel), ("Halt", 0.0)):
-        plan.value(f"{node}.inputs:targetPrim", [robot], "the robot (its articulation root)", target=True)
-        plan.value(f"{node}.inputs:jointNames", list(joints), "the two wheel joints", array=True)
-        plan.value(f"{node}.inputs:velocityCommand", [value, value], "wheel speeds in rad/s", array=True)
+    for node, value in (("Go", speed), ("Halt", 0.0)):
+        plan.value(f"{node}.inputs:variableName", "linear", "the forward-speed variable the driver reads")
+        plan.value(f"{node}.inputs:value", value, "speed in m/s", type_name="double")
     plan.explanation += [
         f"Every frame: SENSE the gap between {sensor} and {obstacle} -> DECIDE whether it is under {stop_distance:g} m "
-        f"-> ACT: stop the wheels, or drive forward at {speed:g} m/s ({wheel:.1f} rad/s per wheel).",
+        f"-> ACT: set the speed variable to 0 (stop) or {speed:g} m/s (go). The driver part turns the speed into "
+        "wheel speeds every frame.",
         "This measures the distance from known positions, like a perfect range sensor. A real LiDAR or camera measures "
         "the same gap from its own data (class session 10); the decide and act parts stay the same.",
         "World positions matter: a robot part's own translate is relative to the robot, so Isaac Read World Pose is used.",
+        "Commands go to the Articulation Controller through a wire: it clears commands typed into it when Stop is "
+        "pressed, so a typed command would only work on the first Play.",
     ]
     return None
 

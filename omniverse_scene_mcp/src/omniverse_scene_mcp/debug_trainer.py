@@ -38,7 +38,14 @@ def _kinematic(prim: Any) -> bool:
 
 
 def _has_collider(prim: Any) -> bool:
-    return any(item.HasAPI(UsdPhysics.CollisionAPI) for item in Usd.PrimRange(prim))
+    # Seen live: a Franka's collision shapes sit under instanced prims, which the default traversal skips, so every
+    # link looked collider-less. Walk instance proxies too.
+    for count, item in enumerate(Usd.PrimRange(prim, Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate))):
+        if item.HasAPI(UsdPhysics.CollisionAPI):
+            return True
+        if count > 2000:
+            break
+    return False
 
 
 def _finding(severity: str, code: str, prim: Any, symptom: str, cause: str, fix: str) -> dict[str, Any]:
