@@ -65,9 +65,9 @@ def test_preview_then_build_a_cell_homework_14_accepts():
         built = fc.build_cell(stage, dry_run=False)
         assert built["ok"] and built["built"], built
         franka = stage.GetPrimAtPath("/World/FactoryCell/Franka")
-        assert abs(franka.GetAttribute("xformOp:rotateZ:facePickSpot").Get() + 80.5) < 0.1  # faces the pick spot
+        assert abs(abs(franka.GetAttribute("xformOp:rotateZ:facePickSpot").Get()) - 180) < 0.1  # faces the belt
         forward = UsdGeom.Xformable(franka).ComputeLocalToWorldTransform(0).TransformDir((1, 0, 0))
-        assert forward[1] < -0.9  # its +X now points at the belt's pick spot (toward -Y)
+        assert forward[0] < -0.9  # its +X points back along the belt at the pick spot
         belt = stage.GetPrimAtPath("/World/FactoryCell/Belt")
         assert belt.GetAttribute("physics:kinematicEnabled").Get() is True
         assert len(stage.GetPrimAtPath("/World/FactoryCell/Packages").GetChildren()) == 1  # one at a time

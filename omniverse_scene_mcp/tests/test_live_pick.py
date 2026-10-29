@@ -86,6 +86,13 @@ def test_live_pick_needs_play_and_warns_about_reach():
         assert lp.live_pick("/World/Franka", "/World/Cube", [0.3, 0.4, 0.05])["warnings"]
     finally:
         restore()
+    _, _, _, _, restore = _rig(positions={"/World/Cube": [0.6, 0, 0.03], "/World/Franka": [0, 0, 0]})
+    try:  # seen live: a 155 degree swing flung the package out; place it behind the arm and get warned
+        behind = lp.live_pick("/World/Franka", "/World/Cube", [-0.5, 0.1, 0.05])["warnings"]
+        beside = lp.live_pick("/World/Franka", "/World/Cube", [0.3, 0.4, 0.05])["warnings"]
+        assert any("swing" in w for w in behind) and not any("swing" in w for w in beside), (behind, beside)
+    finally:
+        restore()
     assert not lp.live_pick("/World/Franka", "/World/Cube", [0.3, 0.4, 0.05], pace=5)["ok"]
     assert features.FEATURES["robot_live_pick"].mutates and not features.FEATURES["robot_live_pick_status"].mutates
 

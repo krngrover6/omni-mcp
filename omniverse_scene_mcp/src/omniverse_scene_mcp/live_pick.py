@@ -123,12 +123,20 @@ def live_pick(robot_root: str, object_path: str, place_position: Any, pace: floa
     far = [label for label, point in (("object", start), ("place", place))
            if ((point[0] - base_pos[0]) ** 2 + (point[1] - base_pos[1]) ** 2) ** 0.5 > 0.8]
     crowd = _neighbours(object_path, start)
+    import math
+
+    to_place = math.atan2(place[1] - base_pos[1], place[0] - base_pos[0])
+    to_object = math.atan2(start[1] - base_pos[1], start[0] - base_pos[0])
+    turn = abs((math.degrees(to_place - to_object) + 180) % 360 - 180)  # how far the arm swings, 0-180 degrees
     plan = {**base, "ok": True, "timeline": state, "object_start": [round(v, 3) for v in start],
             "place_position": place,
             "warnings": [f"The {w} is more than 0.8 m from the arm's base: it may not reach." for w in far] + (
                 [f"Seen live: objects packed this close make the fingers land on them ({', '.join(crowd)} within "
                  f"{CROWD_RADIUS_M * 100:.0f} cm). Pick an object with room around it, or deliver one at a time."]
-                if crowd else []),
+                if crowd else []) + (
+                [f"Seen live: a {turn:.0f} degree swing from the object to the place flung the package out of the "
+                 "gripper. Put the place spot within about 90 degrees of the object, as seen from the arm's base."]
+                if turn > 90 else []),
             "phases": ["move above the object", "go down", "close the gripper", "lift", "carry to the place",
                        "go down", "open the gripper", "lift away"]}
     if base["dry_run"]:

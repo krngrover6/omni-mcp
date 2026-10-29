@@ -34,15 +34,18 @@ def _layout(origin: list[float], colours: list[str]) -> dict[str, Any]:
 
     import math
 
-    bins = {colour: at(0.45 + 0.45 * i, 1.15, 0.025) for i, colour in enumerate(colours)}
+    # The arm stands past the belt's end, facing back along it, with a bin on each side. Seen live: with the bin
+    # 155 degrees behind the pick spot, the fast half-turn flung the gripped package out of the fingers.
+    spots = [(0.95, 0.45), (0.95, -0.45), (1.3, 0.55), (1.3, -0.55)]
+    bins = {colour: at(spots[i][0], spots[i][1], 0.025) for i, colour in enumerate(colours)}
     # Face the pick spot (0.85, 0) from the base (0.75, 0.6). Seen live: with the package 76 degrees to the
     # arm's side the hand arrived tilted and never held it; a cube straight ahead was picked 5 mm from target.
-    facing = round(math.degrees(math.atan2(0.0 - 0.6, 0.85 - 0.75)), 1)
+    facing = round(math.degrees(math.atan2(0.0 - 0.0, 0.85 - 1.45)), 1)
     return {
         "belt": {"position": at(0.0, 0.0, 0.05), "size": [2.4, 0.4, 0.1]},
         "stopper": {"position": at(0.95, 0.0, 0.15), "size": [0.05, 0.4, 0.15]},
         "pick_spot": at(0.85, 0.0, 0.13),
-        "franka": at(0.75, 0.6, 0.0),
+        "franka": at(1.45, 0.0, 0.0),
         "franka_yaw": facing,
         "bins": bins,
         "camera": at(0.85, 0.0, 2.0),
