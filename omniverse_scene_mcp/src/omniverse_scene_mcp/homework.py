@@ -417,7 +417,6 @@ def _session6(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
 _REACH_M = 0.855       # Franka Panda reach from its base (pick_place.FRANKA_REACH_M); other arms are similar or more
 _GRIP_M = 0.08         # Franka gripper opening: anything wider cannot be grasped
 _SENSOR_TYPES = ("Camera", "IsaacContactSensor", "IsaacImuSensor", "OmniLidar", "IsaacRtxLidarSensorAPI")
-_CONTROL_NODES = ("IsaacArticulationController", "ScriptNode", "DifferentialController")
 
 
 def _world_box(prim: Any) -> tuple[Any, Any] | None:
@@ -526,15 +525,26 @@ def _session14(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
                      "or a contact sensor on the belt (class sessions 9 and 13).",
                      ["sensor_create a camera above the pick spot, or a contact sensor at the belt's end."]))
 
-    control = [str(prim.GetPath()) for prim, kind in nodes if kind.rsplit(".", 1)[-1] in _CONTROL_NODES]
+    # Seen live: the Jetbot's wheel controller and the colour sorter passed this check, though neither moves the arm.
+    def drives_arm(node: Any) -> bool:
+        aimed = list(_wired(node, "inputs:targetPrim"))
+        path = node.GetAttribute("inputs:robotPath")
+        if path and path.Get():
+            aimed.append(str(path.Get()))
+        return arm is not None and any(t == str(arm.GetPath()) or t.startswith(str(arm.GetPath()) + "/") for t in aimed)
+
+    controllers = [prim for prim, kind in nodes if kind.endswith("IsaacArticulationController")]
+    on_arm = [str(c.GetPath()) for c in controllers if drives_arm(c)]
+    scripts = [str(prim.GetPath()) for prim, kind in nodes if kind.endswith("ScriptNode")]
     rows.append(_row("control", "Logic that drives the arm", 3,
-                     "pass" if control else "partial" if nodes else "unknown",
-                     {"control_nodes": control[:6], "graph_nodes": len(nodes)},
-                     "Something must decide when to pick and move the joints: an Articulation Controller or Script "
-                     "Node in an Action Graph, or a Python script. Scripts are not stored in the scene, so without "
-                     "a graph this check says 'unknown'.",
+                     "pass" if on_arm else "partial" if scripts else "unknown",
+                     {"controllers_on_the_arm": on_arm[:6], "script_nodes": scripts[:6],
+                      "other_controllers": [str(c.GetPath()) for c in controllers if str(c.GetPath()) not in on_arm][:6]},
+                     "Something must decide when to pick and move the arm's joints: an Articulation Controller node "
+                     "whose Target Prim is the arm, or a Script Node / Python script. A script's code cannot be read "
+                     "from the scene, so a Script Node gives 'partial' and no graph gives 'unknown'.",
                      ["pick_place_script writes a pick-and-place script for the Franka; or add an Articulation "
-                      "Controller node wired to the arm."]))
+                      "Controller node and set its Target Prim to the arm."]))
 
     scene = [p for p in prims if p.IsA(UsdPhysics.Scene)]
     rows.append(_row("physics", "Physics is on (a Physics Scene)", 1, "pass" if scene else "fail",

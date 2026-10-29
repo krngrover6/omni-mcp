@@ -101,3 +101,29 @@ def test_camera_must_really_look_at_the_object():
     assert looking["done"] and looking["evidence"]["cameras"][0]["distance_m"] == 3.0, looking
     UsdGeom.XformCommonAPI(camera).SetTranslate(Gf.Vec3d(0.5, 0, 0.5))  # too close
     assert not lc.challenge_check(stage, f"camera_on:{box}")["done"]
+
+
+def test_flexible_pins_are_read_from_omnigraph_when_usd_has_no_value():
+    # Seen live: Write Variable's Value is a flexible pin; in Kit its number lives in OmniGraph, USD shows nothing.
+    import sys
+    import types
+    stage = _cell()
+    stage.GetPrimAtPath("/World/Graph/Go").GetAttribute("inputs:value").Clear()
+    assert lc.challenge_check(stage, "drive_speed:0.15")["evidence"]["linear_writes"] == [["/World/Graph/Go", None]] \
+        or lc.challenge_check(stage, "drive_speed:0.15")["evidence"]["linear_writes"] == [("/World/Graph/Go", None)]
+    live = {"/World/Graph/Go.inputs:value": 0.15}
+    controller = types.SimpleNamespace(attribute=lambda path: path, get=lambda path: live[path])
+    og = types.ModuleType("omni.graph.core")
+    og.Controller = controller
+    omni, graph = types.ModuleType("omni"), types.ModuleType("omni.graph")
+    omni.graph, graph.core = graph, og
+    saved = {name: sys.modules.get(name) for name in ("omni", "omni.graph", "omni.graph.core")}
+    sys.modules.update({"omni": omni, "omni.graph": graph, "omni.graph.core": og})
+    try:
+        assert lc.challenge_check(stage, "drive_speed:0.15")["done"]
+    finally:
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module

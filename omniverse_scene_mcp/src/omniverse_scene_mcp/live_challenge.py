@@ -49,7 +49,18 @@ def _nodes(prims: list[Any], suffix: str) -> list[Any]:
 
 def _value(prim: Any, name: str) -> Any:
     attribute = prim.GetAttribute(name)
-    return attribute.Get() if attribute and attribute.HasValue() else None
+    if attribute and attribute.HasValue():
+        return attribute.Get()
+    # Seen live: flexible pins (Write Variable's Value, Compare's B) keep their value in OmniGraph, not in USD.
+    if prim.GetTypeName() not in ("OmniGraphNode", "ComputeNode"):
+        return None
+    try:
+        import omni.graph.core as og
+
+        value = og.Controller.get(og.Controller.attribute(f"{prim.GetPath()}.{name}"))
+    except Exception:  # noqa: BLE001 - outside Kit, or the pin does not exist
+        return None
+    return value.tolist() if hasattr(value, "tolist") else value
 
 
 def _close(a: Any, b: float, tolerance: float = 0.011) -> bool:

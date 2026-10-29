@@ -271,10 +271,15 @@ def test_session14_factory_cell_from_a_lone_arm_to_a_full_cell():
     far_bin = _body(stage, "/World/Bin", (2.0, 0, 0.1), rigid=False)
     half = _status(hw.check_homework(stage, 14))
     assert half["gripper"] == "pass" and half["conveyor"] == "pass" and half["physics"] == "pass", half
-    assert half["package"] == "partial" and half["place_target"] == "partial" and half["control"] == "partial", half
+    assert half["package"] == "partial" and half["place_target"] == "partial" and half["control"] == "unknown", half
     UsdGeom.XformCommonAPI(big).SetScale(Gf.Vec3f(0.025, 0.025, 0.025))  # 5 cm
     UsdGeom.XformCommonAPI(far_bin).SetTranslate(Gf.Vec3d(0, 0.6, 0.1))
     UsdGeom.Camera.Define(stage, "/World/TopCam")
-    _node(stage, "/World/Graph/Arm", "isaacsim.core.nodes.IsaacArticulationController")
+    wheels = _node(stage, "/World/Graph/Wheels", "isaacsim.core.nodes.IsaacArticulationController")
+    wheels.CreateRelationship("inputs:targetPrim").SetTargets(["/World/Jetbot"])  # drives something else
+    _node(stage, "/World/Graph/Sorter", "omni.graph.scriptnode.ScriptNode")
+    assert _status(hw.check_homework(stage, 14))["control"] == "partial"  # a script might, a wheel controller doesn't
+    arm_node = _node(stage, "/World/Graph/ArmControl", "isaacsim.core.nodes.IsaacArticulationController")
+    arm_node.CreateRelationship("inputs:targetPrim").SetTargets(["/World/Arm"])
     full = hw.check_homework(stage, 14)
     assert full["passed"] and set(_status(full).values()) == {"pass"}, _status(full)
