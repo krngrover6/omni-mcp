@@ -41,8 +41,11 @@ def test_each_frame_varies_inside_the_limits_and_restore_puts_everything_back():
     assert [round(v, 3) for v in world] == list(frames[-1][0]["position"])  # the change really shows
     assert 200 <= stage.GetPrimAtPath("/World/Dome").GetAttribute("inputs:intensity").Get() <= 3000
     assert stage.GetRootLayer().ExportToString() == root_before  # the file's layer is never touched
+    # Seen live: PhysX wrote a frame's pose into the file's layer (the edit target) while Replicator stepped.
+    stage.GetPrimAtPath("/World/Box_1").GetAttribute("xformOp:translate").Set(Gf.Vec3d(9, 9, 9))
     assert randomizer.restore() > 0
     assert stage.GetSessionLayer().ExportToString() == session_before, stage.GetSessionLayer().ExportToString()
+    assert stage.GetRootLayer().ExportToString() == root_before  # the physics-written pose was put back too
     assert UsdGeom.Xformable(box).ComputeLocalToWorldTransform(0).ExtractTranslation() == Gf.Vec3d(0, 0, 0.5)
     again = dr.Randomizer(_stage(), dr.validate(SPEC), seed=7)
     assert [again.apply() for _ in range(5)] == frames  # same seed, same sequence

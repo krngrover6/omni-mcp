@@ -91,6 +91,10 @@ class Randomizer:
         self.layer = stage.GetSessionLayer()
         self._saved: dict[str, Any] = {}  # attribute path -> (existed, had value, value) before we touched it
         self._new_prims: set[str] = set()  # session-layer prim specs that did not exist before
+        # Seen live: while Replicator stepped, PhysX wrote rigid bodies' poses into the EDIT TARGET (the file's
+        # layer), so restoring the session layer alone left the packages at a random spot. Keep those values too.
+        self.target = stage.GetEditTarget().GetLayer()
+        self._target_saved: dict[str, Any] = {}
         self.warnings: list[str] = []
         self.plan: list[tuple[Any, str]] = []
         for path in spec["prims"]:
@@ -127,6 +131,10 @@ class Randomizer:
             spec = self.layer.GetAttributeAtPath(attribute.GetPath())
             self._saved[key] = (spec is not None, spec is not None and spec.HasDefaultValue(),
                                 spec.default if spec else None)
+            if self.target is not None and self.target != self.layer:
+                spec_t = self.target.GetAttributeAtPath(attribute.GetPath())
+                self._target_saved[key] = (spec_t is not None and spec_t.HasDefaultValue(),
+                                           spec_t.default if spec_t is not None else None)
             prim_path = attribute.GetPath().GetPrimPath()
             while prim_path != Sdf.Path.absoluteRootPath and not self.layer.GetPrimAtPath(prim_path):
                 self._new_prims.add(str(prim_path))
@@ -189,6 +197,16 @@ class Randomizer:
                 edit = Sdf.BatchNamespaceEdit()
                 edit.Add(Sdf.NamespaceEdit.Remove(Sdf.Path(prim_path)))
                 self.layer.Apply(edit)
+        for key, (had_value, old) in self._target_saved.items():
+            spec = self.target.GetAttributeAtPath(Sdf.Path(key))
+            if spec is None:
+                continue
+            now = spec.default if spec.HasDefaultValue() else None
+            if had_value and now != old:
+                spec.default = old  # physics wrote a frame's pose here: put the file's value back
+            elif not had_value and spec.HasDefaultValue():
+                spec.ClearDefaultValue()
         self._saved.clear()
         self._new_prims.clear()
+        self._target_saved.clear()
         return count
