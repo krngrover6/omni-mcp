@@ -657,6 +657,7 @@ def build_report(
     screenshots: Any = (),
     decisions: Any = (),
     title: str | None = None,
+    achievements: Any = (),
 ) -> dict[str, Any]:
     """A portfolio report from other tools' results. Read-only (reads PROJECT_CONTEXT.md at most).
 
@@ -691,6 +692,12 @@ def build_report(
                   _assignment_section(assignment), _journal_section(journal_summary)):
         if built is not None:
             sections.append(built)
+
+    proved = [_text(item, 300) for item in list(achievements or [])[:20] if _text(item, 300)]
+    if proved:
+        evidence = _Section("achievements", "What I built and proved")
+        evidence.add("list", proved)
+        sections.append(evidence)
 
     if isinstance(screenshots, (str, os.PathLike, Mapping)):
         screenshots = [screenshots]
@@ -806,3 +813,46 @@ def write_report(
         return refuse(f"Could not write the report: {_text(exc, 200)}", files)
     return {"ok": True, "dry_run": False, "folder": str(folder), "files": files, "written": written,
             "message": f"Wrote {', '.join(REPORT_FILES)} in {folder}. Open report.html in a browser to see it."}
+
+
+def collect_achievements(project_dir: str | os.PathLike[str] | None, workspace: str | os.PathLike[str]) -> list[str]:
+    """Evidence for the report, read from disk (read-only): datasets made (frames, randomized or not), trained
+    colour models and their tested accuracy, and robot motion recordings."""
+    import json as _json
+
+    found: list[str] = []
+    folder = Path(project_dir) if project_dir else None
+    if folder is not None and folder.is_dir():
+        for sub in sorted(p for p in folder.iterdir() if p.is_dir())[:200]:
+            frames = len(list(sub.glob("rgb_*.png")))
+            if frames:
+                manifest = sub / "dataset_manifest.json"
+                randomized = False
+                try:
+                    randomized = bool(_json.loads(manifest.read_text(encoding="utf-8")).get("randomize"))
+                except (OSError, ValueError, AttributeError):
+                    pass
+                found.append(f"Synthetic dataset {sub.name}: {frames} rendered frame(s)"
+                             + (", with domain randomization (positions, colours, lighting)" if randomized else ""))
+            model = sub / "colour_model.json"
+            if model.is_file():
+                try:
+                    data = _json.loads(model.read_text(encoding="utf-8"))
+                    found.append(f"Trained a colour classifier ({', '.join(sorted(data.get('centroids', {})))}) on "
+                                 f"{sub.name}: {data.get('test_accuracy_pct')}% on held-out frames")
+                except (OSError, ValueError, AttributeError):
+                    pass
+    recordings = Path(workspace) / "isaac_study" / "recordings"
+    files = sorted(recordings.glob("*.json")) if recordings.is_dir() else []
+    if files:
+        longest, robots = 0.0, set()
+        for path in files[:200]:
+            try:
+                data = _json.loads(path.read_text(encoding="utf-8"))
+                longest = max(longest, float(data["samples"][-1]["t"]))
+                robots.add(str(data.get("robot_root")))
+            except (OSError, ValueError, KeyError, IndexError, TypeError):
+                continue
+        found.append(f"Recorded {len(files)} robot motion run(s) of {', '.join(sorted(robots)) or 'robots'} "
+                     f"(longest {longest:.0f} s) for replay and comparison")
+    return found

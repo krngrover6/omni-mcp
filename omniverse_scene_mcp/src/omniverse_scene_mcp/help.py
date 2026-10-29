@@ -39,6 +39,7 @@ CHANGES_STATE = frozenset({
     "python_trial_run",  # runs the learner's code (in a sandbox), so it must not claim to be read-only
     "robot_record_stop", "robot_replay_stop",  # save a recording file / stop a running replay
     "robot_live_pick_stop",
+    "data_link_stop",
 })
 
 
@@ -340,6 +341,8 @@ TOOL_CATALOG: dict[str, list[dict[str, Any]]] = {
               'learning_drill_status(drill_id="drill-20261022T190000Z-ab12cd")', False, False),
         _tool("learning_today", "What should I do today? A time-boxed study plan from your saved progress; read-only.",
               "learning_today(minutes=60)", False, False),
+        _tool("learning_class_quiz", "Fill-in-the-blank quiz from your class recording's own sentences.", "learning_class_quiz(session=6)", False, False),
+        _tool("learning_class_quiz_answer", "Grade a class quiz answer and save it to your progress.", 'learning_class_quiz_answer(question_id="class:6:250:camera", choice="A")', True, False),
         _tool("learning_exam_mistakes", "Mistake notebook: each wrong answer, the right one and why, to revise from.", "learning_exam_mistakes()", False, False),
         _tool("learning_exam_week", "Exam week day by day (mocks, reviews, weak-domain drills) plus readiness.", "learning_exam_week(days=7)", False, False),
         _tool("learning_isaac_lab", "Hands-on Isaac Sim lab for an exam objective: concept, tool steps, what to see.", 'learning_isaac_lab(objective_id="1.8")', False, False),

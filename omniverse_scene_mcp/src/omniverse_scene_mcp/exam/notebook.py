@@ -66,6 +66,13 @@ def _entry(question: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, An
     }
 
 
+def _meaning(built: dict[str, Any]) -> str:
+    from .. import session_lessons as sl
+
+    term = built["_term"]
+    return f"{term}: {sl._TERMS[term][1]} (the teacher said: {sl.clean_text(built['_sentence'])})"
+
+
 def mistake_notebook(store: Any = None, include_fixed: bool = True, domain: str | None = None,
                      limit: int = 20) -> dict[str, Any]:
     """Read-only: your exam mistakes to revise from, still-wrong first (most often missed first), then fixed ones.
@@ -85,6 +92,16 @@ def mistake_notebook(store: Any = None, include_fixed: bool = True, domain: str 
     entries = []
     for qid, rows in rows_by_question.items():
         question = questions.get(qid)
+        if question is None and qid.startswith("class:"):  # a class quiz question: rebuilt from its transcript
+            from .class_quiz import rebuild
+
+            built = rebuild(qid)
+            question = built and {"id": qid, "domain": f"Class session {built['session']}", "stem": built["question"],
+                                  "options": [o.split(". ", 1)[1] for o in built["options"]],
+                                  "answer": [built["_answer"]], "objective_ids": [],
+                                  "explanations": [_meaning(built) if i == built["_answer"] else ""
+                                                   for i in range(len(built["options"]))],
+                                  "citations": [f"Rewatch the class at {built['rewatch_at']}"]}
         if question is None or all(r.get("is_correct") is True for r in rows):
             continue  # not a bank question (e.g. a practice exercise), or never wrong
         if domain and str(question.get("domain", "")).lower() != domain.lower():

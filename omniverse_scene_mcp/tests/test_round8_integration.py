@@ -189,7 +189,7 @@ def _corpus():
 def test_round8_tools_are_registered_with_safe_defaults_and_catalogued():
     with _server() as call:
         tools = {tool.name: tool for tool in call.app._tool_manager.list_tools()}
-        assert NEW_TOOLS <= set(tools) and len(NEW_TOOLS) == 26 and len(tools) == 167 + len(__import__("omniverse_scene_mcp.features", fromlist=["FEATURES"]).FEATURES), len(tools)
+        assert NEW_TOOLS <= set(tools) and len(NEW_TOOLS) == 26 and len(tools) == 169 + len(__import__("omniverse_scene_mcp.features", fromlist=["FEATURES"]).FEATURES), len(tools)
         for name in (*LAYER_WRITE_TOOLS, *CHECKPOINT_WRITE_TOOLS, "project_create"):
             assert tools[name].parameters["properties"]["dry_run"]["default"] is True, name
             description = " ".join(tools[name].description.split())

@@ -482,6 +482,16 @@ def _session14(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
                 if arm is not None else None)
     packages = [p for p in _named(prims, "package", "box", "cube", "cargo", "parcel")
                 if _rigid(p) and (arm is None or not under(p, arm)) and p.GetPath() not in belt_paths]
+    belt_boxes = [b for b in (_world_box(belt) for belt in belts) if b is not None]
+
+    def belt_reach(centre: Any) -> float | None:
+        """A package lying on a belt arrives within reach if the belt passes close enough to the arm."""
+        for low, high in belt_boxes:
+            if low[0] <= centre[0] <= high[0] and low[1] <= centre[1] <= high[1] and base_pos is not None:
+                nearest = (min(max(base_pos[0], low[0]), high[0]), min(max(base_pos[1], low[1]), high[1]))
+                return round(_flat_distance(nearest, base_pos, metres), 3)
+        return None
+
     measured = []
     for package in packages[:20]:
         box = _world_box(package)
@@ -489,17 +499,23 @@ def _session14(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
             continue
         low, high = box
         centre = (low + high) / 2
-        measured.append({"prim": str(package.GetPath()),
-                         "width_m": round(min(high[0] - low[0], high[1] - low[1]) * metres, 3),
-                         "distance_m": None if base_pos is None else round(_flat_distance(centre, base_pos, metres), 3),
-                         "collider": _collider(package)})
-    good = [m for m in measured if m["collider"] and m["width_m"] <= _GRIP_M and
-            m["distance_m"] is not None and m["distance_m"] <= _REACH_M]
+        row = {"prim": str(package.GetPath()),
+               "width_m": round(min(high[0] - low[0], high[1] - low[1]) * metres, 3),
+               "distance_m": None if base_pos is None else round(_flat_distance(centre, base_pos, metres), 3),
+               "collider": _collider(package)}
+        arrives = belt_reach(centre)
+        if arrives is not None:
+            row["belt_brings_it_to_m"] = arrives
+        measured.append(row)
+    good = [m for m in measured if m["collider"] and m["width_m"] <= _GRIP_M and (
+        (m["distance_m"] is not None and m["distance_m"] <= _REACH_M) or
+        m.get("belt_brings_it_to_m", _REACH_M + 1) <= _REACH_M)]
     rows.append(_row("package", "A package the arm can grab", 3,
                      "pass" if good else "partial" if measured else "fail",
                      {"packages": measured[:6], "gripper_opening_m": _GRIP_M, "reach_m": _REACH_M},
                      "The gripper opens about 8 cm and the arm reaches about 85 cm from its base, so the package "
-                     "must be narrower than that, a rigid body with a collider, and close enough.",
+                     "must be narrower than that, a rigid body with a collider, and close enough (or lie on a belt "
+                     "that carries it within reach).",
                      ["Make the package about 5 cm wide (scene_spawn_packages size_range=[0.04, 0.06]) and bring the "
                       "belt's pick spot within 0.85 m of the arm; pick_readiness checks it in detail."]))
 

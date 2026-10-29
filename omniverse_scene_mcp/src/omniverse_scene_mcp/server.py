@@ -2297,6 +2297,23 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         areas, Python practice), your streak and a catch-up hint. Nothing is written."""
         return exam_reminder.today_brief(_brief_store(), minutes=minutes)
 
+    @app.tool(name="learning_class_quiz")
+    def learning_class_quiz(session: int, count: int = 5, seed: int | None = None) -> dict:
+        """Read-only: fill-in-the-blank questions made from your teacher's own sentences in a class session's
+        transcript (.srt in Downloads), four choices each, with the time to rewatch. Answer with
+        learning_class_quiz_answer."""
+        from .exam import class_quiz
+
+        return class_quiz.class_quiz(session, count=count, seed=seed)
+
+    @app.tool(name="learning_class_quiz_answer")
+    def learning_class_quiz_answer(question_id: str, choice: str) -> dict:
+        """Grade one class quiz answer (A-D), show the term's meaning and the teacher's sentence, and save it to
+        your exam progress (wrong ones come back in reviews and the mistake notebook)."""
+        from .exam import class_quiz
+
+        return class_quiz.class_quiz_answer(question_id, choice, progress_store)
+
     @app.tool(name="learning_exam_mistakes")
     def learning_exam_mistakes(include_fixed: bool = True, domain: str | None = None, limit: int = 20) -> dict:
         """Read-only: your mistake notebook. Every exam question you got wrong, still-wrong first: the question, what
@@ -3034,9 +3051,11 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         except ValueError as exc:
             journal_summary = None
             gathered["journal"] = f"not available: {exc}"
+        achievements = project_report_module.collect_achievements(folder, _workspace_root())
+        gathered["achievements"] = f"{len(achievements)} found"
         report = project_report_module.build_report(
             project_dir=folder, tour=tour, health=health, assignment=assignment, journal_summary=journal_summary,
-            title=title,
+            title=title, achievements=achievements,
         )
         payload: dict[str, Any] = {**report, "action": "project_report", "project_dir": str(folder) if folder else None,
                                    "gathered": gathered, "written": []}

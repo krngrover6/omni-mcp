@@ -127,6 +127,13 @@ _add("motion_recorder", "robot_compare_motion:compare_motion robot_recordings:li
 _add("colour_model", "sdg_train_colour_model:train_colour_model", "local", "Robots", "sdg_train_colour_model")
 _add("live_pick", "robot_live_pick:live_pick", "kit", "Robots", "robot_live_pick")
 _add("live_pick", "robot_live_pick_status:live_pick_status robot_live_pick_stop:live_pick_stop", "kit", "Robots")
+_add("factory_cell", "scene_build_factory_cell:build_cell", "stage", "Scene: change safely", "scene_build_factory_cell")
+_add("data_link", "data_link_preview:preview_source", "local", "Live insight")
+_add("data_link", "data_link_start:start_link", "kit", "Live insight", "data_link_start")
+_add("data_link", "data_link_status:link_status data_link_stop:stop_link", "kit", "Live insight")
+_add("usd_bughunt", "usd_bug_list:list_puzzles usd_bug_verify:verify_puzzle usd_bug_answer:check_answer", "local",
+     "Learning Python & homework")
+_add("usd_bughunt", "usd_bug_make:make_puzzle", "local", "Learning Python & homework", "usd_bug_make")
 _add("live_challenge", "live_challenge_start:challenge_start live_challenge_check:challenge_check", "stage",
      "Learning Python & homework")
 _add("exam.python_practice", "python_trial_run:trial_run", "local", "Learning Python & homework")
