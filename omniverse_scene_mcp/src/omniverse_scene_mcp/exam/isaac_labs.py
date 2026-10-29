@@ -31,13 +31,104 @@ def _edit(tool: str, arguments: dict[str, Any], look: str, say: str = "") -> dic
     return {"kind": "edit", "say": say, "tool": tool, "arguments": arguments, "look": look}
 
 
+def _ui(say: str, look: str) -> dict[str, Any]:
+    """Something the learner does by hand in Isaac Sim (no tool call): a click, a drag, finding a panel."""
+    return {"kind": "ui", "say": say, "tool": None, "arguments": {}, "look": look}
+
+
+# Taught before any exam objective: the learner may know nothing about Isaac Sim or USD yet.
+FOUNDATIONS = ("basics_isaac", "basics_usd")
+
+
 def _labs() -> dict[str, dict[str, Any]]:
     props = f"{_assets()}/Props/Blocks"
     franka = f"{_assets()}/Robots/FrankaRobotics/FrankaPanda/franka.usd"
     return {
+        "basics_isaac": {
+            "title": "Lesson 0a: finding your way around Isaac Sim",
+            "objectives": [],
+            "words": {
+                "viewport": "the big 3D window in the middle where you see the scene, like a camera you can move",
+                "Stage panel": "the list (top right) of everything in the scene, shown as a tree of folders",
+                "Property panel": "the panel (bottom right) showing the settings of whatever you selected",
+                "select": "click a thing (in the viewport or the Stage panel) so the app knows you mean it",
+                "Play / Stop": "the buttons on the toolbar at the left edge of the viewport that start and reset physics",
+            },
+            "concept": (
+                "Isaac Sim is a program for building 3D worlds where robots can be tested before they exist in real "
+                "life. Its screen has three areas you will use every day: the viewport in the middle (your camera "
+                "into the world), the Stage panel at the top right (the list of everything in the world) and the "
+                "Property panel at the bottom right (the settings of the thing you clicked). You change what you "
+                "see in the viewport by moving the camera, not the objects."),
+            "steps": [
+                _ui("Look at the middle of the screen: that is the viewport. You should see a grey grid (the ground).",
+                    "A grid and probably nothing else: a new scene is empty."),
+                _ui("Move the camera: hold Alt and drag with the LEFT mouse button to orbit around; drag with the "
+                    "MIDDLE button (press the wheel) to slide sideways; roll the wheel to zoom in and out.",
+                    "The grid turns, slides and gets bigger or smaller. The world did not move, your camera did."),
+                _ui("Find the Stage panel at the top right. Click the small arrow next to World to open it.",
+                    "A tree: World and whatever is inside it (maybe a ground or a light)."),
+                _ui("Find the Property panel at the bottom right. Click World in the Stage panel.",
+                    "The Property panel fills with World's settings (Transform: Translate, Rotate, Scale)."),
+                _read("scene_summary", {},
+                      "I read the same scene from my side: stage_name should end with isaac_study/study.usda.",
+                      "Check that Isaac and I are looking at the same file."),
+                _read("scene_children", {"path": "/World"},
+                      "The same children you saw under World in the Stage panel.",
+                      "Ask the scene what is inside World."),
+            ],
+            "try_yourself": "Without help: orbit the camera all the way round, then select World and press F. "
+                            "What does F do?",
+        },
+        "basics_usd": {
+            "title": "Lesson 0b: what a USD scene is made of (stage, prim, path, attribute)",
+            "objectives": [],
+            "words": {
+                "USD": "Universal Scene Description: the file format and language Isaac Sim uses to describe a 3D "
+                       "world, like a recipe for the whole scene",
+                "stage": "the whole scene you have open right now (everything in the Stage panel)",
+                "prim": "one thing in the scene: a cube, a light, a robot part, or a folder (Xform) holding others",
+                "path": "a prim's address, like a folder path: /World/Basics/MyCube",
+                "attribute": "one setting of a prim with a value, e.g. a cube's size = 2",
+                "Xform": "a prim that is just a container you can move; like a folder that also has a position",
+                "layer / .usda file": "the file the stage is saved in; .usda is readable text you can open in Notepad",
+            },
+            "concept": (
+                "A USD scene (the stage) is a tree of prims, like folders and files on your computer. Every prim has "
+                "an address called a path, starting at / (for example /World/Basics/MyCube). Each prim has "
+                "attributes: named settings with values, like size = 2 or a position. Everything you see in Isaac "
+                "Sim is just prims and attribute values; when you change a value, the scene changes. When you save, "
+                "all of it is written into a .usda text file you can read."),
+            "steps": [
+                _edit("scene_create", {"path": "/World/Basics", "type_name": "Xform"},
+                      "A new folder-like prim Basics appears under World in the Stage panel.",
+                      "Make a container prim (an Xform)."),
+                _edit("scene_create", {"path": "/World/Basics/MyCube", "type_name": "Cube"},
+                      "A grey cube appears in the viewport, and MyCube appears inside Basics in the Stage panel.",
+                      "Make a cube inside it. Its path is /World/Basics/MyCube."),
+                _read("scene_select", {"paths": ["/World/Basics/MyCube"]},
+                      "MyCube is highlighted in the Stage panel, and the Property panel shows its settings.",
+                      "Select it, so Isaac shows its attributes (selecting changes nothing in the scene)."),
+                _read("scene_properties", {"prim_path": "/World/Basics/MyCube"},
+                      "The cube's attributes: size is 2 (the default, nobody wrote it yet), visibility, and more.",
+                      "List the cube's attributes from my side."),
+                _edit("scene_set_attribute", {"path": "/World/Basics/MyCube", "name": "size", "value": 0.5},
+                      "The cube shrinks to a quarter of its size. In the Property panel, Size now reads 0.5.",
+                      "Change one attribute: size."),
+                _edit("scene_move", {"path": "/World/Basics/MyCube", "translation": [0, 0, 1]},
+                      "The cube lifts 1 m up. In the Property panel, Translate Z reads 1.",
+                      "Change its position (the translate attribute)."),
+                _ui("Now you: in the Property panel, find Translate and type 2 into the X box, then press Enter.",
+                    "The cube jumps 2 m sideways. You just changed an attribute by hand, exactly like I did."),
+                _read("scene_inspect", {"path": "/World/Basics/MyCube"},
+                      "My read now shows translation x = 2: we both see the same stage."),
+            ],
+            "try_yourself": "Say MyCube's path out loud, then name two of its attributes and their values.",
+        },
         "surprising_renders": {
             "title": "Why did it vanish? Visibility, purpose and stale extents",
             "objectives": ["5.5", "6.4", "5.6"],
+            "words": {'visibility': 'a setting that hides or shows a prim (and everything inside it)', 'purpose': 'who a prim is for: default (everyone), render, proxy (a fast stand-in) or guide (helper drawings)', 'extent': 'the box a shape says it fits inside; programs use it to frame and skip things'},
             "concept": (
                 "Sometimes a prim is in the scene but you can't see it, or it looks wrong. The usual reasons: "
                 "visibility='invisible' hides it (and everything under it); purpose='guide' or 'proxy' means 'only "
@@ -75,6 +166,7 @@ def _labs() -> dict[str, dict[str, Any]]:
         "value_ignored": {
             "title": "Why is my value ignored? Layers, strength and the edit target",
             "objectives": ["1.1", "1.8", "6.2", "1.5"],
+            "words": {'layer': 'one file (sheet) of settings', 'sublayer': 'another layer stacked under yours; it is weaker', 'opinion': 'a value one layer writes for an attribute', 'edit target': 'the layer your next change is written into'},
             "concept": (
                 "A USD scene is a stack of transparent sheets (layers). Each sheet can write an 'opinion' for a value. "
                 "When two sheets disagree, the sheet higher in the stack wins. The root layer (your study.usda) sits "
@@ -109,6 +201,7 @@ def _labs() -> dict[str, dict[str, Any]]:
         "arcs": {
             "title": "Sublayer, reference or payload?",
             "objectives": ["1.3", "1.6"],
+            "words": {'reference': 'pull one asset file into one prim, like a sticker of a ready-made model', 'payload': 'a reference you can unload to save memory', 'composition arc': 'any way USD pulls in content from elsewhere (sublayer, reference, payload, variant...)'},
             "concept": (
                 "A sublayer adds a whole sheet to your stack (good for departments: layout, lighting). A reference "
                 "pulls one asset into one prim, like placing a sticker of a ready-made model (good for props you "
@@ -137,6 +230,7 @@ def _labs() -> dict[str, dict[str, Any]]:
         "instancing": {
             "title": "Instancing: many copies, one prototype",
             "objectives": ["1.2", "2.4", "2.2", "1.10"],
+            "words": {'instance': 'a copy that shares its insides with other copies instead of owning them', 'prototype': 'the one shared original that instances point at', 'instance proxy': 'a read-only view of a part inside an instance'},
             "concept": (
                 "If a warehouse has 1,000 identical boxes, storing 1,000 full copies wastes memory. Instancing keeps "
                 "ONE shared prototype and lets each box point at it, like 1,000 shortcuts to one file. You mark a "
@@ -166,6 +260,7 @@ def _labs() -> dict[str, dict[str, Any]]:
         "variants": {
             "title": "Variant sets: one asset, switchable versions",
             "objectives": ["1.7", "1.6"],
+            "words": {'variant set': 'a menu of versions on one asset', 'variant': 'one item in that menu', 'selection': 'which item is picked right now'},
             "concept": (
                 "A variant set is a menu on an asset: pick one item and the asset changes, without copying files. "
                 "The Franka robot has a 'Gripper' menu: Default, None, Robotiq_2F_85 and AlternateFinger. Your "
@@ -193,6 +288,7 @@ def _labs() -> dict[str, dict[str, Any]]:
         "primvars": {
             "title": "Primvars: colour data on a mesh",
             "objectives": ["5.1", "8.1"],
+            "words": {'primvar': 'extra data painted on a shape that renderers can read, like colour', 'interpolation': 'how many values a primvar has and how they spread over the shape', 'displayColor': 'the simple built-in colour primvar'},
             "concept": (
                 "A primvar is extra data painted onto geometry that renderers can read, like displayColor. Its "
                 "interpolation says how many values there are and where they go: constant = one value for the whole "
@@ -217,6 +313,7 @@ def _labs() -> dict[str, dict[str, Any]]:
         "materials": {
             "title": "Materials and binding",
             "objectives": ["8.2", "8.3"],
+            "words": {'material': 'a recipe for how a surface looks', 'UsdPreviewSurface': 'the simple material recipe every USD viewer understands', 'binding': 'the link that says which material a prim uses'},
             "concept": (
                 "A material is a recipe for how a surface looks; UsdPreviewSurface is the simple recipe every viewer "
                 "understands (colour, roughness, metallic...). Binding connects a material to a prim. A child's own "
@@ -243,6 +340,7 @@ def _labs() -> dict[str, dict[str, Any]]:
         "attributes": {
             "title": "Attributes: types, authored values and fallbacks",
             "objectives": ["5.4", "5.2"],
+            "words": {'type': 'what kind of value an attribute holds (number, text, colour...)', 'fallback': 'the built-in value USD reports when nobody wrote one', 'authored': 'actually written by some layer', 'token': 'a value from a fixed list of choices'},
             "concept": (
                 "Every attribute has a type (double, float, token, string, color3f, arrays...). If nobody authored a "
                 "value, USD returns the schema's fallback: a Cube's size is 2 even though no file says so. "
@@ -283,7 +381,9 @@ def list_labs() -> dict[str, Any]:
     labs = _labs()
     return {"ok": True, "labs": [{"id": key, "title": lab["title"], "objectives": lab["objectives"],
                                   "steps": len(lab["steps"])} for key, lab in labs.items()],
-            "study_stage": f"{STUDY_FOLDER}/{STUDY_STAGE}"}
+            "study_stage": f"{STUDY_FOLDER}/{STUDY_STAGE}",
+            "start_here": list(FOUNDATIONS),
+            "note": "Beginners do the foundation labs (start_here) first, before any exam objective."}
 
 
 def lab(objective_id: str | None = None, lab_id: str | None = None) -> dict[str, Any]:
@@ -320,11 +420,14 @@ def lab(objective_id: str | None = None, lab_id: str | None = None) -> dict[str,
             "the group first (scene_safe_edit with scene_delete).",
         ],
         "how_to_run": [
+            "The learner may know nothing yet: teach every entry of 'words' (plain meaning plus an everyday example) "
+            "before the concept, and explain every click (which menu or panel, where on screen).",
             "Teach the concept first in plain words; ask the learner to say it back in one sentence.",
             "Do the steps in order, ONE at a time. Before each, say what we are about to do and predict what will "
             "happen; after it, ask the learner what they see in Isaac Sim, then compare with 'look'.",
             "kind 'read': call the tool directly. kind 'edit': scene_safe_edit(tool=..., arguments=...), show the "
-            "preview, wait for yes, then call again with confirm=<code>.",
+            "preview, wait for yes, then call again with confirm=<code>. kind 'ui': the learner does it by hand in "
+            "Isaac Sim; wait until they say what they see.",
             "End with 'try_yourself', then the day's quiz.",
         ],
     }

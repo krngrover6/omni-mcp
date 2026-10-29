@@ -40,6 +40,9 @@ PROMPTS: dict[str, dict[str, Any]] = {
             "one sentence each.",
             "Check Isaac: scene_summary. stage_name must end with isaac_study/study.usda; if not, ask the learner to "
             "do File > New, then File > Save As to C:/Users/krngr/Omniverse/isaac_study/study.usda, and wait.",
+            "The learner may know NOTHING yet. Ask whether they have done Lesson 0. If not (or unsure), first run "
+            "learning_isaac_lab(lab_id='basics_isaac') then learning_isaac_lab(lab_id='basics_usd'), fully, before "
+            "any exam objective. Always teach every word in a lab's 'words' and explain every click in Isaac.",
             "For EACH block, one at a time: (a) teach the concept in very simple words with an everyday analogy, "
             "using the block's explanation and docs; ask the learner to say it back in one sentence. (b) Call "
             "learning_isaac_lab(objective_id=<the block's objective id>). Teach its concept, then do its steps one "

@@ -12,8 +12,12 @@ def test_every_lab_step_names_a_real_tool_with_real_arguments_and_edits_have_pre
     with _server() as call:
         tools = {tool.name: tool.parameters for tool in call.app._tool_manager.list_tools()}
     for lab_id, lab in labs.items():
-        assert lab["concept"] and lab["steps"] and lab["objectives"] and lab["try_yourself"], lab_id
+        assert lab["concept"] and lab["steps"] and lab["try_yourself"] and lab["words"], lab_id
+        assert lab["objectives"] or lab_id in isaac_labs.FOUNDATIONS, lab_id
         for step in lab["steps"]:
+            if step["kind"] == "ui":
+                assert step["tool"] is None and step["say"] and step["look"], (lab_id, step)
+                continue
             schema = tools.get(step["tool"])
             assert schema is not None, (lab_id, step["tool"])
             problem = unknown_arguments(SimpleNamespace(name=step["tool"], parameters=schema), step["arguments"])
@@ -33,6 +37,8 @@ def test_lab_lookup_by_objective_lab_id_and_code_only_objectives():
     code_only = isaac_labs.lab(objective_id="3.5")
     assert code_only["ok"] and code_only["lab"] is None and "resolver" in code_only["message"]
     assert not isaac_labs.lab(lab_id="nope")["ok"]
+    assert isaac_labs.lab()["start_here"] == ["basics_isaac", "basics_usd"]
+    assert all(name in isaac_labs._labs() for name in isaac_labs.FOUNDATIONS)
     listed = isaac_labs.lab()
     assert listed["ok"] and len(listed["labs"]) == len(isaac_labs._labs())
     json.dumps([found, code_only, listed], allow_nan=False)
