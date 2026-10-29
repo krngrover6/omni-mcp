@@ -88,3 +88,25 @@ def test_live_pick_needs_play_and_warns_about_reach():
         restore()
     assert not lp.live_pick("/World/Franka", "/World/Cube", [0.3, 0.4, 0.05], pace=5)["ok"]
     assert features.FEATURES["robot_live_pick"].mutates and not features.FEATURES["robot_live_pick_status"].mutates
+
+
+def test_packed_neighbours_are_warned_about():
+    # Seen live: four packages piled at a stopper ~3 cm apart; the fingers landed on the neighbours.
+    from pxr import Gf, Usd, UsdGeom, UsdPhysics
+
+    stage = Usd.Stage.CreateInMemory()
+    for name, y in (("A", 0.0), ("B", 0.06), ("Far", 0.5)):
+        cube = UsdGeom.Cube.Define(stage, f"/World/{name}")
+        UsdGeom.XformCommonAPI(cube).SetTranslate(Gf.Vec3d(0.5, y, 0.03))
+        UsdPhysics.RigidBodyAPI.Apply(cube.GetPrim())
+    belt = UsdGeom.Cube.Define(stage, "/World/Belt")
+    UsdPhysics.RigidBodyAPI.Apply(belt.GetPrim()).CreateKinematicEnabledAttr(True)
+    UsdGeom.XformCommonAPI(belt).SetTranslate(Gf.Vec3d(0.5, 0.0, 0.0))
+    saved = jc._kit_module
+    jc._kit_module = lambda name: types.SimpleNamespace(
+        get_context=lambda: types.SimpleNamespace(get_stage=lambda: stage)) if name == "omni.usd" else None
+    try:
+        assert lp._neighbours("/World/A", [0.5, 0.0, 0.03]) == ["/World/B"]  # not the far box, not the belt
+        assert lp._neighbours("/World/Far", [0.5, 0.5, 0.03]) == []
+    finally:
+        jc._kit_module = saved

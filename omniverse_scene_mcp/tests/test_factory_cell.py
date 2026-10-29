@@ -66,7 +66,7 @@ def test_preview_then_build_a_cell_homework_14_accepts():
         assert built["ok"] and built["built"], built
         belt = stage.GetPrimAtPath("/World/FactoryCell/Belt")
         assert belt.GetAttribute("physics:kinematicEnabled").Get() is True
-        assert len(stage.GetPrimAtPath("/World/FactoryCell/Packages").GetChildren()) == 4
+        assert len(stage.GetPrimAtPath("/World/FactoryCell/Packages").GetChildren()) == 1  # one at a time
         UsdPhysics.Scene.Define(stage, "/World/PhysicsScene")
         node = stage.DefinePrim("/World/FactoryCell/BeltGraph/Arm", "OmniGraphNode")
         node.CreateAttribute("node:type", __import__("pxr").Sdf.ValueTypeNames.Token).Set(

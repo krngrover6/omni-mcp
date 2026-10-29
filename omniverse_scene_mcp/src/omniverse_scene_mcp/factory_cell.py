@@ -57,10 +57,12 @@ def _box(stage: Any, path: str, position: list[float], size: list[float], rgb: A
 
 
 def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0, 0.0, 0.0),
-               colours: Any = ("red", "blue"), packages: int = 4, belt_speed: float = 0.2, seed: int = 3,
+               colours: Any = ("red", "blue"), packages: int = 1, belt_speed: float = 0.2, seed: int = 3,
                dry_run: bool = True) -> dict[str, Any]:
     """Preview (dry_run=True) or build a complete pick-and-place factory cell under a NEW group `root`: belt with a
-    conveyor graph, stopper, packages, Franka, one bin per colour and a top camera. Nothing is saved."""
+    conveyor graph, stopper, packages, Franka, one bin per colour and a top camera. Nothing is saved.
+    packages defaults to 1: seen live, several packages pile up at the stopper with about 3 cm between them and the
+    gripper's fingers land on the neighbours; deliver one at a time (spawn the next after each pick)."""
     from . import omnigraph_helper, robot_import, spawner
 
     if UsdGeom is None:

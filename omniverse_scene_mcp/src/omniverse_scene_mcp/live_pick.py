@@ -49,6 +49,30 @@ def _object_position(object_path: str) -> list[float] | None:
     return [float(t[0]), float(t[1]), float(t[2])]
 
 
+CROWD_RADIUS_M = 0.07  # the open Franka fingers span about 8 cm plus their own thickness
+
+
+def _neighbours(object_path: str, start: list[float]) -> list[str]:
+    """Other rigid bodies whose centre is within CROWD_RADIUS_M (sideways) of the object: the fingers hit them."""
+    usd = jc._kit_module("omni.usd")
+    stage = usd.get_context().get_stage() if usd else None
+    if stage is None:
+        return []
+    from pxr import Usd, UsdGeom, UsdPhysics
+
+    near = []
+    for prim in stage.Traverse():
+        if str(prim.GetPath()) == object_path or not prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            continue
+        kinematic = prim.GetAttribute("physics:kinematicEnabled")
+        if kinematic and kinematic.Get():
+            continue  # belts and other driven parts are not in the way
+        t = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()
+        if abs(t[2] - start[2]) < 0.1 and ((t[0] - start[0]) ** 2 + (t[1] - start[1]) ** 2) ** 0.5 < CROWD_RADIUS_M:
+            near.append(str(prim.GetPath()))
+    return near[:5]
+
+
 def _subscribe_physics(callback: Any) -> Any:
     physx = jc._kit_module("omni.physx")
     if physx is None:
@@ -98,9 +122,13 @@ def live_pick(robot_root: str, object_path: str, place_position: Any, pace: floa
     base_pos = _object_position(robot_root) or [0.0, 0.0, 0.0]
     far = [label for label, point in (("object", start), ("place", place))
            if ((point[0] - base_pos[0]) ** 2 + (point[1] - base_pos[1]) ** 2) ** 0.5 > 0.8]
+    crowd = _neighbours(object_path, start)
     plan = {**base, "ok": True, "timeline": state, "object_start": [round(v, 3) for v in start],
             "place_position": place,
-            "warnings": [f"The {w} is more than 0.8 m from the arm's base: it may not reach." for w in far],
+            "warnings": [f"The {w} is more than 0.8 m from the arm's base: it may not reach." for w in far] + (
+                [f"Seen live: objects packed this close make the fingers land on them ({', '.join(crowd)} within "
+                 f"{CROWD_RADIUS_M * 100:.0f} cm). Pick an object with room around it, or deliver one at a time."]
+                if crowd else []),
             "phases": ["move above the object", "go down", "close the gripper", "lift", "carry to the place",
                        "go down", "open the gripper", "lift away"]}
     if base["dry_run"]:
