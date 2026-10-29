@@ -449,6 +449,10 @@ class FakeArticulation:
         return FakeArray([[math.pi, 0.0]])
 
     def get_dof_efforts(self):
+        # Like Isaac 6.1 (seen live): only efforts applied by hand, so zeros for a robot held by its drives.
+        return FakeArray([[0.0, 0.0]])
+
+    def get_dof_projected_joint_forces(self):
         return FakeArray([[1.5, -2.0]])
 
     def get_dof_limits(self):

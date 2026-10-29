@@ -1438,6 +1438,27 @@ def _inspect_file(path: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------------------------- add_ready_robot
 
 
+def _place_referenced(xform: Any, pos: tuple[float, float, float]) -> str:
+    """Put a freshly referenced prim at pos, respecting the xform ops it already brings from its asset.
+
+    Seen live in Isaac 6.1: franka.usd's root has [translate, orient, scale], so adding another translate op
+    failed ("xformOp:translate already exists"). A local value on the asset's own translate op wins instead.
+    """
+    ops = xform.GetOrderedXformOps()
+    for op in ops:
+        if op.GetOpName() == "xformOp:translate":
+            value = Gf.Vec3f(*pos) if op.GetPrecision() == UsdGeom.XformOp.PrecisionFloat else Gf.Vec3d(*pos)
+            op.Set(value)
+            return "set the asset's own xformOp:translate"
+    translate = xform.AddTranslateOp()
+    translate.Set(Gf.Vec3d(*pos))
+    if ops:
+        # Outermost first, so the robot is moved in world space, not through its own rotation or scale.
+        xform.SetXformOpOrder([translate, *ops])
+        return "added xformOp:translate in front of the asset's own ops"
+    return "added xformOp:translate"
+
+
 def add_ready_robot(
     stage: Any,
     name: Any,
@@ -1536,9 +1557,14 @@ def add_ready_robot(
             refs.AddReference(asset_path, Sdf.Path(reference_prim))
         else:
             refs.AddReference(asset_path)
-        xform.AddTranslateOp().Set(Gf.Vec3d(*pos))
+        plan["position_op"] = _place_referenced(xform, pos)
     except Exception as exc:  # noqa: BLE001
-        return {**base, "error": f"Authoring failed: {type(exc).__name__}: {exc}", "plan": plan}
+        # Seen live in Isaac 6.1: a failure here left a half-made /World/Franka at the origin. Undo what was made.
+        for path in [target, *reversed(missing_parents)]:
+            if stage.GetPrimAtPath(path):
+                stage.RemovePrim(path)
+        return {**base, "error": f"Authoring failed (nothing was left behind): {type(exc).__name__}: {exc}",
+                "plan": plan}
     prim = stage.GetPrimAtPath(target)
     check: dict[str, Any] = {"children": len(prim.GetChildren()) if prim else 0}
     try:

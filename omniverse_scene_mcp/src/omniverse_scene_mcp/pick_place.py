@@ -639,9 +639,12 @@ class _Readiness:
         robots = self._robot_roots()
         if robot_root:
             robots.append(robot_root)
+        # Seen live in Isaac 6.1: a door hinged to the world was "picked"; a body held by a joint cannot be lifted.
+        jointed = self._jointed_bodies()
         candidates = [
             prim for prim in self.rigid
             if not any(_is_under(str(prim.GetPath()), root) for root in robots) and not _kinematic(prim)
+            and str(prim.GetPath()) not in jointed
         ]
         if not candidates:
             return {"check": _check(
@@ -655,6 +658,16 @@ class _Readiness:
         extra = f" ({len(candidates) - 1} other free rigid bodies; pass object_path to choose)" if len(candidates) > 1 else ""
         return {"prim": prim, "check": _check("object_found", title, "pass", f"Picked {prim.GetPath()}{extra}.",
                                               path=str(prim.GetPath()))}
+
+    def _jointed_bodies(self) -> set[str]:
+        """Bodies a physics joint holds (its body0/body1 targets): hinged doors, sliding drawers, and so on."""
+        held: set[str] = set()
+        for prim in self.stage.Traverse():
+            if prim.IsA(UsdPhysics.Joint):
+                joint = UsdPhysics.Joint(prim)
+                for rel in (joint.GetBody0Rel(), joint.GetBody1Rel()):
+                    held.update(str(target) for target in rel.GetTargets())
+        return held
 
     def _robot_roots(self) -> list[str]:
         roots = []

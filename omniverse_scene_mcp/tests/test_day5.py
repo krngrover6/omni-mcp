@@ -221,7 +221,10 @@ def test_semantic_labels_preview_apply_inherit_and_undo_exactly():
 def test_render_sequence_plans_and_pixel_comparison_are_read_only():
     with tempfile.TemporaryDirectory() as folder:
         plan=render_helper.plan_image_sequence(folder,start=2,end=4,fps=24)
-        assert plan['ok'] and plan['frames']==[2,3,4] and plan['uncompressed_rgba_bytes']==3*320*240*4
+        assert plan['ok'] and plan['frames']==[2,3,4] and plan['size']=='viewport size' and plan['width'] is None
+        sized=render_helper.plan_image_sequence(folder,start=2,end=4,fps=24,width=320,height=240)
+        assert sized['ok'] and sized['uncompressed_rgba_bytes']==3*320*240*4
+        assert not render_helper.plan_image_sequence(folder,width=320)['ok']
         assert not render_helper.plan_image_sequence(folder,end=60)['ok']
         assert not render_helper.plan_image_sequence(folder,start=3,end=2)['ok']
         stage=_stage(); before=stage.GetRootLayer().ExportToString()
@@ -273,8 +276,8 @@ def test_capture_sequence_uses_fake_captures_restores_time_and_refuses_running_t
 def test_replicator_job_completes_cleans_up_and_reports_failures_with_fake_kit():
     from types import SimpleNamespace
     stage = _stage()
-    async def exercise(folder, fail):
-        calls=[]; count=0; output=None
+    async def exercise(folder, fail, skip=False):
+        calls=[]; count=0; output=None; statuses=['Status.STOPPING','Status.STOPPING']
         class Product:
             def destroy(self): calls.append('destroy')
         class Writer:
@@ -286,14 +289,18 @@ def test_replicator_job_completes_cleans_up_and_reports_failures_with_fake_kit()
         async def step(**kwargs):
             nonlocal count
             if fail: raise RuntimeError('fake render failure')
+            if skip: return  # Replicator 'step skipped': nothing reaches the disk
             _image(output/f'rgb_{count:04}.png'); count += 1
         async def wait(): calls.append('flush')
         fake=SimpleNamespace(set_global_seed=lambda seed:calls.append(seed),
             create=SimpleNamespace(render_product=lambda *a:Product()),
             WriterRegistry=SimpleNamespace(get=lambda name:Writer()),
-            orchestrator=SimpleNamespace(get_status=lambda:'stopped', step_async=step,wait_until_complete_async=wait))
+            orchestrator=SimpleNamespace(get_status=lambda:statuses.pop(0) if statuses else 'Status.STOPPED',
+                                         step_async=step,wait_until_complete_async=wait))
+        async def next_update(): calls.append('frame')
         modules={'omni.replicator.core':fake,'omni.usd':SimpleNamespace(get_context=lambda:SimpleNamespace(get_stage=lambda:stage)),
-                 'omni.timeline':SimpleNamespace(get_timeline_interface=lambda:SimpleNamespace(is_playing=lambda:False))}
+                 'omni.timeline':SimpleNamespace(get_timeline_interface=lambda:SimpleNamespace(is_playing=lambda:False)),
+                 'omni.kit.app':SimpleNamespace(get_app=lambda:SimpleNamespace(next_update_async=next_update))}
         original=sdg.importlib.import_module
         def load(name): return modules[name] if name in modules else original(name)
         with patch.object(sdg.importlib,'import_module',load):
@@ -302,10 +309,44 @@ def test_replicator_job_completes_cleans_up_and_reports_failures_with_fake_kit()
             assert not sdg.start_sdg(folder,name='second_job',dry_run=False)['ok']
             await asyncio.gather(*list(sdg._TASKS.values()))
         state=sdg.sdg_status(result['job_id'])
-        assert state['status']==('failed' if fail else 'completed'),state
+        assert state['status']==('failed' if fail or skip else 'completed'),state
         assert 'detach' in calls and 'destroy' in calls and not sdg._TASKS
-        if not fail:
-            assert dataset.check_dataset(state['output_dir'],expected_frames=2)['passed']
+        assert 'frame' in calls, 'the job must wait while Replicator is still STOPPING'
+        if skip: assert 'Only 0 of 2 frames' in state['error'] and state['frames_written']==0, state
+        elif not fail:
+            assert dataset.check_dataset(state['output_dir'],expected_frames=2)['passed'] and state['frames_written']==2
         else: assert 'fake render failure' in state['error']
     with tempfile.TemporaryDirectory() as folder: asyncio.run(exercise(folder,False))
     with tempfile.TemporaryDirectory() as folder: asyncio.run(exercise(folder,True))
+    with tempfile.TemporaryDirectory() as folder: asyncio.run(exercise(folder,False,skip=True))
+
+
+def test_sdg_names_a_missing_camera_and_lists_the_real_ones():
+    # Seen live in Isaac 6.1: a missing camera gave "Accessed invalid null prim" and the preview said ok.
+    _require_pxr()
+    from types import SimpleNamespace
+    from pxr import Usd, UsdGeom
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.Camera.Define(stage, '/World/Robot/FrontCam')
+    UsdGeom.Xform.Define(stage, '/World/Box')
+    assert sdg.camera_problem(stage, '/World/Robot/FrontCam') is None
+    missing = sdg.camera_problem(stage, '/World/Camera')
+    assert 'does not exist' in missing and '/World/Robot/FrontCam' in missing, missing
+    assert 'is not a Camera' in sdg.camera_problem(stage, '/World/Box')
+    assert 'no camera' in sdg.camera_problem(Usd.Stage.CreateInMemory(), '/World/Camera')
+    with tempfile.TemporaryDirectory() as folder:
+        live = SimpleNamespace(get_context=lambda: SimpleNamespace(get_stage=lambda: stage))
+        original = sdg.importlib.import_module
+        with patch.object(sdg.importlib, 'import_module', lambda n: live if n == 'omni.usd' else original(n)):
+            preview = sdg.start_sdg(folder, camera='/World/Camera')
+        assert not preview['ok'] and preview['dry_run'] and 'does not exist' in preview['error'], preview
+
+
+def _require_pxr() -> None:
+    """Skip (not fail) a test that needs the USD Python bindings when pxr is missing or does not import."""
+    try:
+        import pxr  # noqa: F401
+    except ImportError:
+        import unittest
+
+        raise unittest.SkipTest("USD Python bindings (pxr) are not installed")

@@ -900,10 +900,13 @@ class _Experimental:
         return kinds
 
     def state(self) -> dict[str, list[float] | None]:
+        # get_dof_efforts only echoes efforts set by hand (all 0.0 for a Franka holding itself up, seen live in
+        # Isaac 6.1); the projected joint forces are what each joint really pushes with (drive plus gravity).
+        measured = getattr(self.view, "get_dof_projected_joint_forces", None)
         return {
             "position": _row_values(self.view.get_dof_positions()),
             "velocity": _row_values(self.view.get_dof_velocities()),
-            "effort": _row_values(self.view.get_dof_efforts()),
+            "effort": _row_values(measured() if callable(measured) else self.view.get_dof_efforts()),
         }
 
     def limits(self) -> list[tuple[float, float]]:

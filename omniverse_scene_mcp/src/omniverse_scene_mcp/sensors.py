@@ -605,19 +605,25 @@ def create_sensor_live(
         result["api"] = "pxr UsdGeom.Camera.Define on the live stage (not on Kit's undo stack)"
         return result
 
-    plan = plan_sensor(kind, parent_path, stage=stage, name=name, offset=offset, rotation=rotation,
-                       look_at=look_at, params=params)
-    if not plan.get("ok"):
-        return plan
+    public = plan_sensor(kind, parent_path, stage=stage, name=name, offset=offset, rotation=rotation,
+                         look_at=look_at, params=params)
+    if not public.get("ok"):
+        return public
     if dry:
-        plan["would_call"] = _live_api_text(kind)
-        plan["next_step"] = "Dry run: nothing was created. Call again with dry_run=False to create it in Isaac Sim."
-        return plan
+        public["would_call"] = _live_api_text(kind)
+        public["next_step"] = "Dry run: nothing was created. Call again with dry_run=False to create it in Isaac Sim."
+        return public
+    # The live calls need the internal plan (values, translation, quaternion), which the public answer leaves out.
+    plan = _plan(kind, parent_path, stage, name, offset, rotation, look_at, params, [])
+    plan["warnings"] = public["warnings"]
     try:
         if kind == "lidar":
             created_path, api = _create_lidar_live(plan)
         else:
             created_path, api = _create_physics_live(kind, plan)
+    except KeyError as exc:  # a KeyError is a LookupError too, but it means a bug here, not a missing Kit API
+        return {"ok": False, "dry_run": False, "error": f"Creating the {kind} failed: KeyError: {exc}",
+                "warnings": plan["warnings"]}
     except LookupError as exc:
         return {"ok": False, "dry_run": False, "error": str(exc), "warnings": plan["warnings"]}
     except Exception as exc:  # noqa: BLE001
@@ -971,6 +977,16 @@ def _stage_checks(stage: Any, plan: dict[str, Any], parent: Any, warnings: list[
     kind = plan["kind"]
     rigid = _rigid_ancestor(parent)
     plan["rigid_body"] = str(rigid.GetPath()) if rigid is not None else None
+    scales = _world_scales(parent)
+    if scales and max(scales) > 1.01 * min(scales):
+        # Seen live in Isaac 6.1: a camera under a Cube scaled (0.5, 0.3, 0.1) sat 0.2 m above it for offset z = 2,
+        # and its Replicator image shrank a 1 x 2 m door 3 m away to a dot; under /World the door filled the frame.
+        shown = ", ".join(f"{value:g}" for value in scales)
+        warnings.append(
+            f"{plan['parent_path']} is scaled unevenly ({shown}), and a child sensor inherits that: the offset is "
+            "squashed by the same amounts and a camera's picture comes out badly distorted. Put sensors under an "
+            "unscaled Xform (e.g. the link itself, with the scaled shape as a sibling)."
+        )
     if kind == "imu" and rigid is None:
         warnings.append(
             f"No enabled rigid body at or above {plan['parent_path']}: the IMU finds its body by walking up the "
@@ -1005,6 +1021,15 @@ def _stage_checks(stage: Any, plan: dict[str, Any], parent: Any, warnings: list[
                 "inside that mesh and see only its inside. Move it outward with offset or, for a camera, raise the "
                 "near clipping distance."
             )
+
+
+def _world_scales(prim: Any) -> list[float]:
+    """The prim's world scale along its own x, y and z axes (lengths of the matrix rows); [] when unknown."""
+    try:
+        matrix = UsdGeom.XformCache(Usd.TimeCode.Default()).GetLocalToWorldTransform(prim)
+        return [round(Gf.Vec3d(matrix[row][0], matrix[row][1], matrix[row][2]).GetLength(), 6) for row in range(3)]
+    except Exception:  # noqa: BLE001 - a non-xformable parent simply skips the check
+        return []
 
 
 def _rigid_ancestor(prim: Any) -> Any:
@@ -1407,7 +1432,26 @@ def _read_camera(path: str, width: int, height: int) -> dict[str, Any]:
         )
     if rgb is None:
         result["note_ready"] = "No image yet: the annotator is warming up. Let a few frames render (Play) and read again."
+    hints = _camera_hints(result["rgb"], result["depth"], width * height)
+    if hints:
+        result["hints"] = hints
     return result
+
+
+def _camera_hints(rgb: Any, depth: Any, pixels: int) -> list[str]:
+    """Plain warnings for a picture that is almost black or a depth image that sees almost nothing."""
+    hints: list[str] = []
+    mean = rgb.get("mean") if isinstance(rgb, dict) else None
+    if isinstance(mean, (int, float)) and mean < 5:
+        # Seen live in Isaac 6.1: a scene with no lights renders a near-black image (mean about 1 of 255).
+        hints.append(f"The picture is almost black (average brightness {mean:.1f} of 255). The scene probably has "
+                     "no light: add a dome or distant light (scene_create_light), or check the camera is not inside "
+                     "a mesh.")
+    empty = depth.get("non_finite") if isinstance(depth, dict) else None
+    if isinstance(empty, int) and pixels and empty / pixels > 0.9:
+        hints.append(f"{100 * empty / pixels:.0f}% of the depth pixels hit nothing (inf: empty sky or beyond the "
+                     "far clipping distance); only the rest of the image sees an object.")
+    return hints
 
 
 def _read_lidar(path: str) -> dict[str, Any]:

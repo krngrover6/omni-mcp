@@ -187,6 +187,19 @@ def test_prune_stash_enable_and_call_with_real_fastmcp():
         raise AssertionError("unknown tool must raise KeyError")
 
 
+def test_unknown_argument_names_are_refused_with_the_nearest_real_name():
+    # Seen live: render_sequence(start_frame=..., end_frame=..., step=...) silently ran its defaults instead.
+    app = _small_app()
+    stash, _report = profiles.apply_profile_to_app(app, {"OMNIVERSE_MCP_PROFILE": "starter"})
+    try:
+        asyncio.run(stash.call("scene_layers", {"cout": 4}))
+    except ValueError as exc:
+        assert "'cout' (did you mean 'count'?)" in str(exc) and "nothing was run" in str(exc), exc
+    else:
+        raise AssertionError("an unknown argument must be refused, not ignored")
+    assert asyncio.run(stash.call("scene_layers", {"count": 1})) == {"layers": [0], "python": "code"}
+
+
 def test_profile_all_leaves_the_app_unchanged():
     app = _small_app()
     stash, report = profiles.apply_profile_to_app(app, {"OMNIVERSE_MCP_PROFILE": "all"})

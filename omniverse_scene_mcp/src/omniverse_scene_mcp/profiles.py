@@ -26,6 +26,7 @@ tiny profile can discover and call other tools through the always-on meta tools.
 
 from __future__ import annotations
 
+import difflib
 import fnmatch
 import functools
 import inspect
@@ -520,7 +521,34 @@ class ToolStash:
             tool = registry.get(name)
         if tool is None:
             raise KeyError(f"Unknown tool: {name}")
-        return await tool.run(dict(arguments or {}))
+        arguments = dict(arguments or {})
+        unknown = unknown_arguments(tool, arguments)
+        if unknown:
+            raise ValueError(unknown)
+        return await tool.run(arguments)
+
+
+def unknown_arguments(tool: Any, arguments: Mapping[str, Any]) -> str | None:
+    """A plain refusal naming argument keys the tool does not take (with the nearest real names), else None.
+
+    Seen live: render_sequence(start_frame=0, end_frame=60, step=30) silently ran its defaults (frames 0-2),
+    because argument validation drops keys it does not know.
+    """
+    schema = getattr(tool, "parameters", None)
+    properties = schema.get("properties") if isinstance(schema, dict) else None
+    if not isinstance(properties, dict) or schema.get("additionalProperties") is True:
+        return None
+    extra = [key for key in arguments if key not in properties]
+    if not extra:
+        return None
+    known = sorted(properties)
+    parts = []
+    for key in extra:
+        close = difflib.get_close_matches(key, known, n=1, cutoff=0.5) or [k for k in known if k in key or key in k][:1]
+        parts.append(f"'{key}' (did you mean '{close[0]}'?)" if close else f"'{key}'")
+    name = getattr(tool, "name", "this tool")
+    return (f"{name} does not take {', '.join(parts)}; nothing was run. "
+            f"Its arguments are: {', '.join(known) or '(none)'}.")
 
 
 def prune_app_tools(app: Any, keep: Iterable[str]) -> ToolStash:

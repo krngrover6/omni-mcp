@@ -46,16 +46,19 @@ def render_capture(project_dir: str, name: str = 'capture_run', *, width: int | 
 
 
 def plan_image_sequence(project_dir: str, name: str = 'sequence_run', *, start: int = 0, end: int = 2,
-                        fps: int = 24, width: int = 320, height: int = 240) -> dict:
+                        fps: int = 24, width: int | None = None, height: int | None = None) -> dict:
     """Plan up to 60 viewport captures at frame/fps seconds, into a new directory; no timeline changes."""
     try:
         target=new_directory(project_dir,name)
         integer(start,'start',0,100000); integer(end,'end',0,100000); integer(fps,'fps',1,60)
-        integer(width,'width',16,2048); integer(height,'height',16,2048)
+        # No size keeps the viewport's own shape; a forced 320x240 squashed a 16:9 viewport (seen live).
+        if (width is None)!=(height is None): raise ValueError('Give both width and height, or neither')
+        if width is not None: integer(width,'width',16,2048); integer(height,'height',16,2048)
         if end<start or end-start+1>60: raise ValueError('Frame range must contain 1 to 60 frames')
         return {'ok':True,'dry_run':True,'written':False,'output_dir':str(target),
                 'frames':list(range(start,end+1)),'fps':fps,'width':width,'height':height,
-                'uncompressed_rgba_bytes':(end-start+1)*width*height*4,
+                'size':'viewport size' if width is None else f'{width}x{height} resized copy',
+                'uncompressed_rgba_bytes':(end-start+1)*width*height*4 if width is not None else None,
                 'explanation':'Would sample the stopped timeline and capture the current viewport. Restore time afterward; never save scene edits.',
                 'warnings':['Changing capture dimensions resizes the output; it does not increase renderer detail.']}
     except (ValueError,OSError,TypeError) as exc:
@@ -63,7 +66,7 @@ def plan_image_sequence(project_dir: str, name: str = 'sequence_run', *, start: 
 
 
 def plan_turntable_render(stage, prim_path: str, project_dir: str, name: str = 'turntable_run', *,
-                         seconds: int = 2, fps: int = 24, width: int = 320, height: int = 240) -> dict:
+                         seconds: int = 2, fps: int = 24, width: int | None = None, height: int | None = None) -> dict:
     """Combine an object-spin preview with a sequence plan; does not orbit or modify the viewport camera."""
     try:
         integer(seconds,'seconds',1,60); integer(fps,'fps',1,60)
@@ -80,7 +83,7 @@ def plan_turntable_render(stage, prim_path: str, project_dir: str, name: str = '
 
 
 def render_sequence(project_dir: str, name: str = 'sequence_run', *, start: int = 0, end: int = 2,
-                    fps: int = 24, width: int = 320, height: int = 240, dry_run: bool = True) -> dict:
+                    fps: int = 24, width: int | None = None, height: int | None = None, dry_run: bool = True) -> dict:
     """Preview or asynchronously capture a bounded frame range, restoring the stopped timeline's original time."""
     plan=plan_image_sequence(project_dir,name,start=start,end=end,fps=fps,width=width,height=height)
     if not plan['ok'] or dry_run is not False: return plan
