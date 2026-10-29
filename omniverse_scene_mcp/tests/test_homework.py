@@ -114,7 +114,7 @@ def test_bad_session_and_no_stage():
     assert not hw.check_homework(Usd.Stage.CreateInMemory(), 2)["ok"]
     assert not hw.check_homework(Usd.Stage.CreateInMemory(), True)["ok"]
     assert not hw.check_homework(None, 5)["ok"]
-    assert [s["session"] for s in hw.homework_sessions()["sessions"]] == [3, 4, 5, 6]
+    assert [s["session"] for s in hw.homework_sessions()["sessions"]] == [3, 4, 5, 6, 14]
     assert not hw.check_homework(Usd.Stage.CreateInMemory(), 7)["ok"]
     assert features.FEATURES["homework_check"].mutates is False
 
@@ -124,6 +124,7 @@ def test_phrases_for_homework_and_joints():
         "check my session 5 homework": ("homework_check", {"session": 5}),
         "grade my homework for session 6": ("homework_check", {"session": 6}),
         "grade my homework for session 4": ("homework_check", {"session": 4}),
+        "check my session 14 homework": ("homework_check", {"session": 14}),
         "create a revolute joint between /World/Base and /World/Wheel on the y axis": (
             "scene_create_joint", {"kind": "revolute", "body0": "/World/Base", "body1": "/World/Wheel", "axis": "Y",
                                    "dry_run": True}),
@@ -212,7 +213,7 @@ def test_session6_conveyor_loop_from_one_belt_to_a_full_stop_and_go():
     full = hw.check_homework(stage, 6)
     assert set(_status(full).values()) == {"pass"}, _status(full)
     assert full["passed"] and full["read_only"]
-    assert hw.homework_sessions()["sessions"][-1]["session"] == 6
+    assert 6 in [s["session"] for s in hw.homework_sessions()["sessions"]]
 
 
 def test_session6_stop_must_act_on_the_belt_and_kit_graphs_do_not_count():
@@ -240,3 +241,40 @@ def test_session6_stop_must_act_on_the_belt_and_kit_graphs_do_not_count():
     _pin(stop, "inputs:variableName").Set("Velocity")
     rows = {r["rule"]: r for r in hw.check_homework(stage, 6)["results"]}
     assert rows["stop"]["status"] == "pass" and rows["stop"]["evidence"]["conveyor_speed_variables"] == ["Velocity"]
+
+
+def test_session14_factory_cell_from_a_lone_arm_to_a_full_cell():
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1)
+    UsdGeom.Xform.Define(stage, "/World/Arm")
+    base = _body(stage, "/World/Arm/link0", (0, 0, 0.05)).GetPrim()
+    UsdPhysics.ArticulationRootAPI.Apply(base)  # Isaac puts the root on a link: the robot is its parent
+    previous = base
+    for i in range(1, 8):
+        link = _body(stage, f"/World/Arm/link{i}", (0, 0, 0.1 * i)).GetPrim()
+        joint = UsdPhysics.RevoluteJoint.Define(stage, f"/World/Arm/joints/joint{i}")
+        joint.CreateBody0Rel().SetTargets([previous.GetPath()])
+        joint.CreateBody1Rel().SetTargets([link.GetPath()])
+        previous = link
+    lone = hw.check_homework(stage, 14)
+    status = _status(lone)
+    assert lone["ok"] and lone["read_only"] and status["arm"] == "pass" and status["gripper"] == "partial", status
+    assert status["conveyor"] == "fail" and status["sensor"] == "fail" and status["control"] == "unknown", status
+    UsdPhysics.PrismaticJoint.Define(stage, "/World/Arm/joints/panda_finger_joint1")
+    UsdPhysics.Scene.Define(stage, "/World/PhysicsScene")
+    stage.DefinePrim("/World/Graph", "OmniGraph")
+    tick = _node(stage, "/World/Graph/OnTick", "omni.graph.action.OnPlaybackTick")
+    _conveyor(stage, "/World/Graph", "Conveyor", _belt(stage, "/World/Belt", (0.6, 0, 0.05), 90), tick)
+    big = _body(stage, "/World/Package_big", (0.6, 0.0, 0.3))
+    UsdGeom.XformCommonAPI(big).SetScale(Gf.Vec3f(0.1, 0.1, 0.1))  # cube of size 2 -> 0.2 m: too wide to grab
+    far_bin = _body(stage, "/World/Bin", (2.0, 0, 0.1), rigid=False)
+    half = _status(hw.check_homework(stage, 14))
+    assert half["gripper"] == "pass" and half["conveyor"] == "pass" and half["physics"] == "pass", half
+    assert half["package"] == "partial" and half["place_target"] == "partial" and half["control"] == "partial", half
+    UsdGeom.XformCommonAPI(big).SetScale(Gf.Vec3f(0.025, 0.025, 0.025))  # 5 cm
+    UsdGeom.XformCommonAPI(far_bin).SetTranslate(Gf.Vec3d(0, 0.6, 0.1))
+    UsdGeom.Camera.Define(stage, "/World/TopCam")
+    _node(stage, "/World/Graph/Arm", "isaacsim.core.nodes.IsaacArticulationController")
+    full = hw.check_homework(stage, 14)
+    assert full["passed"] and set(_status(full).values()) == {"pass"}, _status(full)

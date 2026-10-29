@@ -182,7 +182,7 @@ def test_diagnose_sees_colliders_inside_instanced_parts():
     assert "no_collider" not in codes, codes
 
 
-def _run_sorter(stage, code, inputs, times):
+def _run_sorter(stage, code, inputs, times, modules=None):
     """Execute the colour-sort Script Node code against a USD stage, with fake omni.usd / omni.timeline."""
     import sys
     import types
@@ -193,12 +193,14 @@ def _run_sorter(stage, code, inputs, times):
     timeline.get_timeline_interface = lambda: types.SimpleNamespace(get_current_time=lambda: clock["now"])
     omni = types.ModuleType("omni")  # a fresh fake package: "import omni.timeline" then reads omni.timeline
     omni.usd, omni.timeline = usd, timeline
-    saved = {name: sys.modules.get(name) for name in ("omni", "omni.usd", "omni.timeline")}
-    sys.modules.update({"omni": omni, "omni.usd": usd, "omni.timeline": timeline})
+    extra = modules or {}
+    saved = {name: sys.modules.get(name) for name in ("omni", "omni.usd", "omni.timeline", *extra)}
+    sys.modules.update({"omni": omni, "omni.usd": usd, "omni.timeline": timeline, **extra})
     try:
         scope = {}
         exec(compile(code, "<sorter>", "exec"), scope)
-        db = types.SimpleNamespace(inputs=types.SimpleNamespace(**inputs), outputs=types.SimpleNamespace(sorted=0))
+        db = types.SimpleNamespace(inputs=types.SimpleNamespace(**{"camera": "", **inputs}),
+                                   outputs=types.SimpleNamespace(sorted=0, last_seen=""))
         scope["setup"](db)
         counts = []
         for now in times:
@@ -255,6 +257,47 @@ def test_color_sort_recipe_routes_each_package_to_its_bin_once_per_play():
     assert not ogh.plan_recipe("color_sort", stage=stage, bins={"red": "/World/Nope"}, zone_min=[-1, -1, 0],
                                zone_max=[1, 1, 1])["ok"]
     assert not ogh.plan_recipe("color_sort", stage=stage, bins=bins, zone_min=[1, 1, 1], zone_max=[0, 0, 0])["ok"]
+
+
+def test_color_sort_camera_mode_reads_colours_from_the_picture():
+    import types
+    stage = _stage()
+    spawner.spawn_packages(stage, count=4, seed=2, colors=["blue"], region_min=[-0.4, -0.4, 0.2],
+                           region_max=[0.4, 0.4, 0.4], dry_run=False)  # the colour DATA says blue ...
+    for name, y in (("BinA", 2.0), ("BinB", -2.0)):
+        UsdGeom.XformCommonAPI(UsdGeom.Cube.Define(stage, f"/World/{name}")).SetTranslate(Gf.Vec3d(0, y, 0))
+    camera = UsdGeom.Camera.Define(stage, "/World/TopCam")
+    UsdGeom.XformCommonAPI(camera).SetTranslate(Gf.Vec3d(0, 0, 5))  # looks straight down (-Z)
+    UsdGeom.Cube.Define(stage, "/World/NotACamera")
+    bins = {"red": "/World/BinA", "blue": "/World/BinB"}
+    assert not ogh.plan_recipe("color_sort", stage=stage, bins=bins, zone_min=[-1, -1, 0], zone_max=[1, 1, 1],
+                               camera="/World/NotACamera")["ok"]
+    plan = ogh.plan_recipe("color_sort", stage=stage, bins=bins, zone_min=[-1, -1, 0], zone_max=[1, 1, 1],
+                           camera="/World/TopCam")
+    assert plan["ok"] and any("warm up" in w for w in plan["warnings"]), plan
+    code = next(v["value"] for v in plan["values"] if v["attribute"] == "Sorter.inputs:script")
+    frames = [None, [[(200, 30, 25)] * 640 for _ in range(480)]]  # warming up, then ... the PICTURE shows red
+    made = []
+
+    class CameraSensor:
+        def __init__(self, camera, resolution, annotators):
+            made.append((camera.path, resolution, annotators))
+
+        def get_data(self, name):
+            frame = frames.pop(0) if len(frames) > 1 else frames[0]
+            return (None if frame is None else types.SimpleNamespace(numpy=lambda: frame)), {}
+
+    rtx = types.ModuleType("isaacsim.sensors.experimental.rtx")
+    rtx.CameraSensor, rtx.RtxCamera = CameraSensor, lambda path: types.SimpleNamespace(path=path)
+    inputs = {"packages": "/World/Packages", "routes": json.dumps(bins), "zone_min": (-1, -1, 0), "zone_max": (1, 1, 1),
+              "speed": 1.5, "hop": 1.0, "camera": "/World/TopCam"}
+    assert _run_sorter(stage, code, inputs, [0.0, 0.1], modules={"isaacsim.sensors.experimental.rtx": rtx}) == [0, 4]
+    assert made == [("/World/TopCam", (480, 640), ["rgb"])]  # one sensor, made once
+    for prim in stage.GetPrimAtPath("/World/Packages").GetChildren():
+        assert UsdPhysics.RigidBodyAPI(prim).GetVelocityAttr().Get()[1] > 0  # went to the RED bin, as seen
+    UsdGeom.XformCommonAPI(camera).SetTranslate(Gf.Vec3d(0, 0, -5))  # now the packages are behind it
+    frames[:] = [[[(200, 30, 25)] * 640 for _ in range(480)]]
+    assert _run_sorter(stage, code, inputs, [0.0], modules={"isaacsim.sensors.experimental.rtx": rtx}) == [0]
 
 
 def test_changing_script_node_code_resets_it_so_the_new_code_compiles():

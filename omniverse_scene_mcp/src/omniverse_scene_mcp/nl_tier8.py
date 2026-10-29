@@ -47,8 +47,8 @@ def _value_text(text: str):
         return text.strip().strip('"\'')
 
 
-_HOMEWORK = re.compile(r'(?:check|grade) (?:my )?(?:session|class) ?0*([3-6]) homework|'
-                       r'(?:check|grade) (?:my )?homework (?:for|of) (?:session|class) ?0*([3-6])', re.I)
+_HOMEWORK = re.compile(r'(?:check|grade) (?:my )?(?:session|class) ?0*([3-6]|14) homework|'
+                       r'(?:check|grade) (?:my )?homework (?:for|of) (?:session|class) ?0*([3-6]|14)', re.I)
 _JOINT_KINDS = r'(fixed|revolute|prismatic|spherical|distance)'
 _JOINT_PAIR = re.compile(r'(?:create|add|make) an? ' + _JOINT_KINDS + r' joint (?:between|from) (/[A-Za-z0-9_/]+) '
                          r'(?:and|to) (/[A-Za-z0-9_/]+)(?: on (?:the )?([xyz])(?: axis)?)?', re.I)

@@ -118,6 +118,8 @@ _add("debug_trainer", "debug_challenge_list:list_challenges debug_challenge_answ
 _add("debug_trainer", "debug_challenge_make:make_challenge", "local", "Learning Python & homework",
      "debug_challenge_make")
 _add("script_check", "python_check_script:check_script", "local", "Learning Python & homework")
+_add("live_challenge", "live_challenge_start:challenge_start live_challenge_check:challenge_check", "stage",
+     "Learning Python & homework")
 _add("exam.python_practice", "python_trial_run:trial_run", "local", "Learning Python & homework")
 _add("homework", "homework_sessions", "local", "Learning Python & homework")
 _add("value_story","scene_why_value:why_value scene_what_if:what_if", "stage", "Live insight")

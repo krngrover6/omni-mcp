@@ -1,4 +1,4 @@
-"""Homework checkers for mentorship sessions 3-6, read-only.
+"""Homework checkers for mentorship sessions 3-6 and the session 14 factory cell, read-only.
 
 Each check looks for what the homework asks for by meaning (references, materials, rigid bodies, joint types and
 drives), not by exact prim paths, so any reasonable scene layout is graded. Results follow assignments.py: each rule
@@ -413,11 +413,143 @@ def _session6(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
     return rows
 
 
+# ------------------------------------------------------------------------------------------------ session 14
+_REACH_M = 0.855       # Franka Panda reach from its base (pick_place.FRANKA_REACH_M); other arms are similar or more
+_GRIP_M = 0.08         # Franka gripper opening: anything wider cannot be grasped
+_SENSOR_TYPES = ("Camera", "IsaacContactSensor", "IsaacImuSensor", "OmniLidar", "IsaacRtxLidarSensorAPI")
+_CONTROL_NODES = ("IsaacArticulationController", "ScriptNode", "DifferentialController")
+
+
+def _world_box(prim: Any) -> tuple[Any, Any] | None:
+    bound = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render", "proxy"]).ComputeWorldBound(prim)
+    box = bound.ComputeAlignedRange()
+    return None if box.IsEmpty() else (box.GetMin(), box.GetMax())
+
+
+def _flat_distance(a: Any, b: Any, metres: float) -> float:
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5 * metres
+
+
+def _session14(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
+    """Class session 14 (final project): a factory cell where a robot arm picks a package off a conveyor and places
+    it at a target, with a sensor that sees the package and logic that drives the arm. Distances are in metres."""
+    rows = []
+    metres = UsdGeom.GetStageMetersPerUnit(stage) or 1.0
+    joints = [p for p in prims if p.IsA(UsdPhysics.Joint)]
+
+    def under(prim: Any, root: Any) -> bool:
+        return prim.GetPath().HasPrefix(root.GetPath())
+
+    arms = []
+    for root in (p for p in prims if p.HasAPI(UsdPhysics.ArticulationRootAPI)):
+        # Isaac often puts the root API on a link; then the robot is its parent
+        parent = root.GetParent()
+        robot = parent if root.HasAPI(UsdPhysics.RigidBodyAPI) and parent and str(parent.GetPath()) != "/" else root
+        arms.append((robot, [j for j in joints if j.IsA(UsdPhysics.RevoluteJoint) and under(j, robot)]))
+    arms.sort(key=lambda item: -len(item[1]))
+    arm, revolute = arms[0] if arms else (None, [])
+    rows.append(_row("arm", "A robot arm (articulation with 5+ rotating joints)", 3,
+                     "pass" if arm is not None and len(revolute) >= 5 else "partial" if arms else "fail",
+                     {"articulations": [str(a.GetPath()) for a, _ in arms][:6], "revolute_joints": len(revolute)},
+                     "The cell's worker is an arm: an articulation (one robot that PhysX solves as a whole) with "
+                     "enough rotating joints to reach around, like the Franka's 7.",
+                     ["Add a Franka: Create > Robots > Franka Emika Panda (or robot_import), on the floor near the belt."]))
+
+    fingers = [j for j in joints if arm is not None and under(j, arm) and
+               (j.IsA(UsdPhysics.PrismaticJoint) or "finger" in j.GetName().lower())]
+    rows.append(_row("gripper", "The arm has a gripper", 2,
+                     "pass" if fingers else "fail" if arm is None else "partial",
+                     {"finger_joints": [str(j.GetPath()) for j in fingers][:4]},
+                     "To pick something up the arm needs fingers: sliding (prismatic) finger joints that close on "
+                     "the package.",
+                     ["Use an arm that comes with a gripper (the Franka has panda_finger_joint1/2)."]))
+
+    nodes = _graph_nodes(prims)
+    conveyor_nodes = [prim for prim, kind in nodes if kind == _CONVEYOR]
+    belts = [stage.GetPrimAtPath(t) for c in conveyor_nodes for t in _wired(c, "inputs:conveyorPrim")
+             if stage.GetPrimAtPath(t)]
+    if not belts:
+        belts = [p for p in _named(prims, "belt", "conveyor") if _rigid(p) and _kinematic(p)]
+    belt_paths = {b.GetPath() for b in belts}
+    rows.append(_row("conveyor", "A conveyor brings the packages", 2,
+                     "pass" if belts and conveyor_nodes else "partial" if belts or conveyor_nodes else "fail",
+                     {"belts": [str(b.GetPath()) for b in belts][:4], "conveyor_nodes": len(conveyor_nodes)},
+                     "Packages arrive on a belt: a kinematic rigid body with a collider, moved by a Conveyor Belt "
+                     "node (class session 6).",
+                     ["graph_recipe('conveyor', belt=...) builds the belt graph; scene_make_rigid_body(..., "
+                      "kinematic=True) prepares the belt."]))
+
+    base_pos = (UsdGeom.Xformable(arm).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()
+                if arm is not None else None)
+    packages = [p for p in _named(prims, "package", "box", "cube", "cargo", "parcel")
+                if _rigid(p) and (arm is None or not under(p, arm)) and p.GetPath() not in belt_paths]
+    measured = []
+    for package in packages[:20]:
+        box = _world_box(package)
+        if box is None:
+            continue
+        low, high = box
+        centre = (low + high) / 2
+        measured.append({"prim": str(package.GetPath()),
+                         "width_m": round(min(high[0] - low[0], high[1] - low[1]) * metres, 3),
+                         "distance_m": None if base_pos is None else round(_flat_distance(centre, base_pos, metres), 3),
+                         "collider": _collider(package)})
+    good = [m for m in measured if m["collider"] and m["width_m"] <= _GRIP_M and
+            m["distance_m"] is not None and m["distance_m"] <= _REACH_M]
+    rows.append(_row("package", "A package the arm can grab", 3,
+                     "pass" if good else "partial" if measured else "fail",
+                     {"packages": measured[:6], "gripper_opening_m": _GRIP_M, "reach_m": _REACH_M},
+                     "The gripper opens about 8 cm and the arm reaches about 85 cm from its base, so the package "
+                     "must be narrower than that, a rigid body with a collider, and close enough.",
+                     ["Make the package about 5 cm wide (scene_spawn_packages size_range=[0.04, 0.06]) and bring the "
+                      "belt's pick spot within 0.85 m of the arm; pick_readiness checks it in detail."]))
+
+    targets = [p for p in _named(prims, "bin", "tray", "target", "drop", "place", "pallet")
+               if arm is None or not under(p, arm)]
+    in_reach = []
+    for target in targets[:20]:
+        box = _world_box(target)
+        if box is not None and base_pos is not None and                 _flat_distance((box[0] + box[1]) / 2, base_pos, metres) <= _REACH_M:
+            in_reach.append(str(target.GetPath()))
+    rows.append(_row("place_target", "A place to put the package, within reach", 2,
+                     "pass" if in_reach else "partial" if targets else "fail",
+                     {"targets": [str(t.GetPath()) for t in targets][:6], "within_reach": in_reach[:6]},
+                     "Pick-and-place needs a drop-off: a bin or tray the arm can reach without moving its base.",
+                     ["Add a bin (e.g. a Cube named Bin) within 0.85 m of the arm's base, away from the belt."]))
+
+    sensors = [p for p in prims if (p.GetTypeName() in _SENSOR_TYPES or
+                                    any(api in _SENSOR_TYPES for api in p.GetAppliedSchemas()))
+               and not str(p.GetPath()).startswith("/OmniverseKit")]
+    rows.append(_row("sensor", "A sensor watches the cell", 2, "pass" if sensors else "fail",
+                     {"sensors": [f"{p.GetPath()} ({p.GetTypeName()})" for p in sensors][:6]},
+                     "A factory cell knows a package has arrived from a sensor: a camera looking at the pick spot, "
+                     "or a contact sensor on the belt (class sessions 9 and 13).",
+                     ["sensor_create a camera above the pick spot, or a contact sensor at the belt's end."]))
+
+    control = [str(prim.GetPath()) for prim, kind in nodes if kind.rsplit(".", 1)[-1] in _CONTROL_NODES]
+    rows.append(_row("control", "Logic that drives the arm", 3,
+                     "pass" if control else "partial" if nodes else "unknown",
+                     {"control_nodes": control[:6], "graph_nodes": len(nodes)},
+                     "Something must decide when to pick and move the joints: an Articulation Controller or Script "
+                     "Node in an Action Graph, or a Python script. Scripts are not stored in the scene, so without "
+                     "a graph this check says 'unknown'.",
+                     ["pick_place_script writes a pick-and-place script for the Franka; or add an Articulation "
+                      "Controller node wired to the arm."]))
+
+    scene = [p for p in prims if p.IsA(UsdPhysics.Scene)]
+    rows.append(_row("physics", "Physics is on (a Physics Scene)", 1, "pass" if scene else "fail",
+                     {"physics_scenes": [str(p.GetPath()) for p in scene][:3]},
+                     "Without a Physics Scene nothing falls, rides the belt or gets picked up when you press Play.",
+                     ["Create > Physics > Physics Scene (or scene_physics_setup)."]))
+    return rows
+
+
 SESSIONS = {
     3: ("Session 3: upgrade your warehouse with real assets", _session3),
     4: ("Session 4: bowling, knock every pin down", _session4),
     5: ("Session 5: drawers, a self-closing door and a ground robot", _session5),
     6: ("Session 6: a conveyor loop that stops the box for 5 seconds", _session6),
+    14: ("Session 14: factory cell, an arm picks packages off a conveyor", _session14),
 }
 
 
@@ -428,14 +560,14 @@ def homework_sessions() -> dict[str, Any]:
 
 
 def check_homework(stage: Any, session: int) -> dict[str, Any]:
-    """Read-only: grade the open scene against a session's homework (3, 4, 5 or 6). Each check is pass, partial, fail
+    """Read-only: grade the open scene against a session's homework (3, 4, 5, 6 or 14). Each check is pass, partial, fail
     or unknown with evidence and how to fix it; next_step names the most useful thing to do now."""
     if Usd is None:
         return {"ok": False, "error": "pxr (USD) is not available"}
     if stage is None:
         return {"ok": False, "error": "No stage is open"}
     if isinstance(session, bool) or session not in SESSIONS:
-        return {"ok": False, "error": "session must be 3, 4, 5 or 6 (Session 2's warehouse is assignment_check)"}
+        return {"ok": False, "error": "session must be 3, 4, 5, 6 or 14 (Session 2's warehouse is assignment_check)"}
     dirty = {layer.identifier: layer.dirty for layer in stage.GetUsedLayers()}
     title, checker = SESSIONS[session]
     rows = checker(stage, _prims(stage))

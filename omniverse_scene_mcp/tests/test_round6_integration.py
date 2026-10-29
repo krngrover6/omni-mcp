@@ -275,7 +275,7 @@ def test_python_practice_records_progress_only_in_memory_and_picks_the_next_exer
         return  # practice runs need an installed usd-core (a namespace-package pxr, as in Kit's libs, cannot run)
     with _server() as call:
         listing = call("python_practice_list")
-        assert listing["ok"] is True and listing["count"] == 24 and listing["passed_count"] == 0
+        assert listing["ok"] is True and listing["count"] == 29 and listing["passed_count"] == 0
         first = listing["next_exercise"]
         assert all("starter_code" not in row and "solution" not in row for row in listing["exercises"])
         exercise = call("python_practice_get")
