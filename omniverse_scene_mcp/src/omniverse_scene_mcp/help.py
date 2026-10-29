@@ -37,6 +37,8 @@ CHANGES_STATE = frozenset({
     "router_enable_tools", "router_set_scene_target", "scene_animation_play", "scene_animation_stop",
     "scene_select", "sensor_read", "learning_practice_start", "learning_practice_next",
     "python_trial_run",  # runs the learner's code (in a sandbox), so it must not claim to be read-only
+    "robot_record_stop", "robot_replay_stop",  # save a recording file / stop a running replay
+    "robot_live_pick_stop",
 })
 
 
@@ -338,6 +340,7 @@ TOOL_CATALOG: dict[str, list[dict[str, Any]]] = {
               'learning_drill_status(drill_id="drill-20261022T190000Z-ab12cd")', False, False),
         _tool("learning_today", "What should I do today? A time-boxed study plan from your saved progress; read-only.",
               "learning_today(minutes=60)", False, False),
+        _tool("learning_exam_mistakes", "Mistake notebook: each wrong answer, the right one and why, to revise from.", "learning_exam_mistakes()", False, False),
         _tool("learning_exam_week", "Exam week day by day (mocks, reviews, weak-domain drills) plus readiness.", "learning_exam_week(days=7)", False, False),
         _tool("learning_isaac_lab", "Hands-on Isaac Sim lab for an exam objective: concept, tool steps, what to see.", 'learning_isaac_lab(objective_id="1.8")', False, False),
         _tool("learning_interview_questions", "Interview practice questions on USD, physics and Isaac Sim.", 'learning_interview_questions(topic="composition")', False, False),
@@ -392,6 +395,7 @@ TOOL_CATALOG: dict[str, list[dict[str, Any]]] = {
               'assignment_check(assignment_id="isaac_session02_warehouse")', False, False),
         _tool("scene_explain", "Explain your scene in plain words: groups, geometry, lights, cameras, materials, "
               "physics and layers, with a glossary.", 'scene_explain(focus_path="/World")', False, False),
+        _tool("router_usage_report", "Which tools you really use, which fail, and starter-list suggestions.", "router_usage_report(days=14)", False, False),
         _tool("router_doctor", "Read-only connection check of the router and both app bridges, with next steps.",
               "router_doctor()", False, False),
         _tool("router_workflow", "Guided workflows as a normal tool, for clients without MCP prompts (Codex).",

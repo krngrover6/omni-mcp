@@ -118,6 +118,15 @@ _add("debug_trainer", "debug_challenge_list:list_challenges debug_challenge_answ
 _add("debug_trainer", "debug_challenge_make:make_challenge", "local", "Learning Python & homework",
      "debug_challenge_make")
 _add("script_check", "python_check_script:check_script", "local", "Learning Python & homework")
+_add("composition_diagram", "scene_composition_diagram:diagram", "stage", "Live insight")
+_add("schema_builder", "schema_plan:schema_plan schema_check:schema_check", "local", "Knowledge & docs")
+_add("motion_recorder", "robot_record_start:record_start robot_record_stop:record_stop "
+     "robot_replay_motion:replay_motion robot_replay_stop:replay_stop", "kit", "Robots",
+     "robot_record_start robot_replay_motion")
+_add("motion_recorder", "robot_compare_motion:compare_motion robot_recordings:list_recordings", "local", "Robots")
+_add("colour_model", "sdg_train_colour_model:train_colour_model", "local", "Robots", "sdg_train_colour_model")
+_add("live_pick", "robot_live_pick:live_pick", "kit", "Robots", "robot_live_pick")
+_add("live_pick", "robot_live_pick_status:live_pick_status robot_live_pick_stop:live_pick_stop", "kit", "Robots")
 _add("live_challenge", "live_challenge_start:challenge_start live_challenge_check:challenge_check", "stage",
      "Learning Python & homework")
 _add("exam.python_practice", "python_trial_run:trial_run", "local", "Learning Python & homework")

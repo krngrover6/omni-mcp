@@ -9,6 +9,7 @@ import importlib
 import time
 import uuid
 from .day5_io import bundle, integer, json_text, new_directory
+from . import sdg_randomize
 
 _JOBS = {}
 _TASKS = {}
@@ -16,8 +17,11 @@ _TASKS = {}
 
 def plan_sdg(project_dir: str, name: str = 'dataset_run', *, camera: str = '/World/Camera',
              frames: int = 3, width: int = 320, height: int = 240, seed: int = 42,
-             annotations=None) -> dict:
-    """Plan a small RGB/label dataset in a new folder; existing camera and semantic labels are prerequisites."""
+             annotations=None, randomize=None) -> dict:
+    """Plan a small RGB/label dataset in a new folder; existing camera and semantic labels are prerequisites.
+    randomize (optional) changes prims/lights every frame, e.g. {'prims': [...], 'position': {'min': [..],
+    'max': [..]}, 'rotate_z': True, 'colors': 'any', 'lights': ['/World/DomeLight'], 'intensity': [500, 2000]};
+    changes go to the session layer and are put back when the job ends."""
     try:
         destination = new_directory(project_dir, name)
         integer(frames, 'frames', 1, 100); integer(width, 'width', 16, 2048); integer(height, 'height', 16, 2048)
@@ -28,20 +32,27 @@ def plan_sdg(project_dir: str, name: str = 'dataset_run', *, camera: str = '/Wor
         if not isinstance(annotations, list) or not annotations or len(set(annotations)) != len(annotations) or any(
             a not in ('rgb', 'semantic_segmentation', 'bounding_box_2d_tight') for a in annotations):
             raise ValueError('Choose RGB, semantic segmentation and/or tight 2D boxes')
+        spec = sdg_randomize.validate(randomize)
         return {'ok': True, 'dry_run': True, 'written': False, 'output_dir': str(destination),
                 'config': {'project_dir': project_dir, 'name': name, 'camera': camera, 'frames': frames,
-                           'width': width, 'height': height, 'seed': seed, 'annotations': annotations},
+                           'width': width, 'height': height, 'seed': seed, 'annotations': annotations,
+                           'randomize': randomize if spec else None},
                 'prerequisites': ['Isaac/Kit Replicator extension already enabled', 'Existing camera on the active stage',
                                   'Semantic class labels for segmentation and bounding boxes', 'Use a dedicated test stage'],
-                'note': 'Fixed seed controls Replicator RNG; GPU images are not guaranteed bit-identical. No domain randomization is added.'}
+                'note': 'Fixed seed controls Replicator RNG; GPU images are not guaranteed bit-identical. ' + (
+                    'Domain randomization: every frame moves/turns/recolours the chosen prims and changes light '
+                    'brightness (same seed, same sequence); all of it is undone when the job ends.' if spec else
+                    'No domain randomization (pass randomize={...} to vary prims and lights per frame).')}
     except (ValueError, OSError, TypeError) as exc:
         return {'ok': False, 'error': str(exc), 'written': False}
 
 
 def sdg_script(project_dir: str, name: str = 'dataset_run', *, camera: str = '/World/Camera',
-               frames: int = 3, width: int = 320, height: int = 240, seed: int = 42, annotations=None) -> dict:
+               frames: int = 3, width: int = 320, height: int = 240, seed: int = 42, annotations=None,
+               randomize=None) -> dict:
     """Generate a Script Editor example; return text only, with DRY_RUN=True until the user changes it."""
-    plan = plan_sdg(project_dir, name, camera=camera, frames=frames, width=width, height=height, seed=seed, annotations=annotations)
+    plan = plan_sdg(project_dir, name, camera=camera, frames=frames, width=width, height=height, seed=seed,
+                    annotations=annotations, randomize=randomize)
     if not plan['ok']: return plan
     script = ('from omniverse_scene_mcp.sdg import start_sdg, sdg_status\n'
               'DRY_RUN = True  # inspect the plan before changing this to False\n'
@@ -52,9 +63,10 @@ def sdg_script(project_dir: str, name: str = 'dataset_run', *, camera: str = '/W
 
 def start_sdg(project_dir: str, name: str = 'dataset_run', *, camera: str = '/World/Camera',
               frames: int = 3, width: int = 320, height: int = 240, seed: int = 42,
-              annotations=None, dry_run: bool = True) -> dict:
+              annotations=None, randomize=None, dry_run: bool = True) -> dict:
     """Preview or schedule at most 100 Replicator frames; detach writer/destroy render product on completion or failure."""
-    plan = plan_sdg(project_dir, name, camera=camera, frames=frames, width=width, height=height, seed=seed, annotations=annotations)
+    plan = plan_sdg(project_dir, name, camera=camera, frames=frames, width=width, height=height, seed=seed,
+                    annotations=annotations, randomize=randomize)
     if not plan['ok']: return plan
     if dry_run is not False:
         problem = _live_camera_problem(camera)
@@ -66,6 +78,8 @@ def start_sdg(project_dir: str, name: str = 'dataset_run', *, camera: str = '/Wo
         stage = usd.get_context().get_stage()
         problem = camera_problem(stage, camera)
         if problem: raise ValueError(problem)
+        spec = sdg_randomize.validate(randomize)
+        randomizer = sdg_randomize.Randomizer(stage, spec, seed) if spec else None
         timeline = importlib.import_module('omni.timeline').get_timeline_interface()
         if timeline.is_playing(): raise ValueError('Stop simulation before starting a dataset job')
         status = str(rep.orchestrator.get_status()).lower()
@@ -80,6 +94,9 @@ def start_sdg(project_dir: str, name: str = 'dataset_run', *, camera: str = '/Wo
         job_id = uuid.uuid4().hex
         job = {'ok': True, 'job_id': job_id, 'status': 'pending', 'output_dir': result['directory'],
                'frames_stepped': 0, 'requested_frames': frames, 'dry_run': False, 'written': True}
+        if randomizer is not None:
+            job['randomize_warnings'] = randomizer.warnings
+            job['randomized_frames'] = []
         _JOBS[job_id] = job
         while len(_JOBS) > 50: _JOBS.pop(next(iter(_JOBS)))
 
@@ -104,6 +121,9 @@ def start_sdg(project_dir: str, name: str = 'dataset_run', *, camera: str = '/Wo
                     for frame in range(frames):
                         if usd.get_context().get_stage() != stage:
                             raise RuntimeError('Active stage changed; stopping this job')
+                        if randomizer is not None:  # DOMAIN RANDOMIZATION: a new variation for this frame
+                            changes = randomizer.apply()
+                            if frame < 20: job['randomized_frames'].append(changes)
                         await rep.orchestrator.step_async(rt_subframes=2, pause_timeline=True)
                         job['frames_stepped'] = frame + 1
                     await rep.orchestrator.wait_until_complete_async()
@@ -123,6 +143,9 @@ def start_sdg(project_dir: str, name: str = 'dataset_run', *, camera: str = '/Wo
                     if obj is not None:
                         try: getattr(obj, method)()
                         except Exception as exc: cleanup.append(str(exc)[:200])
+                if randomizer is not None:
+                    try: job['restored_values'] = randomizer.restore()
+                    except Exception as exc: cleanup.append(f'restore: {exc}'[:200])
                 if cleanup: job['cleanup_warnings'] = cleanup
                 job['finished_at'] = time.time()
                 _TASKS.pop(job_id, None)

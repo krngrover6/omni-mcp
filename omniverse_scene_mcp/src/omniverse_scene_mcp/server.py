@@ -2297,6 +2297,15 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         areas, Python practice), your streak and a catch-up hint. Nothing is written."""
         return exam_reminder.today_brief(_brief_store(), minutes=minutes)
 
+    @app.tool(name="learning_exam_mistakes")
+    def learning_exam_mistakes(include_fixed: bool = True, domain: str | None = None, limit: int = 20) -> dict:
+        """Read-only: your mistake notebook. Every exam question you got wrong, still-wrong first: the question, what
+        you chose, the right answer and WHY (the bank's explanations), how often you missed it, and where to read
+        more. Re-test them with learning_drill_start(focus='mistakes')."""
+        from .exam import notebook
+
+        return notebook.mistake_notebook(progress_store, include_fixed=include_fixed, domain=domain, limit=limit)
+
     @app.tool(name="learning_exam_week")
     def learning_exam_week(days: int = 7) -> dict:
         """Read-only: the last `days` (3-14) before your NCP-OUSD exam date as a day-by-day agenda built from your
@@ -3175,6 +3184,19 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
 
         return await safe_edit.safe_edit(call, schema_of, tool, arguments, confirm=confirm, checkpoint=checkpoint)
 
+    @app.tool(name="router_usage_report")
+    def router_usage_report(days: int = 14) -> dict:
+        """Read-only: which tools were called over the last `days` days (1-90): most used, most failing, slowest,
+        starter tools never used and hidden tools called often (candidates for the starter list). Only tool names,
+        counts and times are stored, never arguments or results."""
+        from . import usage_stats
+
+        registry = app._tool_manager._tools
+        hidden = list(stash.hidden) if stash is not None else []
+        names = list(registry) + [n for n in hidden if n not in registry]
+        starter = profiles.resolve_profile("starter", names)["tools"]
+        return usage_stats.usage_report(days, all_tools=names, starter=starter)
+
     @app.tool(name="router_doctor")
     def router_doctor() -> dict:
         """Read-only connection doctor: is the router healthy and running the latest code, do the Isaac Sim (9911) and
@@ -3218,6 +3240,9 @@ def build_server(host: str | None = None, port: int | None = None) -> FastMCP:
         if tool.name in read_only:
             tool.annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 
+    from . import usage_stats
+
+    usage_stats.install_usage_counter(app)
     profiles.install_compact_outputs(app)
     profiles.advertise_tool_list_changed(app)
     stash, profile_report = profiles.apply_profile_to_app(app)
