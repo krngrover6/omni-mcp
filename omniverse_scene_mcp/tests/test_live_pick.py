@@ -39,7 +39,8 @@ def _rig(timeline="playing", positions=None):
             callbacks.remove(self.cb)
 
     lp._subscribe_physics = _Handle
-    franka = types.SimpleNamespace(get_joint_positions=lambda: [0.0] * 9)
+    gripper = types.SimpleNamespace(forward=lambda action: f"gripper {action}")
+    franka = types.SimpleNamespace(get_joint_positions=lambda: [0.0] * 9, gripper=gripper)
     lp._make_controller = lambda root: (franka, controller, types.SimpleNamespace(apply_action=applied.append))
     jc._kit_module = lambda name: types.SimpleNamespace(array=list) if name == "numpy" else saved[4](name)
 
@@ -60,14 +61,15 @@ def test_live_pick_drives_the_controller_each_physics_step_until_done():
         started = lp.live_pick("/World/Franka", "/World/Cube", [0.3, 0.4, 0.05], dry_run=False)
         assert started["running"] and len(callbacks) == 1
         assert not lp.live_pick("/World/Franka", "/World/Cube", [0.3, 0.4, 0.05], dry_run=False)["ok"]  # one at a time
-        for _ in range(5):
+        for _ in range(lp.OPEN_STEPS + 5):
             for cb in list(callbacks):
                 cb(1 / 60)
-        assert applied == ["action"] * 3 and not callbacks  # finished after 3 steps, unsubscribed itself
+        # Seen live: the gripper must open BEFORE the controller runs, or closed fingers knock the cube away.
+        assert applied == ["gripper open"] * lp.OPEN_STEPS + ["action"] * 3 and not callbacks, applied[-5:]
         assert controller.calls[0]["picking_position"] == [0.5, 0.0, 0.03]
         positions["/World/Cube"] = [0.31, 0.4, 0.03]
         status = lp.live_pick_status()
-        assert status["result"] == "done" and status["placed"] and status["steps"] == 3, status
+        assert status["result"] == "done" and status["placed"] and status["steps"] == lp.OPEN_STEPS + 3, status
         assert lp.live_pick_stop()["was_running"] is False
     finally:
         restore()

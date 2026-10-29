@@ -223,9 +223,13 @@ def replay_stop() -> dict[str, Any]:
             "targets_sent": entry["sent"] if entry else 0}
 
 
-def compare_motion(a: str, b: str) -> dict[str, Any]:
+def compare_motion(a: str, b: str, settle_seconds: float = 1.0) -> dict[str, Any]:
     """Read-only: how far two recordings of the same robot differ, joint by joint (max and average), lined up in
-    time. Tells you whether a change kept the motion the same."""
+    time. The first settle_seconds are reported apart (start_difference): a replay starts wherever the robot is and
+    needs a moment to catch up (seen live: 160 degrees at 0 s, a few degrees after). Says whether the motion is the
+    same."""
+    if isinstance(settle_seconds, bool) or not isinstance(settle_seconds, (int, float)) or settle_seconds < 0:
+        return {"ok": False, "error": "settle_seconds must be 0 or more."}
     first, problem = _load(a)
     second, problem_b = (None, None) if problem else _load(b)
     if problem or problem_b:
@@ -238,24 +242,36 @@ def compare_motion(a: str, b: str) -> dict[str, Any]:
     rows = []
     for joint in shared:
         ia, ib = first["joints"].index(joint), second["joints"].index(joint)
-        diffs = []
+        diffs, start = [], 0.0
         for k in range(steps + 1):
             t = end * k / steps
             x, y = _at(first["samples"], t)[ia], _at(second["samples"], t)[ib]
-            if x is not None and y is not None:
+            if x is None or y is None:
+                continue
+            if t < settle_seconds:
+                start = max(start, abs(x - y))
+            else:
                 diffs.append((abs(x - y), t))
         if not diffs:
             continue
         worst, when = max(diffs)
         unit = first["units"][ia] if ia < len(first.get("units", [])) else ""
         rows.append({"joint": joint, "unit": unit, "max_difference": round(worst, 4), "at_second": round(when, 2),
-                     "average_difference": round(sum(d for d, _ in diffs) / len(diffs), 4)})
+                     "average_difference": round(sum(d for d, _ in diffs) / len(diffs), 4),
+                     "start_difference": round(start, 4)})
+    if not rows:
+        return {"ok": False, "error": f"The recordings overlap for less than settle_seconds ({settle_seconds:g} s)."}
     rows.sort(key=lambda r: -r["max_difference"])
     same = all(r["max_difference"] < (1.0 if r["unit"] == "degrees" else 0.01) for r in rows)
+    close = all(r["average_difference"] < (2.0 if r["unit"] == "degrees" else 0.005) for r in rows)
     return {"ok": True, "read_only": True, "compared_seconds": round(end, 2), "joints": rows,
-            "verdict": "The same motion (every joint within 1 degree / 1 cm)." if same else
-                       f"Different: {rows[0]['joint']} differs most ({rows[0]['max_difference']} {rows[0]['unit']} "
-                       f"at {rows[0]['at_second']} s).",
+            "settle_seconds": settle_seconds,
+            "verdict": ("The same motion (every joint within 1 degree / 1 cm after the start)." if same else
+                        "Close: on average every joint stays within 2 degrees / 5 mm, but "
+                        f"{rows[0]['joint']} strays up to {rows[0]['max_difference']} {rows[0]['unit']} "
+                        f"at {rows[0]['at_second']} s." if close else
+                        f"Different: {rows[0]['joint']} differs most ({rows[0]['max_difference']} {rows[0]['unit']} "
+                        f"at {rows[0]['at_second']} s)."),
             "durations": [first["samples"][-1]["t"], second["samples"][-1]["t"]]}
 
 

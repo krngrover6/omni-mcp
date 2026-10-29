@@ -18,7 +18,8 @@ from typing import Any
 from . import joint_control as jc
 
 EXAMPLES_EXTENSION = "isaacsim.robot.manipulators.examples"
-TIMEOUT_SECONDS = 60.0
+TIMEOUT_STEPS = 3600   # physics steps (60 s of simulation at 60 Hz), not wall time: slow laptops run slower
+OPEN_STEPS = 30        # open the gripper first for half a second of simulation
 _JOB: dict[str, Any] = {}
 
 
@@ -102,19 +103,26 @@ def live_pick(robot_root: str, object_path: str, place_position: Any, *, dry_run
         return {**base, "ok": False, "error": f"Could not set up the Franka controller: {type(exc).__name__}: {exc}",
                 "hint": "Use the Franka from Create > Robots (its root is the prim with the articulation root)."}
     np = jc._kit_module("numpy")
-    job = {"running": True, "steps": 0, "phase": 0, "started": time.time(), "result": None, "errors": []}
+    job = {"running": True, "steps": 0, "phase": "opening the gripper", "started": time.time(), "result": None,
+           "errors": []}
     _JOB.clear()
     _JOB.update(job)
 
     def on_step(_dt: float) -> None:
         if not _JOB.get("running"):
             return
-        if time.time() - _JOB["started"] > TIMEOUT_SECONDS:
+        if _JOB["steps"] > TIMEOUT_STEPS:
             _finish("timed_out")
             return
         try:
             joints = franka.get_joint_positions()
             if joints is None:
+                return
+            if _JOB["steps"] < OPEN_STEPS:
+                # Seen live: without this the fingers started CLOSED (Isaac's examples open them in post_reset),
+                # came down on the cube and pushed it away, and the "pick" closed on nothing.
+                articulation.apply_action(franka.gripper.forward(action="open"))
+                _JOB["steps"] += 1
                 return
             where = _object_position(object_path) or start
             actions = controller.forward(
@@ -137,7 +145,7 @@ def live_pick(robot_root: str, object_path: str, place_position: Any, *, dry_run
     _JOB["object"], _JOB["place"] = object_path, place
     return {**plan, "running": True,
             "note": "The arm is moving. live_pick_status shows its progress; it stops by itself when done "
-                    f"(or after {TIMEOUT_SECONDS:g} s)."}
+                    f"(or after {TIMEOUT_STEPS // 60} s of simulation time)."}
 
 
 def _finish(result: str) -> None:
