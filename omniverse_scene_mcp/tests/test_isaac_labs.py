@@ -113,14 +113,16 @@ def test_sorting_labels_and_factory_cell_bin_match_what_the_tools_build():
     labels = next(s["arguments"]["mapping"] for s in labs["package_sorting"]["steps"] if s["tool"] == "semantic_labels")
     assert labels == colours, (labels, colours)
     cell = next(s["arguments"] for s in labs["factory_cell"]["steps"] if s["tool"] == "scene_build_factory_cell")
-    plan = factory_cell.build_cell(stage(), **cell)
+    # The layout alone, not build_cell: its preview also checks the Franka asset files, which exist on the laptop
+    # but not on the CI runner (seen in CI run 48: this test failed there and passed locally).
+    layout = factory_cell._layout(cell["origin"], cell["colours"])
     pick = next(s["arguments"] for s in labs["factory_cell"]["steps"] if s["tool"] == "robot_live_pick")
-    low, high = factory_cell._layout(cell["origin"], cell["colours"])["packages_region"]
+    low, high = layout["packages_region"]
     package = spawner.spawn_packages(stage(), f"{cell['root']}/Packages", 1, region_min=low, region_max=high,
                                      size_range=(0.05, 0.06), colors=cell["colours"],
                                      seed=3)["would_create"]["packages"][0]  # build_cell's default seed
-    assert plan["ok"] and pick["object_path"] == package["path"]
-    assert pick["place_position"][:2] == plan["bins"][package["color"]][:2], (pick, plan["bins"], package)
+    assert pick["object_path"] == package["path"]
+    assert pick["place_position"][:2] == layout["bins"][package["color"]][:2], (pick, layout["bins"], package)
 
 
 def test_lab_asset_files_exist_in_this_workspace():
