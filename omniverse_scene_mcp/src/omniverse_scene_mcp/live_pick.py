@@ -218,7 +218,9 @@ def live_pick_status() -> dict[str, Any]:
             "phase": _JOB.get("phase"), "steps": _JOB.get("steps"), "seconds": round(time.time() - _JOB["started"], 1),
             "object_now": [round(v, 3) for v in now] if now else None,
             "distance_to_place_m": round(gap, 3) if gap is not None else None,
-            "placed": bool(gap is not None and gap < 0.05 and _JOB.get("result") == "done"),
+            # Within 10 cm of the place spot: a bin is about 30 cm wide. Seen live: a package resting on its bin
+            # 6.9 cm from the centre was reported as not placed with a 5 cm rule.
+            "placed": bool(gap is not None and gap < 0.10 and _JOB.get("result") == "done"),
             "errors": _JOB.get("errors", [])[:5]}
 
 

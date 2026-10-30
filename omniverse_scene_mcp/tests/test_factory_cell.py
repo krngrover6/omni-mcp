@@ -83,7 +83,16 @@ def test_preview_then_build_a_cell_homework_14_accepts():
         node.CreateAttribute("node:type", __import__("pxr").Sdf.ValueTypeNames.Token).Set(
             "isaacsim.core.nodes.IsaacArticulationController")
         node.CreateRelationship("inputs:targetPrim").SetTargets(["/World/FactoryCell/Franka"])
+        # Seen live: other arms far away in the same scene must not be the one graded
+        far = UsdGeom.Xform.Define(stage, "/World/FarArm")
+        UsdGeom.XformCommonAPI(far).SetTranslate((9.0, 9.0, 0.0))
+        UsdPhysics.ArticulationRootAPI.Apply(far.GetPrim())
+        for i in range(7):
+            UsdPhysics.RevoluteJoint.Define(stage, f"/World/FarArm/joint{i}")
+        UsdPhysics.PrismaticJoint.Define(stage, "/World/FarArm/finger")
         grade = homework.check_homework(stage, 14)
+        arm_row = next(r for r in grade["results"] if r["rule"] == "arm")
+        assert arm_row["evidence"]["graded_arm"] == "/World/FactoryCell/Franka", arm_row
         status = {r["rule"]: r["status"] for r in grade["results"]}
         assert all(v == "pass" for v in status.values()), status  # the layout really is reachable and graspable
         assert not fc.build_cell(stage)["ok"]  # never builds over an existing cell

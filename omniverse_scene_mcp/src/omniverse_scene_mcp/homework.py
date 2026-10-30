@@ -431,7 +431,20 @@ def _flat_distance(a: Any, b: Any, metres: float) -> float:
 
 def _session14(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
     """Class session 14 (final project): a factory cell where a robot arm picks a package off a conveyor and places
-    it at a target, with a sensor that sees the package and logic that drives the arm. Distances are in metres."""
+    it at a target, with a sensor that sees the package and logic that drives the arm. Distances are in metres.
+    With several arms in the scene, each is graded and the best one counts. Seen live: a test scene with three
+    Frankas was graded from a far-away arm, so the cell's packages and bins looked out of reach."""
+    first = _session14_for(stage, prims, 0)
+    candidates = len(next((r["evidence"]["articulations"] for r in first if r["rule"] == "arm"), []))
+    best = first
+    for index in range(1, min(candidates, 6)):
+        rows = _session14_for(stage, prims, index)
+        if _score(rows)[0] > _score(best)[0]:
+            best = rows
+    return best
+
+
+def _session14_for(stage: Any, prims: list[Any], pick: int) -> list[dict[str, Any]]:
     rows = []
     metres = UsdGeom.GetStageMetersPerUnit(stage) or 1.0
     joints = [p for p in prims if p.IsA(UsdPhysics.Joint)]
@@ -446,10 +459,11 @@ def _session14(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
         robot = parent if root.HasAPI(UsdPhysics.RigidBodyAPI) and parent and str(parent.GetPath()) != "/" else root
         arms.append((robot, [j for j in joints if j.IsA(UsdPhysics.RevoluteJoint) and under(j, robot)]))
     arms.sort(key=lambda item: -len(item[1]))
-    arm, revolute = arms[0] if arms else (None, [])
+    arm, revolute = arms[pick] if len(arms) > pick else (None, [])
     rows.append(_row("arm", "A robot arm (articulation with 5+ rotating joints)", 3,
                      "pass" if arm is not None and len(revolute) >= 5 else "partial" if arms else "fail",
-                     {"articulations": [str(a.GetPath()) for a, _ in arms][:6], "revolute_joints": len(revolute)},
+                     {"articulations": [str(a.GetPath()) for a, _ in arms][:6], "revolute_joints": len(revolute),
+                      "graded_arm": str(arm.GetPath()) if arm is not None else None},
                      "The cell's worker is an arm: an articulation (one robot that PhysX solves as a whole) with "
                      "enough rotating joints to reach around, like the Franka's 7.",
                      ["Add a Franka: Create > Robots > Franka Emika Panda (or robot_import), on the floor near the belt."]))
