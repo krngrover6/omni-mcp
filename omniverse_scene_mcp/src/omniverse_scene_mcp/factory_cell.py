@@ -41,7 +41,9 @@ def _layout(origin: list[float], colours: list[str]) -> dict[str, Any]:
     return {
         # Seen live: turning the belt does NOT turn what a Conveyor Belt node does; its direction input does.
         "belt": {"position": at(0.0, 0.0, 0.05), "size": [2.4, 0.4, 0.1], "yaw": 0.0, "direction": [-1.0, 0.0, 0.0]},
-        "stopper": {"position": at(-0.95, 0.0, 0.15), "size": [0.05, 0.4, 0.15]},
+        # A low curb, not a wall. Seen live: the package rested against a 15 cm wall, rubbed along it while being
+        # lifted and slipped out of the fingers; a 2 cm curb stops it but frees it after a 2 cm lift.
+        "stopper": {"position": at(-0.95, 0.0, 0.11), "size": [0.05, 0.4, 0.02]},
         "pick_spot": at(-0.85, 0.0, 0.13),
         "franka": at(-1.45, 0.0, 0.0),
         "franka_yaw": 0.0,
@@ -119,7 +121,7 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
         {"part": "belt", "path": f"{root}/Belt",
          "what": "kinematic rigid body + collider, 2.4 m long, carrying toward -X (conveyor direction)",
          "at": layout["belt"]["position"]},
-        {"part": "stopper", "path": f"{root}/Stopper", "what": "static wall that stops packages at the pick spot",
+        {"part": "stopper", "path": f"{root}/Stopper", "what": "low 2 cm curb that stops packages at the pick spot (and lets them be lifted off)",
          "at": layout["stopper"]["position"]},
         *({"part": f"bin_{c}", "path": f"{root}/Bin_{c}", "what": f"drop-off for {c} packages", "at": p}
           for c, p in layout["bins"].items()),

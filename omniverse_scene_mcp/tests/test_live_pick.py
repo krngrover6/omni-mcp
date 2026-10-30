@@ -67,6 +67,7 @@ def test_live_pick_drives_the_controller_each_physics_step_until_done():
         # Seen live: the gripper must open BEFORE the controller runs, or closed fingers knock the cube away.
         assert applied == ["gripper open"] * lp.OPEN_STEPS + ["action"] * 3 and not callbacks, applied[-5:]
         assert controller.calls[0]["picking_position"] == [0.5, 0.0, 0.03]
+        assert controller.calls[0]["end_effector_offset"] == [0.0, 0.005, 0.0]
         positions["/World/Cube"] = [0.31, 0.4, 0.03]
         status = lp.live_pick_status()
         assert status["result"] == "done" and status["placed"] and status["steps"] == lp.OPEN_STEPS + 3, status
@@ -94,6 +95,7 @@ def test_live_pick_needs_play_and_warns_about_reach():
     finally:
         restore()
     assert not lp.live_pick("/World/Franka", "/World/Cube", [0.3, 0.4, 0.05], pace=5)["ok"]
+    assert not lp.live_pick("/World/Franka", "/World/Cube", [0.3, 0.4, 0.05], grip_height=0.2)["ok"]
     assert features.FEATURES["robot_live_pick"].mutates and not features.FEATURES["robot_live_pick_status"].mutates
 
 

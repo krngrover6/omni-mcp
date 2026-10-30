@@ -96,11 +96,13 @@ def _make_controller(robot_root: str, pace: float = 1.0) -> tuple[Any, Any, Any]
     return franka, controller, franka.get_articulation_controller()
 
 
-def live_pick(robot_root: str, object_path: str, place_position: Any, pace: float = 0.5, *,
-              dry_run: bool = True) -> dict[str, Any]:
+def live_pick(robot_root: str, object_path: str, place_position: Any, pace: float = 0.5, grip_height: float = 0.0,
+              *, dry_run: bool = True) -> dict[str, Any]:
     """KIT-ONLY, SIMULATION STATE. The Franka at robot_root picks object_path and places it at place_position
     ([x, y, z] metres, world). pace (0.2-1): how fast the phases move on; lower gives the arm more time to arrive
-    (needed when the object is far to the arm's side). dry_run=True checks everything and moves nothing. Needs Play."""
+    (needed when the object is far to the arm's side). grip_height (-0.03 to 0.05 m) grips that much above the
+    object's centre: raise it when the object rests on a belt, so the fingertips do not press into the surface
+    under it. dry_run=True checks everything and moves nothing. Needs Play."""
     base = {"action": "live_pick", "robot_root": robot_root, "object": object_path, "dry_run": jc._dry(dry_run)}
     try:
         place = _vector(place_position, "place_position")
@@ -108,6 +110,8 @@ def live_pick(robot_root: str, object_path: str, place_position: Any, pace: floa
         return {**base, "ok": False, "error": str(exc)}
     if isinstance(pace, bool) or not isinstance(pace, (int, float)) or not 0.2 <= pace <= 1:
         return {**base, "ok": False, "error": "pace must be from 0.2 (slow, more time per phase) to 1 (Isaac's default)."}
+    if isinstance(grip_height, bool) or not isinstance(grip_height, (int, float)) or not -0.03 <= grip_height <= 0.05:
+        return {**base, "ok": False, "error": "grip_height must be from -0.03 to 0.05 metres."}
     if _JOB.get("running"):
         return {**base, "ok": False, "error": "A live pick is already running: wait, or call live_pick_stop."}
     state, problem = jc._timeline_state()
@@ -172,7 +176,8 @@ def live_pick(robot_root: str, object_path: str, place_position: Any, pace: floa
             where = _object_position(object_path) or start
             actions = controller.forward(
                 picking_position=np.array(where), placing_position=np.array(place),
-                current_joint_positions=joints, end_effector_offset=np.array([0.0, 0.005, 0.0]))
+                current_joint_positions=joints,
+                end_effector_offset=np.array([0.0, 0.005, float(grip_height)]))
             articulation.apply_action(actions)
             _JOB["steps"] += 1
             _JOB["phase"] = int(controller.get_current_event()) if hasattr(controller, "get_current_event") else None

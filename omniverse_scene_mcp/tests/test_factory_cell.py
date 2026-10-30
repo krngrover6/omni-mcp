@@ -72,6 +72,9 @@ def test_preview_then_build_a_cell_homework_14_accepts():
         forward = UsdGeom.Xformable(franka).ComputeLocalToWorldTransform(0).TransformDir((1, 0, 0))
         assert forward[0] > 0.999  # seen live: only an UNTURNED arm picked reliably
         assert recorded["direction"] == [-1.0, 0.0, 0.0]  # seen live: the node's direction, not a turned belt
+        curb = UsdGeom.Cube(stage.GetPrimAtPath("/World/FactoryCell/Stopper")).ComputeWorldBound(0, "default")
+        top = curb.ComputeAlignedRange().GetMax()[2]
+        assert abs(top - 0.12) < 1e-6  # seen live: a tall wall held the package back while it was lifted
         belt = stage.GetPrimAtPath("/World/FactoryCell/Belt")
         assert belt.GetAttribute("physics:kinematicEnabled").Get() is True
         assert len(stage.GetPrimAtPath("/World/FactoryCell/Packages").GetChildren()) == 1  # one at a time
