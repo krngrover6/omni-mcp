@@ -362,15 +362,22 @@ def _largest_move(rest: Any, points: Any) -> float:
     return max((math.dist(a, b) for a, b in zip(rest, points)), default=0.0)
 
 
-def _live_points(usd: Any, stage: Any, mesh_path: str) -> tuple[list[tuple[float, float, float]], str]:
-    """The sheet's simulated points: whichever copy moved furthest from the rest shape.
+def _rest_points(mesh: Any) -> Any:
+    """The starting shape: the bind pose. Seen live, PhysX writes the simulated shape into the Mesh's own USD
+    points while it plays (Stop puts them back), so during play those are not the starting shape."""
+    pose = mesh.GetPrim().GetAttribute("deformablePose:default:omniphysics:points")
+    value = pose.Get() if pose else None
+    return value if value is not None and len(value) else (mesh.GetPointsAttr().Get() or [])
 
-    Seen live (Isaac Sim 6.1): the visible Mesh's points stayed flat in both Fabric and USD while it rendered draped;
-    PhysX wrote the draped shape to the sibling SimMesh's USD points. With mesh simplification off, the SimMesh is
-    cooked vertex for vertex from the Mesh (same count, same order, same space), so its points can be used directly.
+
+def _live_points(usd: Any, stage: Any, mesh_path: str) -> tuple[list[tuple[float, float, float]], str]:
+    """The sheet's simulated points: whichever copy (Mesh or SimMesh, Fabric or USD) moved furthest from the bind
+    pose. Seen live (Isaac Sim 6.1): the Mesh's USD points carry the simulated shape while it plays. With mesh
+    simplification off the SimMesh is cooked vertex for vertex from the Mesh (same count, order and space), so its
+    points can stand in when they moved further.
     """
     mesh = UsdGeom.Mesh(stage.GetPrimAtPath(mesh_path))
-    rest = mesh.GetPointsAttr().Get() or []
+    rest = _rest_points(mesh)
     sim_path = str(Sdf.Path(mesh_path).GetParentPath().AppendChild("SimMesh"))
     candidates: list[tuple[Any, str]] = []
     try:
@@ -382,19 +389,23 @@ def _live_points(usd: Any, stage: Any, mesh_path: str) -> tuple[list[tuple[float
             candidates.append((attr.Get() if attr else None, label))
     except Exception:  # noqa: BLE001 - no usdrt or no Fabric copy
         pass
-    candidates.append((rest, "usd"))
+    candidates.append((mesh.GetPointsAttr().Get(), "usd"))
     sim = UsdGeom.Mesh(stage.GetPrimAtPath(sim_path))
     if sim:
         candidates.append((sim.GetPointsAttr().Get(), "usd SimMesh"))
     best: tuple[list[tuple[float, float, float]], str] = ([tuple(float(c) for c in p) for p in rest], "usd")
     best_move = 0.0
-    for value, label in candidates:
-        if value is None or len(value) != len(rest):
-            continue
-        points = [tuple(float(c) for c in p) for p in value]
-        move = _largest_move(rest, points)
-        if move > best_move:
-            best, best_move = (points, label), move
+    # The Mesh's own copies first: a SimMesh can keep stale points from an earlier run (seen live).
+    for prefer_mesh in (True, False):
+        for value, label in candidates:
+            if ("SimMesh" not in label) != prefer_mesh or value is None or len(value) != len(rest):
+                continue
+            points = [tuple(float(c) for c in p) for p in value]
+            move = _largest_move(rest, points)
+            if move > best_move:
+                best, best_move = (points, label), move
+        if best_move * _meters_per_unit(stage) >= MIN_MOVE_M:
+            break
     return best
 
 
@@ -452,7 +463,7 @@ def settle_cloth(path: str = "/World/Cloth", *, undo_stack: Any = None, dry_run:
         return {"ok": False, "dry_run": True, "error": str(exc)}
     if state != "stopped":
         points, source = _live_points(usd, stage, str(mesh.GetPath()))
-        moved = _largest_move(mesh.GetPointsAttr().Get() or [], points) * _meters_per_unit(stage)
+        moved = _largest_move(_rest_points(mesh), points) * _meters_per_unit(stage)
         if moved < MIN_MOVE_M:
             return {"ok": False, "dry_run": True, "step": "capture", "source": source,
                     "error": "The cloth has not moved from its starting shape yet. Let it play until it has draped "

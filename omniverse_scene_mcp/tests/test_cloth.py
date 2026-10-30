@@ -214,6 +214,12 @@ def test_settle_captures_while_paused_and_writes_the_draped_shape_after_stop():
     sim.GetPointsAttr().Set([Gf.Vec3f(*p) for p in draped])
     points, source = cloth._live_points(usd, stage, "/World/Cloth/Mesh")
     assert source == "usd SimMesh" and round(points[0][2], 6) == round(draped[0][2], 6)
+    # Seen live too: while playing, the Mesh's own USD points carry the simulated shape. They win over a SimMesh
+    # (which may hold stale points), and the move is measured from the bind pose, not from the Mesh points.
+    half = [(p[0], p[1], p[2] - 0.2) for p in mesh.GetPointsAttr().Get()]
+    mesh.GetPointsAttr().Set([Gf.Vec3f(*p) for p in half])
+    points, source = cloth._live_points(usd, stage, "/World/Cloth/Mesh")
+    assert source == "usd" and round(points[0][2], 6) == round(half[0][2], 6)
     sim.GetPointsAttr().Set([Gf.Vec3f(0, 0, 0)])  # a differently cooked SimMesh is ignored
     assert cloth._live_points(usd, stage, "/World/Cloth/Mesh")[1] == "usd"
 
