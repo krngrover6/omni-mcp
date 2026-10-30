@@ -341,6 +341,118 @@ def make_cloth(stage: Any, path: str = "/World/Cloth", *, size: Any = None, reso
     return _apply(stage, "make_cloth", made, [], mutate, verify, undo_stack, f"Make cloth {root.name}", common)
 
 
+# ------------------------------------------------------------------------------------------------ settle
+# Captured draped shapes: {cloth path: {"points": [(x, y, z), ...], "source": "fabric" | "usd"}}. Stop puts PhysX's
+# simulated points back to the pre-Play shape, so the shape is captured while paused and written after Stop.
+_CAPTURED: dict[str, dict[str, Any]] = {}
+MIN_MOVE_M = 0.001
+
+
+def _cloth_mesh(stage: Any, path: str) -> Any:
+    root = _prim(stage, path, "path")
+    if BODY_API not in _api_names(root):
+        raise _Refusal(f"{path} is not a cloth made by physics_make_cloth (no {BODY_API})")
+    mesh = UsdGeom.Mesh(stage.GetPrimAtPath(root.GetPath().AppendChild("Mesh")))
+    if not mesh:
+        raise _Refusal(f"{path} has no Mesh child, so there is no visible sheet to settle")
+    return mesh
+
+
+def _largest_move(rest: Any, points: Any) -> float:
+    return max((math.dist(a, b) for a, b in zip(rest, points)), default=0.0)
+
+
+def _live_points(usd: Any, stage: Any, mesh_path: str) -> tuple[list[tuple[float, float, float]], str]:
+    """The sheet's simulated points: Fabric (where PhysX writes while it runs) via usdrt, else the USD points."""
+    try:
+        import usdrt  # Kit only
+
+        rt_stage = usdrt.Usd.Stage.Attach(usd.get_context().get_stage_id())
+        attr = rt_stage.GetPrimAtPath(mesh_path).GetAttribute("points")
+        value = attr.Get() if attr else None
+        if value is not None and len(value):
+            return [tuple(float(c) for c in p) for p in value], "fabric"
+    except Exception:  # noqa: BLE001 - no usdrt or no Fabric copy: fall back to USD
+        pass
+    value = UsdGeom.Mesh(stage.GetPrimAtPath(mesh_path)).GetPointsAttr().Get() or []
+    return [tuple(float(c) for c in p) for p in value], "usd"
+
+
+@_guard
+def apply_settle(stage: Any, path: str, points: Any, *, undo_stack: Any = None, dry_run: Any = True) -> dict[str, Any]:
+    """Make captured draped points the sheet's starting shape (Mesh points, extent and bind pose)."""
+    _ready(stage)
+    mesh = _cloth_mesh(stage, path)
+    rest = mesh.GetPointsAttr().Get() or []
+    if len(points) != len(rest):
+        raise _Refusal(f"The captured shape has {len(points)} points but {path} has {len(rest)}: the cloth was rebuilt "
+                       "since the capture. Play, pause when it has settled, capture again.")
+    draped = Vt.Vec3fArray([Gf.Vec3f(*p) for p in points])
+    mpu = _meters_per_unit(stage)
+    moved = _largest_move(rest, draped) * mpu
+    extent = UsdGeom.PointBased.ComputeExtent(draped)
+    plan = {"cloth_root": path, "points": len(draped), "largest_move_m": round(moved, 3),
+            "new_extent_m": [[round(v * mpu, 3) for v in corner] for corner in extent]}
+    common = {"plan": plan, "warnings": [],
+              "explanation": (f"{path} will start in its draped shape (points moved up to {moved:.2f} m), so after "
+                              "Stop it rests on the car instead of hovering flat. Only the starting shape changes: "
+                              "the fabric and its physics stay the same.")}
+    if dry_run is not False:
+        return _result("settle_cloth", next_step="Run again with dry_run=False to keep this shape (undoable).",
+                       **common)
+
+    def mutate() -> None:
+        mesh.GetPointsAttr().Set(draped)
+        mesh.GetExtentAttr().Set(extent)
+        mesh.GetPrim().GetAttribute("deformablePose:default:omniphysics:points").Set(draped)
+
+    def verify() -> str | None:
+        return None if len(mesh.GetPointsAttr().Get() or []) == len(draped) else "the new shape was not written"
+
+    return _apply(stage, "settle_cloth", [], [mesh.GetPath()], mutate, verify, undo_stack,
+                  f"Settle cloth {Sdf.Path(path).name}", common)
+
+
+def settle_cloth(path: str = "/World/Cloth", *, undo_stack: Any = None, dry_run: Any = True) -> dict[str, Any]:
+    """Kit only, two steps. 1) Play until the cloth has draped, pause, call this: it captures the draped shape (no
+    scene change). 2) Press Stop, call again (dry_run=False to write): the captured shape becomes the cloth's
+    starting shape, so the scene opens with the cover already lying on the car. Undoable."""
+    from . import joint_control  # local: keeps this module importable without Kit
+
+    usd = joint_control._kit_module("omni.usd")
+    if usd is None:
+        return {"ok": False, "dry_run": True, "error": "Kit not available: run this inside Isaac Sim or Composer."}
+    stage = usd.get_context().get_stage()
+    state, problem = joint_control._timeline_state()
+    if problem:
+        return {"ok": False, "dry_run": True, "error": problem}
+    try:
+        mesh = _cloth_mesh(stage, path)
+    except _Refusal as exc:
+        return {"ok": False, "dry_run": True, "error": str(exc)}
+    if state != "stopped":
+        points, source = _live_points(usd, stage, str(mesh.GetPath()))
+        moved = _largest_move(mesh.GetPointsAttr().Get() or [], points) * _meters_per_unit(stage)
+        if moved < MIN_MOVE_M:
+            return {"ok": False, "dry_run": True, "step": "capture", "source": source,
+                    "error": "The cloth has not moved from its starting shape yet. Let it play until it has draped "
+                             "(a few seconds), pause, then capture again."}
+        _CAPTURED[path] = {"points": points, "source": source}
+        return {"ok": True, "dry_run": True, "step": "captured", "written": False, "points": len(points),
+                "source": source, "largest_move_m": round(moved, 3),
+                "next_step": "Press Stop (sim_stop), then call physics_cloth_settle again: it previews, and "
+                             "dry_run=False keeps this shape as the starting shape."}
+    captured = _CAPTURED.get(path)
+    if captured is None:
+        return {"ok": False, "dry_run": True, "step": "capture",
+                "error": "Nothing captured yet. Press Play, wait until the cloth has draped, pause, and call this "
+                         "first; then Stop and call it again."}
+    result = apply_settle(stage, path, captured["points"], undo_stack=undo_stack, dry_run=dry_run)
+    if result.get("applied"):
+        _CAPTURED.pop(path, None)
+    return result
+
+
 def _look(stage: Any, path: Any, fabric: dict[str, Any], mesh: Any) -> None:
     """A real material (UsdPreviewSurface) on the visible sheet, so it takes light and reflections from any sky or
     lamp instead of showing a flat display colour."""

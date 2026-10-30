@@ -169,6 +169,48 @@ def test_refusals():
     assert heavy["ok"] and any("heavy for a 6 GB GPU" in w for w in heavy["warnings"])
 
 
+def test_settle_captures_while_paused_and_writes_the_draped_shape_after_stop():
+    from types import SimpleNamespace
+
+    from omniverse_scene_mcp import joint_control
+
+    stage = _stage()
+    _floor(stage)
+    cloth.make_cloth(stage, "/World/Cloth", resolution=4, dry_run=False)
+    mesh = UsdGeom.Mesh(stage.GetPrimAtPath("/World/Cloth/Mesh"))
+    rest = list(mesh.GetPointsAttr().Get())
+    draped = [(p[0], p[1], p[2] - 0.5) for p in rest]  # as if it fell 0.5 m
+    state = {"now": "paused"}
+    usd = SimpleNamespace(get_context=lambda: SimpleNamespace(get_stage=lambda: stage, get_stage_id=lambda: 0))
+    saved = (joint_control._kit_module, joint_control._timeline_state, cloth._live_points)
+    joint_control._kit_module = lambda name: usd if name == "omni.usd" else None
+    joint_control._timeline_state = lambda: (state["now"], None)
+    try:
+        cloth._live_points = lambda *_: (rest, "fabric")
+        assert "not moved" in cloth.settle_cloth("/World/Cloth")["error"]  # still flat: nothing to capture
+        cloth._live_points = lambda *_: (draped, "fabric")
+        captured = cloth.settle_cloth("/World/Cloth")
+        assert captured["step"] == "captured" and captured["largest_move_m"] == 0.5 and not captured["written"]
+        assert list(mesh.GetPointsAttr().Get()) == rest  # capturing changes nothing
+        state["now"] = "stopped"
+        before = _text(stage)
+        preview = cloth.settle_cloth("/World/Cloth")
+        assert preview["ok"] and preview["dry_run"] and _text(stage) == before
+        stack = UndoStack()
+        done = cloth.settle_cloth("/World/Cloth", undo_stack=stack, dry_run=False)
+        assert done["applied"] and done["plan"]["largest_move_m"] == 0.5
+        assert [round(p[2], 6) for p in mesh.GetPointsAttr().Get()] == [round(p[2], 6) for p in draped]
+        pose = mesh.GetPrim().GetAttribute("deformablePose:default:omniphysics:points").Get()
+        assert round(pose[0][2], 6) == round(draped[0][2], 6)
+        assert "Nothing captured" in cloth.settle_cloth("/World/Cloth")["error"]  # used up
+        assert stack.undo_last(stage=stage, dry_run=False)["ok"] and _text(stage) == before
+        assert "not a cloth" in cloth.settle_cloth("/World/Floor")["error"]
+    finally:
+        joint_control._kit_module, joint_control._timeline_state, cloth._live_points = saved
+        cloth._CAPTURED.clear()
+    assert "rebuilt" in cloth.apply_settle(stage, "/World/Cloth", draped[:3])["error"]
+
+
 def test_registered_as_a_previewing_stage_tool():
     spec = features.FEATURES["physics_make_cloth"]
     assert spec.mutates and spec.location == "stage" and spec.group == "Assets & physics"
