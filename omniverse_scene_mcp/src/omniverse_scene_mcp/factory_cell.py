@@ -32,28 +32,21 @@ def _layout(origin: list[float], colours: list[str]) -> dict[str, Any]:
     def at(x: float, y: float, z: float) -> list[float]:
         return [round(ox + x, 4), round(oy + y, 4), round(oz + z, 4)]
 
-    import math
-
-    # The arm stands past the belt's end, facing back along it, with a bin on each side. Seen live: with the bin
-    # 155 degrees behind the pick spot, the fast half-turn flung the gripped package out of the fingers.
-    spots = [(0.95, 0.45), (0.95, -0.45), (1.3, 0.55), (1.3, -0.55)]
+    # Mirror of the one setup that worked live: an UNTURNED Franka (facing +X) with the object 0.6 m straight ahead
+    # and the place spot about 45 degrees to the side. Every turned-robot layout failed live (the hand arrived
+    # tilted, reached backwards, or flung the package), so the BELT is turned instead: it runs toward -X, and the
+    # arm stands past its end facing back along it.
+    spots = [(-0.95, 0.45), (-0.95, -0.45), (-1.3, 0.55), (-1.3, -0.55)]
     bins = {colour: at(spots[i][0], spots[i][1], 0.025) for i, colour in enumerate(colours)}
-    # Face the pick spot (0.85, 0) from the base (0.75, 0.6). Seen live: with the package 76 degrees to the
-    # arm's side the hand arrived tilted and never held it; a cube straight ahead was picked 5 mm from target.
-    facing = round(math.degrees(math.atan2(0.0 - 0.0, 0.85 - 1.45)), 1)
-    if abs(abs(facing) - 180.0) < 5.0:
-        # Seen live: at exactly 180 degrees (a quaternion with w = 0) the arm reached backwards and closed on air;
-        # 175 degrees still has the pick spot 5 degrees off straight ahead.
-        facing = math.copysign(175.0, facing)
     return {
-        "belt": {"position": at(0.0, 0.0, 0.05), "size": [2.4, 0.4, 0.1]},
-        "stopper": {"position": at(0.95, 0.0, 0.15), "size": [0.05, 0.4, 0.15]},
-        "pick_spot": at(0.85, 0.0, 0.13),
-        "franka": at(1.45, 0.0, 0.0),
-        "franka_yaw": facing,
+        "belt": {"position": at(0.0, 0.0, 0.05), "size": [2.4, 0.4, 0.1], "yaw": 180.0},
+        "stopper": {"position": at(-0.95, 0.0, 0.15), "size": [0.05, 0.4, 0.15]},
+        "pick_spot": at(-0.85, 0.0, 0.13),
+        "franka": at(-1.45, 0.0, 0.0),
+        "franka_yaw": 0.0,
         "bins": bins,
-        "camera": at(0.85, 0.0, 2.0),
-        "packages_region": (at(-1.1, -0.12, 0.25), at(-0.6, 0.12, 0.35)),
+        "camera": at(-0.85, 0.0, 2.0),
+        "packages_region": (at(0.6, -0.12, 0.25), at(1.1, 0.12, 0.35)),
     }
 
 
@@ -73,11 +66,14 @@ def _face(xform: Any, yaw_degrees: float) -> str:
     return "added xformOp:orient after the translate"
 
 
-def _box(stage: Any, path: str, position: list[float], size: list[float], rgb: Any, kinematic: bool | None) -> None:
+def _box(stage: Any, path: str, position: list[float], size: list[float], rgb: Any, kinematic: bool | None,
+         yaw: float = 0.0) -> None:
     cube = UsdGeom.Cube.Define(stage, path)
     cube.CreateSizeAttr(1.0)
     api = UsdGeom.XformCommonAPI(cube)
     api.SetTranslate(Gf.Vec3d(*position))
+    if yaw:
+        api.SetRotate(Gf.Vec3f(0.0, 0.0, yaw))  # a Conveyor Belt node moves things along the belt's own +X
     api.SetScale(Gf.Vec3f(*size))
     cube.CreateDisplayColorAttr([Gf.Vec3f(*rgb)])
     UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
@@ -119,7 +115,8 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
     layout = _layout(origin, colours)
     region_min, region_max = layout["packages_region"]
     parts = [
-        {"part": "belt", "path": f"{root}/Belt", "what": "kinematic rigid body + collider, 2.4 m long",
+        {"part": "belt", "path": f"{root}/Belt",
+         "what": "kinematic rigid body + collider, 2.4 m long, turned 180 degrees so it carries toward -X",
          "at": layout["belt"]["position"]},
         {"part": "stopper", "path": f"{root}/Stopper", "what": "static wall that stops packages at the pick spot",
          "at": layout["stopper"]["position"]},
@@ -130,7 +127,7 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
         {"part": "packages", "path": f"{root}/Packages", "what": f"{packages} boxes, 5-6 cm, colours {colours}",
          "at": region_min},
         {"part": "franka", "path": f"{root}/Franka",
-         "what": f"Franka arm (ready robot), turned {layout['franka_yaw']} degrees to face the pick spot",
+         "what": "Franka arm (ready robot), not turned: the pick spot is 0.6 m straight ahead",
          "at": layout["franka"]},
         {"part": "belt_graph", "path": f"{root}/BeltGraph", "what": f"Conveyor Belt node at {belt_speed} m/s",
          "at": None},
@@ -155,7 +152,8 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
                 "note": f"Removed {root} again, so no half-built cell is left."}
 
     UsdGeom.Xform.Define(stage, root)
-    _box(stage, f"{root}/Belt", layout["belt"]["position"], layout["belt"]["size"], (0.25, 0.25, 0.27), True)
+    _box(stage, f"{root}/Belt", layout["belt"]["position"], layout["belt"]["size"], (0.25, 0.25, 0.27), True,
+         yaw=layout["belt"]["yaw"])
     _box(stage, f"{root}/Stopper", layout["stopper"]["position"], layout["stopper"]["size"], (0.9, 0.6, 0.1), None)
     for colour, position in layout["bins"].items():
         _box(stage, f"{root}/Bin_{colour}", position, [0.3, 0.3, 0.05], COLOURS[colour], None)
@@ -173,7 +171,8 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
     robot = robot_import.add_ready_robot(stage, "franka", f"{root}/Franka", position=layout["franka"], dry_run=False)
     if not robot.get("ok"):
         return undo("franka", robot.get("error"))
-    _face(UsdGeom.Xformable(stage.GetPrimAtPath(f"{root}/Franka")), float(layout["franka_yaw"]))
+    if layout["franka_yaw"]:
+        _face(UsdGeom.Xformable(stage.GetPrimAtPath(f"{root}/Franka")), float(layout["franka_yaw"]))
     graph = omnigraph_helper.apply_recipe(stage, "conveyor", dry_run=False, graph_path=f"{root}/BeltGraph",
                                           belt=f"{root}/Belt", velocity=float(belt_speed))
     if not graph.get("ok"):

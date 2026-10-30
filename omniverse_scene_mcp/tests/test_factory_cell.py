@@ -65,9 +65,11 @@ def test_preview_then_build_a_cell_homework_14_accepts():
         built = fc.build_cell(stage, dry_run=False)
         assert built["ok"] and built["built"], built
         franka = stage.GetPrimAtPath("/World/FactoryCell/Franka")
-        assert franka.GetAttribute("xformOp:orient").Get() is not None  # the turn lives in an orient op
         forward = UsdGeom.Xformable(franka).ComputeLocalToWorldTransform(0).TransformDir((1, 0, 0))
-        assert forward[0] < -0.99 and abs(forward[1]) > 0.05  # faces the belt, 5 degrees off exactly 180
+        assert forward[0] > 0.999  # seen live: only an UNTURNED arm picked reliably
+        belt_dir = UsdGeom.Xformable(stage.GetPrimAtPath("/World/FactoryCell/Belt")).ComputeLocalToWorldTransform(
+            0).TransformDir((1, 0, 0))
+        assert belt_dir[0] < -0.999  # the belt is turned instead: it carries toward -X, at the arm
         belt = stage.GetPrimAtPath("/World/FactoryCell/Belt")
         assert belt.GetAttribute("physics:kinematicEnabled").Get() is True
         assert len(stage.GetPrimAtPath("/World/FactoryCell/Packages").GetChildren()) == 1  # one at a time
