@@ -128,6 +128,7 @@ _add("colour_model", "sdg_train_colour_model:train_colour_model", "local", "Robo
 _add("live_pick", "robot_live_pick:live_pick", "kit", "Robots", "robot_live_pick")
 _add("live_pick", "robot_live_pick_status:live_pick_status robot_live_pick_stop:live_pick_stop", "kit", "Robots")
 _add("factory_cell", "scene_build_factory_cell:build_cell", "stage", "Scene: change safely", "scene_build_factory_cell")
+_add("cloth", "physics_make_cloth:make_cloth", "stage", "Assets & physics", "physics_make_cloth")
 _add("data_link", "data_link_preview:preview_source", "local", "Live insight")
 _add("data_link", "data_link_start:start_link", "kit", "Live insight", "data_link_start")
 _add("data_link", "data_link_status:link_status data_link_stop:stop_link", "kit", "Live insight")
