@@ -685,7 +685,7 @@ def start_listener(event_name: str, *, timeout_s: float = 30, target: str = "kit
     record["guard"] = guard
     _LISTENERS[listener_id] = record
     return {"ok": True, "listener_id": listener_id, "event_name": wire, "timeout_s": float(timeout_s),
-            "message": f"Listening for {wire!r}; call listener_status({listener_id!r})."}
+            "message": f"Listening for {wire!r}; call event_status({listener_id!r})."}
 
 
 def listener_status(listener_id: str) -> dict[str, Any]:

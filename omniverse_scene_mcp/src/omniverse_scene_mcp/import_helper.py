@@ -521,7 +521,7 @@ def supported_formats() -> dict[str, Any]:
         "converters": {name: dict(info) for name, info in CONVERTERS.items()},
         "formats": formats,
         "not_handled_here": {
-            "usd": "usd/usda/usdc/usdz need no conversion: use wrap_units(source, wrapper, ...) directly.",
+            "usd": "usd/usda/usdc/usdz need no conversion: use asset_wrap_units(source, wrapper, ...) directly.",
             **{fmt: f"robot description: use {info['extension']} {info['version']} ({info['source']})"
                for fmt, info in ROBOT_IMPORTERS.items()},
         },
@@ -920,7 +920,7 @@ def _wrap(converted_usd: Any, wrapper_path: Any, source_mpu: Any, source_up: Any
     if source_mpu is None:
         if metrics["meters_per_unit"] is None:
             raise ImportHelperError(
-                "The converted file has no metersPerUnit; run detect_units on it and pass source_mpu "
+                "The converted file has no metersPerUnit; run asset_detect_units on it and pass source_mpu "
                 "(e.g. 'cm' or 0.01).")
         s_mpu = float(metrics["meters_per_unit"])
     else:
@@ -1151,7 +1151,7 @@ def import_asset(
         plan["note"] = "Dry run: nothing was converted. Pass dry_run=False inside Kit to convert."
         return plan
     if plan["converter"] is None:
-        return _error("The source is already USD: no conversion is needed; use wrap_units on it directly.",
+        return _error("The source is already USD: no conversion is needed; use asset_wrap_units on it directly.",
                       plan=plan)
     output, wrapper = plan["output_path"], plan["wrapper"]["path"]
     if overwrite is not True:

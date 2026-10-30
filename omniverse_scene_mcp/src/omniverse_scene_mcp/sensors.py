@@ -485,7 +485,7 @@ def add_physics_sensor(
             public = _public(plan)
             warnings.append(
                 "RTX lidar is plan-only here: an OmniLidar prim needs the lidar asset's many sensor settings, so "
-                "nothing was written. Run the python in Isaac Sim's Script Editor or use create_sensor_live."
+                "nothing was written. Run the python in Isaac Sim's Script Editor or use sensor_create."
             )
             return authoring._finish(action, True, stage, warnings, key="would_create", plan=_plan_summary(public),
                                      extra={"plan_only": True, "python": public["python"],
@@ -591,6 +591,12 @@ def create_sensor_live(
     usd = _kit_module("omni.usd")
     if usd is None:
         return _not_kit("omni.usd is not importable")
+    from . import joint_control  # local: keeps this module's import light
+
+    # Seen live in Composer: the dry run planned happily and invited dry_run=False in an app without Isaac.
+    needs_isaac = joint_control._isaac_problem(sensors=True, kit_module=_kit_module)
+    if needs_isaac:
+        return {"ok": False, "dry_run": authoring._dry(dry_run), "error": needs_isaac, "message": needs_isaac}
     stage = _live_stage(usd)
     if stage is None:
         return {"ok": False, "message": "No stage is open in Kit."}
@@ -1226,7 +1232,7 @@ def _how_to_view(kind: str) -> list[str]:
         steps = [
             "Look through it: in the Viewport, open the camera menu (top left) and pick the new camera; or open "
             "Window > Viewport > Viewport 2 and choose it there so the main view stays free.",
-            "Press Play and run the 'read the camera' lines of the python (or read_sensor_live(prim_path)).",
+            "Press Play and run the 'read the camera' lines of the python (or sensor_read(prim_path)).",
         ]
         if kind == "depth_camera":
             steps.append("Depth is 'distance_to_image_plane': stage units per pixel, inf where the ray hits nothing.")
@@ -1239,11 +1245,11 @@ def _how_to_view(kind: str) -> list[str]:
         ]
     if kind == "imu":
         return [
-            "Press Play, then IMUSensor(path).get_data() (or read_sensor_live(prim_path)).",
+            "Press Play, then IMUSensor(path).get_data() (or sensor_read(prim_path)).",
             "Still robot: about +9.81 on the axis pointing up, ~0 turning speed. Moving or tilting it changes the numbers.",
         ]
     return [
-        "Press Play, then ContactSensor(path).get_data() (or read_sensor_live(prim_path)).",
+        "Press Play, then ContactSensor(path).get_data() (or sensor_read(prim_path)).",
         "in_contact turns True and force grows when the link presses on something.",
     ]
 

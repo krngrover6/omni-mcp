@@ -310,9 +310,9 @@ def _resolve(app: str | os.PathLike[str] | None, dirs: Iterable[str | os.PathLik
         if not inside:
             raise KitLogError(
                 f"{_display(target)} is not inside the Kit log folders ({', '.join(_display(r) for r in roots)}). "
-                "Only Kit logs can be read; use find_logs() to list them.")
+                "Only Kit logs can be read; use kit_logs() to read the newest one.")
         if path.suffix.lower() != ".log" or not path.is_file():
-            raise KitLogError(f"No .log file at {_display(path)}. Use find_logs() to list the Kit logs.")
+            raise KitLogError(f"No .log file at {_display(path)}. Use kit_logs() to read the newest Kit log.")
         label = "log"
         for root in roots:
             try:

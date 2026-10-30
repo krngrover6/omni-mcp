@@ -339,7 +339,7 @@ def make_rigid_body(
         if not _subtree_has_collider(prim) and not colliders:
             warnings.append(
                 f"Rigid body {path} has no collider on itself or below it, so it falls through everything; pass "
-                "add_collider=True or call make_collider on its geometry."
+                "add_collider=True or call scene_make_collider on its geometry."
             )
         if not kinematic_flag:
             _dynamic_triangle_mesh_warnings(prim, approx if collider_flag else None, warnings, will_collide=collider_flag)

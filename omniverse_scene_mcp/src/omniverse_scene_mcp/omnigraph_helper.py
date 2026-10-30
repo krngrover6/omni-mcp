@@ -2334,5 +2334,5 @@ def apply_recipe(stage: Any, name: str, *, dry_run: bool = True, graph_path: str
         report["flow"] = [line for graph in check.get("graphs", []) for line in graph["flow"]]
         report["problems"] = check.get("problems", [])
     else:
-        report["note"] = "The graph prim is not visible on the stage yet; run inspect_graphs after the next update."
+        report["note"] = "The graph prim is not visible on the stage yet; run graph_inspect after the next update."
     return report

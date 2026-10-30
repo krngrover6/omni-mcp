@@ -222,7 +222,7 @@ async def _preview(call: Call, tool: str, arguments: dict[str, Any], paths: list
                       "before": before, "created": now()}
     return {
         **base, "ok": True, "step": "preview", "changed": False,
-        "preview": preview,
+        "preview": _without_dry_run_hints(preview),
         "prims_now": before,
         "safety_net": {"checkpoint_first": take_checkpoint, "why": checkpoint_why,
                        "undo": "scene_undo_last undoes it afterwards" if _undoable(preview) else
@@ -233,6 +233,23 @@ async def _preview(call: Call, tool: str, arguments: dict[str, Any], paths: list
         "next": (f"Show the user this preview. Only if they say yes, call scene_safe_edit(tool='{tool}', "
                  f"arguments=<the same arguments>, confirm='{code}'). Nothing has changed yet."),
     }
+
+
+_NEXT_KEYS = ("next_step", "next")
+
+
+def _without_dry_run_hints(value: Any) -> Any:
+    """A copy of the wrapped tool's preview without its own "Call again with dry_run=False" next steps.
+
+    Seen live in Composer: the inner next_step contradicted the confirm-code flow; here the only way on is
+    scene_safe_edit(..., confirm=code), so those hints are dropped (the tool's own result is not changed).
+    """
+    if isinstance(value, dict):
+        return {key: _without_dry_run_hints(item) for key, item in value.items()
+                if not (key in _NEXT_KEYS and isinstance(item, str) and "dry_run=false" in item.lower())}
+    if isinstance(value, list):
+        return [_without_dry_run_hints(item) for item in value]
+    return value
 
 
 async def _apply(call: Call, tool: str, arguments: dict[str, Any], paths: list[str], base: dict[str, Any],

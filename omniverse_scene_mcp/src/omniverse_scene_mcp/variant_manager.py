@@ -534,7 +534,7 @@ def create_variant_set(
         path = prim.GetPath()
         set_name = _identifier(name, "name")
         if set_name in _all_set_names(stage, prim):
-            raise _Refusal(f"{path} already has a variant set named {set_name}. Use duplicate_variant to add variants to it.")
+            raise _Refusal(f"{path} already has a variant set named {set_name}. Use variant_duplicate to add variants to it.")
         if isinstance(variants, str) or not isinstance(variants, (list, tuple)):
             raise _Refusal("variants must be a list of names, e.g. ['Black', 'White'].")
         if len(variants) > MAX_NEW_VARIANTS:
@@ -553,7 +553,7 @@ def create_variant_set(
         else:
             warnings.append("The new variants are empty: each changes nothing until you author opinions inside it.")
         if selection is None and names:
-            warnings.append("No selection is authored, so no variant is active until you call set_selection.")
+            warnings.append("No selection is authored, so no variant is active until you call variant_select.")
         if target is stage.GetSessionLayer():
             warnings.append("The session layer is never saved with the scene.")
         plan = {"prim_path": str(path), "variant_set": set_name, "variants": names, "selection": selection,
@@ -1793,7 +1793,7 @@ def _prim(stage: Any, value: Any, label: str = "prim_path") -> Any:
         raise _Refusal(f"{label} must be a prim path such as /World/Bag/Looks, got {text}")
     prim = stage.GetPrimAtPath(path)
     if not prim or not prim.IsValid():
-        raise _Refusal(f"No prim at {path}. Use list_variants to see which prims have variant sets.")
+        raise _Refusal(f"No prim at {path}. Use variant_list to see which prims have variant sets.")
     return prim
 
 

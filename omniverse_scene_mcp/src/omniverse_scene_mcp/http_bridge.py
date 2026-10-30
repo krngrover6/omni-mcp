@@ -616,7 +616,7 @@ class HttpSceneBridge:
     def _prim_from_dict(data: dict[str, Any]) -> PrimRecord:
         return PrimRecord(
             path=data["path"],
-            type_name=data.get("type_name", "Xform"),
+            type_name=data.get("type_name") or "",  # "" = a typeless prim, never guessed as Xform
             parent=data.get("parent"),
             children=list(data.get("children", [])),
             translation=tuple(data.get("translation", (0.0, 0.0, 0.0))),

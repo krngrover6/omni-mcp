@@ -1155,7 +1155,7 @@ def _plan(source: Any, project_dir: Any, prim_path: Any, fix_base: Any, drive: A
          "as_reference=False: open the new .usda itself (File > Open) to work on the robot alone."),
         "Make sure the stage has a Physics Scene (Create > Physics > Physics Scene) and a ground plane, then press "
         "Play.",
-        "Run robot_inspector.inspect_robot on the result (import_robot does this for you) and fix its problems.",
+        "Run robot_inspect on the result (import_robot does this for you) and fix its problems.",
     ]
     return {
         **base, "method": method, "importer": {k: info[k] for k in ("extension", "version", "module", "api")},
@@ -1326,7 +1326,7 @@ def import_robot(
         plan["note"] = "Dry run: nothing was imported. Pass dry_run=False inside Isaac Sim to import."
         return plan
     if plan["method"] == "reference ready USD":
-        return _error("This source is already a USD robot: nothing to import. Use add_ready_robot(stage, name, "
+        return _error("This source is already a USD robot: nothing to import. Use robot_add_ready(name, "
                       "prim_path, dry_run=False) to reference it.", plan=plan, dry_run=False, action="import_robot")
     if plan["output_usd"] is None:
         return _error("project_dir is required to import: the robot USD goes to <project>/assets/robots/<name>/.",

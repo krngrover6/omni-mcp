@@ -3114,7 +3114,7 @@ class OmniverseRouter:
             ]
             answers = [
                 selected_prim["path"],
-                selected_prim["type_name"],
+                selected_prim["type_name"] or "(no type)",
                 "The name/path changes, but the prim's type stays the same.",
             ]
             if selected_prim.get("material"):
@@ -3376,7 +3376,8 @@ class OmniverseRouter:
         root = scene.get("root_path")
         if root and root != "/":
             return root
-        top_level = scene.get("top_level_prims") or []
+        kit_own = set(scene.get("kit_own_prims") or [])
+        top_level = [path for path in scene.get("top_level_prims") or [] if path not in kit_own]
         return top_level[0] if top_level else "/World"
 
     def _free_child_path(self, parent: str, name: str) -> str:

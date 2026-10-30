@@ -113,7 +113,11 @@ def live_pick(robot_root: str, object_path: str, place_position: Any, pace: floa
     if isinstance(grip_height, bool) or not isinstance(grip_height, (int, float)) or not -0.03 <= grip_height <= 0.05:
         return {**base, "ok": False, "error": "grip_height must be from -0.03 to 0.05 metres."}
     if _JOB.get("running"):
-        return {**base, "ok": False, "error": "A live pick is already running: wait, or call live_pick_stop."}
+        return {**base, "ok": False, "error": "A live pick is already running: wait, or call robot_live_pick_stop."}
+    # Seen live in Composer: this said only "Press Play"; first check the app has Isaac and the path is a robot.
+    for check in (jc._isaac_problem(), jc._robot_problem(robot_root)):
+        if check:
+            return {**base, "ok": False, "error": check}
     state, problem = jc._timeline_state()
     if problem:
         return {**base, "ok": False, "error": problem}

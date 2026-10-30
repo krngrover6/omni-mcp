@@ -162,7 +162,7 @@ def timeline_info(stage: Any) -> dict[str, Any]:
         if not authored:
             warnings.append(
                 "The root layer has no startTimeCode/endTimeCode, so players show an empty (0 to 0) timeline; "
-                "use set_timeline(start=..., end=...) to give it a range."
+                "use animation_timeline(start=..., end=...) to give it a range."
             )
         if first is not None and authored and (first < start or last > end):
             warnings.append(
@@ -531,7 +531,7 @@ def move_along(
             if length <= 1e-12 * scale:
                 raise _Refusal(
                     f"points[{index}] and the next point are the same, so that segment would take no time; remove the "
-                    "duplicate (a pause needs two keys at the same place with a time gap: use add_keyframes)."
+                    "duplicate (a pause needs two keys at the same place with a time gap: use animation_keyframes)."
                 )
         total = sum(lengths)
         t0 = ctx.start if start is None else _finite(start, "start")
@@ -1346,13 +1346,13 @@ def _rotation_or_parent_varies(prim: Any) -> bool:
 def _timeline_warnings(ctx: _Ctx, first: float, last: float, warnings: list[str]) -> None:
     if not ctx.authored_range:
         warnings.append(
-            f"The stage has no authored start/end time codes, so a player shows no range; call set_timeline(start="
+            f"The stage has no authored start/end time codes, so a player shows no range; call animation_timeline(start="
             f"{_fmt(first)}, end={_fmt(last)}) to see the animation play."
         )
     elif first < ctx.start or last > ctx.end:
         warnings.append(
             f"The animation runs from {_fmt(first)} to {_fmt(last)}, outside the timeline {_fmt(ctx.start)} to "
-            f"{_fmt(ctx.end)}; call set_timeline(start={_fmt(min(first, ctx.start))}, end={_fmt(max(last, ctx.end))})."
+            f"{_fmt(ctx.end)}; call animation_timeline(start={_fmt(min(first, ctx.start))}, end={_fmt(max(last, ctx.end))})."
         )
 
 

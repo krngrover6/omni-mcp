@@ -536,10 +536,10 @@ class FakeSceneBridge:
         if isinstance(frames, bool) or not isinstance(frames, int) or frames < 1:
             return {"ok": False, "message": "frames must be a whole number from 1 to 600", "mode": "fake", "fake_scene": True}
         if self._timeline_state["playing"]:
-            return {"ok": False, "message": "The simulation is playing; call simulation_pause first, then step.",
+            return {"ok": False, "message": "The simulation is playing; call sim_pause first, then step.",
                     "mode": "fake", "fake_scene": True}
         if not self._sim_paused:  # like Kit: a stopped timeline must be played and paused first
-            return {"ok": False, "message": "The simulation is stopped; call simulation_play, then simulation_pause, "
+            return {"ok": False, "message": "The simulation is stopped; call sim_play, then sim_pause, "
                     "then step (so Stop can put every body back afterwards).", "mode": "fake", "fake_scene": True}
         count = min(frames, MAX_STEP_FRAMES)
         self._sim_paused = True

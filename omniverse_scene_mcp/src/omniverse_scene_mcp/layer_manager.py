@@ -301,7 +301,7 @@ def remove_sublayer(
         edit_id = _edit_target_id(stage)
         if any(item["identifier"] == edit_id for item in subtree):
             raise _Refusal(
-                f"{record['display_name']} is (or contains) the current edit target. Call set_edit_target to pick "
+                f"{record['display_name']} is (or contains) the current edit target. Call scene_set_edit_target to pick "
                 "another layer first, so new edits do not go to a layer that is leaving the stage."
             )
         _unsaved_check(subtree, discard_unsaved_edits, "removing", warnings)
@@ -442,7 +442,7 @@ def mute_layer(stage: Any, identifier: str, *, discard_unsaved_edits: bool = Fal
         if any(item["identifier"] == edit_id for item in subtree):
             raise _Refusal(
                 f"{record['display_name']} is (or contains) the current edit target; muting it would leave the stage "
-                "with no valid edit target. Call set_edit_target to pick another layer first."
+                "with no valid edit target. Call scene_set_edit_target to pick another layer first."
             )
         _unsaved_check(subtree, discard_unsaved_edits, "muting", warnings)
         layer = record["layer"]
@@ -560,7 +560,7 @@ def move_opinions(
         _require_editable(dst, f"dst_layer {dst_record['display_name']}")
         if not src.GetPrimAtPath(path):
             raise _Refusal(f"{src_record['display_name']} has no prim spec at {path}, so there is nothing to move. "
-                           "Use where_is to see which layers hold opinions on it.")
+                           "Use scene_where_is to see which layers hold opinions on it.")
         names = _property_names(properties, src, path)
         src_rank, dst_rank = ranks[_norm(src.identifier)], ranks[_norm(dst.identifier)]
         src_stronger = src_rank < dst_rank

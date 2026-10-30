@@ -209,7 +209,7 @@ def capture_viewport(output_dir: Any = None, *, width: int | None = None, height
         requested = (req_w or 0, req_h or 0)
     _remember(path, capture, requested)
     note = (
-        "Capture scheduled: Kit writes the PNG within a frame or two. Call capture_status(path) until ready. "
+        "Capture scheduled: Kit writes the PNG within a frame or two. Call scene_capture_status(path) until ready. "
         "The active camera and render settings were not changed."
     )
     if requested:
@@ -439,12 +439,12 @@ def simulation_step(frames: Any = 1) -> dict[str, Any]:
     try:
         before = _status(timeline)
         if before["playing"]:
-            return _error("The simulation is playing; call simulation_pause first, then step.", **_strip(before))
+            return _error("The simulation is playing; call sim_pause first, then step.", **_strip(before))
         if before["stopped"]:
             # Seen live in Isaac 6.1: stepping a stopped timeline (even after play()+pause() in this same call)
             # leaves it 'stopped', so Stop never reaches PhysX and the stepped poses stay written in the scene.
             # Play and pause as separate calls (Kit processes them between frames) make Stop restore everything.
-            return _error("The simulation is stopped; call simulation_play, then simulation_pause, then step "
+            return _error("The simulation is stopped; call sim_play, then sim_pause, then step "
                           "(so Stop can put every body back afterwards).", **_strip(before))
         rate = _tcps(timeline)
         dt = 1.0 / rate

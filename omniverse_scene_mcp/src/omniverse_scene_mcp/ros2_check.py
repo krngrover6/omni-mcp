@@ -1069,7 +1069,7 @@ def graph_check(stage: Any, root_path: str | None = None, *, max_nodes: int = 20
     topics_in = sorted({r["resolved_topic"] for r in subscribers if r.get("resolved_topic")})
     if not records and not contexts and not ros_graphs:
         summary = "No ROS 2 bridge nodes were found" + (f" under {root_path}." if root_path else " in this stage.")
-        story = summary + " Use setup_plan(...) to add one."
+        story = summary + " Use ros2_setup_plan(...) to add one."
     else:
         summary = (f"Found {len(publishers)} publisher(s), {len(subscribers)} subscriber(s), {len(services)} service "
                    f"node(s) and {len(contexts)} ROS2Context node(s) in {len(ros_graphs)} graph(s); "

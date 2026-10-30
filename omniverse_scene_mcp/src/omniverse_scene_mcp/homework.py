@@ -580,7 +580,7 @@ def _session14_for(stage: Any, prims: list[Any], pick: int) -> list[dict[str, An
     rows.append(_row("physics", "Physics is on (a Physics Scene)", 1, "pass" if scene else "fail",
                      {"physics_scenes": [str(p.GetPath()) for p in scene][:3]},
                      "Without a Physics Scene nothing falls, rides the belt or gets picked up when you press Play.",
-                     ["Create > Physics > Physics Scene (or scene_physics_setup)."]))
+                     ["Create > Physics > Physics Scene (or scene_add_physics_scene)."]))
     return rows
 
 

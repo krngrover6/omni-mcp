@@ -23,7 +23,7 @@ def plan_sdg(project_dir: str, name: str = 'dataset_run', *, camera: str = '/Wor
     'max': [..]}, 'rotate_z': True, 'colors': 'any', 'lights': ['/World/DomeLight'], 'intensity': [500, 2000]};
     changes go to the session layer and are put back when the job ends."""
     try:
-        destination = new_directory(project_dir, name)
+        destination = new_directory(project_dir, name, contents='dataset files')
         integer(frames, 'frames', 1, 100); integer(width, 'width', 16, 2048); integer(height, 'height', 16, 2048)
         integer(seed, 'seed', 0, 2**31-1)
         if not isinstance(camera, str) or not camera.startswith('/') or any(c in camera for c in '\n\r'):

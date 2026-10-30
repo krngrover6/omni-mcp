@@ -28,9 +28,33 @@ _EXPLAINS = re.compile(r"\b(?:is|are|means|lets|allows|can|will|use|uses|used|ca
 _CAPITAL = re.compile(r"(?<![.!?]\s)(?<!^)\b[A-Z][a-z]+\b")
 
 
+MIN_WORDS = 8
+REJECT = -100
+# Words that carry no meaning after the blank: "the ____ which are over here" says nothing about the term.
+_VAGUE = frozenset("here there this that these those one ones thing things stuff everything all and so on over "
+                   "which who what is are was were be it its they them the a an of in to just right now okay ok "
+                   "like you we guys etc whatever i think guess as well too also first directly".split())
+
+
+def _vague_after_blank(text: str, term: str) -> bool:
+    """True when the words after the term are only filler ("over here", "this one", "and everything")."""
+    regex = sl._TERM_RE.get(term)
+    match = regex.search(text) if regex is not None else None
+    if match is None:
+        return False
+    tail = re.findall(r"[a-z']+", text[match.end():].lower())
+    return bool(tail) and all(word in _VAGUE for word in tail)
+
+
 def _quality(text: str, term: str) -> int:
-    """Higher for clear, explaining sentences; lower for misheard subtitles (stray capitalised words)."""
-    score = 2 if _EXPLAINS.search(text) else 0
+    """Higher for clear, explaining sentences; lower for misheard subtitles (stray capitalised words).
+
+    Seen live in Composer: "Do not try to use the ____ which are over here." made a meaningless question, so a
+    sentence needs MIN_WORDS words, an explaining verb, and something other than filler after the blank.
+    """
+    if len(text.split()) < MIN_WORDS or not _EXPLAINS.search(text) or _vague_after_blank(text, term):
+        return REJECT
+    score = 2
     score += 1 if 60 <= len(text) <= 200 else 0
     stray = [w for w in _CAPITAL.findall(text) if w.lower() not in term.lower() and w not in ("I", "USD", "Isaac")]
     return score - len(stray)

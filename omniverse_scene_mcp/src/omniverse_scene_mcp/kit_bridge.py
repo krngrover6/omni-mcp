@@ -62,7 +62,7 @@ else:
 LIVE_NOTE = "Read from the LIVE stage in Kit, including unsaved edits; nothing was changed, selected or saved."
 _KIT_LAYER_NOTE = (
     "This layer change was made with raw USD calls, outside Kit's own layer commands: Kit's Layer window may not show "
-    "it until it refreshes (or the stage is reopened), and Kit's Ctrl+Z does not undo it. Use restore_with (or "
+    "it until it refreshes (or the stage is reopened), and Kit's Ctrl+Z does not undo it. Run the result's restore_with call (or "
     "scene_undo_last for a move of opinions) to put it back."
 )
 LIVE_MAX_RESULT_BYTES = 1_000_000
@@ -1301,7 +1301,8 @@ class LiveKitSceneBridge:
 
         return PrimRecord(
             path=str(prim.GetPath()),
-            type_name=prim.GetTypeName() or "Xform",
+            # Seen live in Composer: a typeless prim (an implicit parent) was reported as "Xform". "" = no type.
+            type_name=str(prim.GetTypeName() or ""),
             parent=parent_path,
             children=[str(child.GetPath()) for child in prim.GetChildren()],
             translation=translation,

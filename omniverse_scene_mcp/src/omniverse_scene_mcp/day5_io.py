@@ -12,14 +12,20 @@ def integer(value, label, minimum=1, maximum=1000):
     return value
 
 
-def new_directory(project_dir, name):
+def new_directory(project_dir, name, contents='new files'):
     if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,63}', name):
         raise ValueError('name must start with a letter and contain up to 64 letters, digits, underscores or hyphens')
     if name.upper() in {'CON', 'PRN', 'AUX', 'NUL'} or re.fullmatch(r'(COM|LPT)[0-9]', name.upper()):
         raise ValueError('Reserved Windows name')
-    root = Path(project_dir or default_workspace_root()).resolve(strict=True)
-    if not root.is_dir():
-        raise ValueError('project_dir must be an existing directory')
+    folder = project_dir or default_workspace_root()
+    try:
+        root = Path(folder).resolve(strict=True)
+    except (OSError, RuntimeError):
+        # Seen live in Composer: a missing folder leaked "[WinError 2] The system cannot find the file specified".
+        root = None
+    if root is None or not root.is_dir():
+        raise ValueError(f'The project folder {folder} does not exist; give an existing folder '
+                         f'(the {contents} go into a new subfolder there).')
     target = root / name
     if target.exists() or target.is_symlink():
         raise ValueError(f'Refusing to overwrite existing path: {target}')

@@ -135,7 +135,7 @@ def create_project(
         return {"ok": False, "dry_run": dry_run is not False, "name": name, "template": template, "error": str(exc)}
     if dry_run is not False:
         result = _public_plan(plan)
-        result["message"] = "Dry run: nothing was written. Call create_project(..., dry_run=False) to create it."
+        result["message"] = "Dry run: nothing was written. Call project_create(..., dry_run=False) to create it."
         return result
     if _PXR_IMPORT_ERROR is not None:
         return {

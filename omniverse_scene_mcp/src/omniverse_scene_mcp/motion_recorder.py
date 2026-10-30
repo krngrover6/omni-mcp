@@ -62,7 +62,7 @@ def record_start(robot_root: str, seconds: float = 10.0, *, dry_run: bool = True
     if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not 0 < seconds <= MAX_SECONDS:
         return {**base, "ok": False, "error": f"seconds must be more than 0 and at most {MAX_SECONDS:g}."}
     if "record" in _ACTIVE:
-        return {**base, "ok": False, "error": "A recording is already running: record_stop first."}
+        return {**base, "ok": False, "error": "A recording is already running: robot_record_stop first."}
     live, refusal, state, mpu = jc._open_live(robot_root)
     if refusal is not None:
         return {**refusal, **base}
@@ -70,7 +70,7 @@ def record_start(robot_root: str, seconds: float = 10.0, *, dry_run: bool = True
     if base["dry_run"]:
         return {**base, "ok": True, "joints": names, "timeline": state,
                 "next_step": "Dry run: nothing is recording. Call again with dry_run=False, then move the robot "
-                             "(or let your graph drive it) and call record_stop."}
+                             "(or let your graph drive it) and call robot_record_stop."}
     recording = {"robot_root": robot_root, "joints": names, "kinds": kinds, "units":
                  [jc.UNIT.get(k, "native") for k in kinds], "samples": [], "started": time.strftime("%Y-%m-%d %H:%M:%S")}
     start = _timeline_time()
@@ -98,7 +98,7 @@ def record_start(robot_root: str, seconds: float = 10.0, *, dry_run: bool = True
         return {**base, "ok": False, "error": str(exc)}
     _ACTIVE["record"] = entry
     return {**base, "ok": True, "recording": True, "joints": names, "timeline": state,
-            "note": "Recording while the simulation plays (pauses are skipped). Call record_stop to save it."}
+            "note": "Recording while the simulation plays (pauses are skipped). Call robot_record_stop to save it."}
 
 
 def record_stop(name: str | None = None) -> dict[str, Any]:
@@ -169,7 +169,7 @@ def replay_motion(file: str, speed: float = 1.0, *, dry_run: bool = True) -> dic
     if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not 0.25 <= speed <= 4:
         return {**base, "ok": False, "error": "speed must be from 0.25 to 4."}
     if "replay" in _ACTIVE:
-        return {**base, "ok": False, "error": "A replay is already running; wait or call replay_stop."}
+        return {**base, "ok": False, "error": "A replay is already running; wait or call robot_replay_stop."}
     live, refusal, state, mpu = jc._open_live(data["robot_root"])
     if refusal is not None:
         return {**refusal, **base}

@@ -835,6 +835,54 @@ def _refuse(reason: str, **extra: Any) -> dict[str, Any]:
     return {"ok": False, "reason": reason, "message": reason, **extra}
 
 
+ISAAC_ROBOT_MODULES = ("isaacsim.core.experimental.prims", "isaacsim.core.prims")
+ISAAC_SENSOR_MODULES = ("isaacsim.sensors.experimental.rtx", "isaacsim.sensors.experimental.physics") + ISAAC_ROBOT_MODULES
+NEEDS_ISAAC = (
+    "This needs Isaac Sim (it uses Isaac's robot/sensor libraries). The router points at an app without them, "
+    "e.g. USD Composer: open Isaac Sim and router_set_scene_target('isaac')."
+)
+
+
+def _isaac_problem(*, sensors: bool = False, kit_module: Any = None) -> str | None:
+    """NEEDS_ISAAC when Kit is running but no Isaac Sim robot (or sensor) library imports, as in USD Composer.
+
+    Outside Kit (no omni.timeline and no omni.usd, e.g. the tests) it returns None, so each caller's own
+    "Kit not available" refusal still speaks. kit_module: the caller's module finder (sensors has its own).
+    """
+    find = kit_module or _kit_module
+    if find("omni.timeline") is None and find("omni.usd") is None:
+        return None
+    names = ISAAC_SENSOR_MODULES if sensors else ISAAC_ROBOT_MODULES
+    if any(find(name) is not None for name in names):
+        return None
+    return NEEDS_ISAAC
+
+
+def _robot_problem(robot_root: str) -> str | None:
+    """'<path> is not a robot' when Kit's open stage has the prim but no ArticulationRootAPI on it or below it.
+
+    Cheap and silent: None when no stage is reachable (outside Kit), pxr is missing, or the prim does not exist
+    (the later prim check says that more precisely).
+    """
+    if _PXR_IMPORT_ERROR is not None or not isinstance(robot_root, str) or not robot_root.startswith("/"):
+        return None
+    usd = _kit_module("omni.usd")
+    try:
+        stage = usd.get_context().get_stage() if usd is not None else None
+        prim = stage.GetPrimAtPath(robot_root) if stage is not None else None
+    except Exception:  # noqa: BLE001
+        return None
+    if not prim or not prim.IsValid():
+        return None
+    for index, item in enumerate(Usd.PrimRange(prim)):
+        if item.HasAPI(UsdPhysics.ArticulationRootAPI):
+            return None
+        if index > 20000:  # a huge subtree: do not guess, let PhysX answer
+            return None
+    return (f"{robot_root} is not a robot (no articulation root): no prim on it or below it has "
+            "PhysicsArticulationRootAPI. Give the robot's own root prim, e.g. '/World/franka' (robot_inspect shows it).")
+
+
 def _timeline_state() -> tuple[str | None, str | None]:
     """('playing' | 'paused' | 'stopped', None) or (None, reason)."""
     module = _kit_module("omni.timeline")
@@ -967,13 +1015,17 @@ def _open_live(robot_root: Any) -> tuple[Any, dict[str, Any] | None, str | None,
     """(articulation adapter, refusal, timeline state, metersPerUnit)."""
     if not isinstance(robot_root, str) or not robot_root.startswith("/"):
         return None, _refuse("robot_root must be the robot's prim path, such as '/World/franka'."), None, 1.0
+    # Seen live in Composer: these said only "Press Play"; first check the app has Isaac and the path is a robot.
+    for check in (_isaac_problem(), _robot_problem(robot_root)):
+        if check:
+            return None, _refuse(check), None, 1.0
     state, problem = _timeline_state()
     if problem:
         return None, _refuse(problem), None, 1.0
     if state == "stopped":
         return None, _refuse(
             "The timeline is stopped, so PhysX has no running robot to read or move. Press Play (or "
-            "simulation_play) first; to change the starting pose without playing, use set_drive_targets.",
+            "sim_play) first; to change the starting pose without playing, use robot_drive_targets.",
             timeline="stopped",
         ), state, 1.0
     mpu, missing = _live_mpu(robot_root)
@@ -994,7 +1046,7 @@ def _open_live(robot_root: Any) -> tuple[Any, dict[str, Any] | None, str | None,
             return None, _refuse(
                 f"The articulation at {robot_root} is not ready in PhysX (no physics view yet). If you just pressed "
                 "Play, try again in a moment; otherwise check that the robot has an articulation root "
-                "(inspect_robot) and that physics is enabled.",
+                "(robot_inspect) and that physics is enabled.",
                 timeline=state,
                 api=adapter.api,
             ), state, mpu
@@ -1129,7 +1181,7 @@ def live_move(robot_root: str, targets: Any, *, dry_run: bool = True) -> dict[st
     result["applied"] = True
     result["note"] = (
         "Sent to PhysX (simulation state, not USD): the joints move toward these targets over the next physics steps. "
-        "Stop resets the robot; use set_drive_targets to keep a pose in the scene."
+        "Stop resets the robot; use robot_drive_targets to keep a pose in the scene."
     )
     if state == "paused":
         result["note"] += " The simulation is paused: press Play or step to see it move."

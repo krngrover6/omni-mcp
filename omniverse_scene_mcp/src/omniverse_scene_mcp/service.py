@@ -116,13 +116,26 @@ class SceneMCPService:
 
     def scene_summary(self) -> dict[str, Any]:
         snapshot = self._bridge.snapshot()
-        return {
+        root = snapshot.root_path
+        # Seen live in Composer: with no default prim (root "/") this listed nothing, because the bridges give
+        # prims directly under the pseudo-root parent None, never "/".
+        parents = {root, None} if root in ("/", "", None) else {root}
+        top_level = [prim.path for prim in snapshot.prims if prim.parent in parents]
+        summary = {
             "stage_name": snapshot.stage_name,
-            "root_path": snapshot.root_path,
+            "root_path": root,
             "selection": snapshot.selection,
             "prim_count": snapshot.prim_count,
-            "top_level_prims": [prim.path for prim in snapshot.prims if prim.parent == snapshot.root_path],
+            "top_level_prims": top_level,
         }
+        kit_own = [path for path in top_level if path.startswith("/OmniverseKit_") or path == "/Render"]
+        if kit_own:
+            summary["kit_own_prims"] = kit_own
+            summary["note"] = (
+                "/OmniverseKit_* are Kit's own viewport cameras and /Render holds its render settings; the Stage "
+                "panel hides them, but they are real prims on the stage."
+            )
+        return summary
 
     def inspect_prim(self, path: str) -> dict[str, Any]:
         prim = self._require_prim(path)
@@ -154,8 +167,18 @@ class SceneMCPService:
         dry_run = dry_run is not False
         self._ensure_available(path, must_exist=False)
         changes = [ChangeRecord("create", path, f"Create {type_name} at {path}")]
+        # Seen live in Composer: USD also makes every missing parent, as a typeless prim, and the preview hid that.
+        missing = self._missing_ancestors(path)
         if dry_run:
-            return OperationResult(True, True, changes, {"path": path, "type_name": type_name})
+            payload: dict[str, Any] = {"path": path, "type_name": type_name}
+            if missing:
+                payload["also_creates_parents"] = missing
+                payload["parents_note"] = (
+                    f"These parent prims do not exist yet, so USD will also create them, with no type: "
+                    f"{', '.join(missing)}. To make them proper groups, create each one first as an Xform "
+                    f"(e.g. scene_create(path='{missing[0]}', type_name='Xform'))."
+                )
+            return OperationResult(True, True, changes, payload)
         prim = self._bridge.create_prim(path, type_name)
         return OperationResult(True, False, changes, {"prim": asdict(prim)})
 
@@ -1098,6 +1121,15 @@ class SceneMCPService:
         if prim is None:
             raise ValueError(f"Prim does not exist: {path}")
         return prim
+
+    def _missing_ancestors(self, path: str) -> list[str]:
+        """Parent paths of `path` (outermost first) that do not exist yet; [] when the bridge cannot tell."""
+        parts = [part for part in str(path).split("/") if part]
+        ancestors = ["/" + "/".join(parts[:index]) for index in range(1, len(parts))]
+        try:
+            return [ancestor for ancestor in ancestors if self._bridge.get_prim(ancestor) is None]
+        except Exception:  # noqa: BLE001 - a preview note must never break the preview
+            return []
 
     def _ensure_available(self, path: str, must_exist: bool) -> None:
         exists = self._bridge.get_prim(path) is not None

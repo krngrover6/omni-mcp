@@ -90,10 +90,12 @@ def diagram(stage: Any, prim_path: str, attribute: str | None = None) -> dict[st
     lines = ["flowchart TD"]
     tree = []
     for node in nodes:
-        label = f"{node['strength']}. {node['letter']} {node['arc']}<br/>{node['path']}<br/>{', '.join(node['layers'])}"
+        # Seen live in Composer: quoting the joined label escaped the <br/> too, so Mermaid showed "&lt;br/&gt;".
+        parts = [f"{node['strength']}. {node['letter']} {node['arc']}", node["path"], ", ".join(node["layers"])]
         if node["wins"]:
-            label += f"<br/>WINS for {attribute}"
-        lines.append(f'  n{node["strength"]}["{_quote(label)}"]')
+            parts.append(f"WINS for {attribute}")
+        label = "<br/>".join(_quote(part) for part in parts)
+        lines.append(f'  n{node["strength"]}["{label}"]')
         if node["parent"] is not None:
             lines.append(f"  n{node['parent'] + 1} -->|{node['arc']}| n{node['strength']}")
         if not node["has_opinions"]:

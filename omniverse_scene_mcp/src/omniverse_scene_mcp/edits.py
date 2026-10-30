@@ -663,7 +663,7 @@ def _time_label(time_code: Any) -> Any:
 def _target_attribute(prim: Any, name: str, create_type: Any, notes: list[str]) -> tuple[Any, Any, bool]:
     """(existing attribute or None, its Sdf.ValueTypeName, creating) after the relationship and connection checks."""
     if prim.HasRelationship(name):
-        hint = " Use bind_material for material bindings." if name.startswith("material:binding") else ""
+        hint = " Use scene_bind_material for material bindings." if name.startswith("material:binding") else ""
         raise _Refusal(f"{name} on {prim.GetPath()} is a relationship (it targets other prims), not an attribute.{hint}")
     attr = prim.GetAttribute(name)
     if attr and attr.IsValid() and prim.HasAttribute(name):

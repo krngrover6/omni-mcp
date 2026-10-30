@@ -448,7 +448,7 @@ def test_step_from_stopped_is_refused_so_stop_can_restore_poses():
     with _fake_kit(omni_timeline=_timeline_module(timeline), omni_physx=_physx_module(physx)):
         result = extras.simulation_step(5)
         assert result["ok"] is False and result["stopped"] is True
-        assert "simulation_play, then simulation_pause" in result["message"]
+        assert "sim_play, then sim_pause" in result["message"]  # the router's tool names
         assert physx.steps == [] and physx.started == 0 and timeline.set_times == []  # nothing simulated
 
 
@@ -489,7 +489,7 @@ def test_step_refuses_while_playing():
     physx = FakePhysX(running=True)
     with _fake_kit(omni_timeline=_timeline_module(timeline), omni_physx=_physx_module(physx)):
         result = extras.simulation_step(5)
-        assert result["ok"] is False and "simulation_pause" in result["message"] and result["playing"] is True
+        assert result["ok"] is False and "sim_pause" in result["message"] and result["playing"] is True
         assert physx.steps == [] and timeline.set_times == []
 
 
