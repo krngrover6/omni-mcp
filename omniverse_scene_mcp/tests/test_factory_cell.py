@@ -65,9 +65,9 @@ def test_preview_then_build_a_cell_homework_14_accepts():
         built = fc.build_cell(stage, dry_run=False)
         assert built["ok"] and built["built"], built
         franka = stage.GetPrimAtPath("/World/FactoryCell/Franka")
-        assert abs(abs(franka.GetAttribute("xformOp:rotateZ:facePickSpot").Get()) - 180) < 0.1  # faces the belt
+        assert franka.GetAttribute("xformOp:orient").Get() is not None  # the turn lives in an orient op
         forward = UsdGeom.Xformable(franka).ComputeLocalToWorldTransform(0).TransformDir((1, 0, 0))
-        assert forward[0] < -0.9  # its +X points back along the belt at the pick spot
+        assert forward[0] < -0.99 and abs(forward[1]) > 0.05  # faces the belt, 5 degrees off exactly 180
         belt = stage.GetPrimAtPath("/World/FactoryCell/Belt")
         assert belt.GetAttribute("physics:kinematicEnabled").Get() is True
         assert len(stage.GetPrimAtPath("/World/FactoryCell/Packages").GetChildren()) == 1  # one at a time
@@ -97,3 +97,23 @@ def test_a_failing_part_removes_the_whole_cell_and_inputs_are_checked():
             assert not fc.build_cell(stage, **bad)["ok"], bad
     _fake_kit_parts(run)
     assert features.FEATURES["scene_build_factory_cell"].mutates
+
+
+def test_face_uses_the_assets_own_orient_op():
+    # Seen live: franka.usd brings [translate, orient, scale]; an added rotateZ op stayed out of the op order.
+    from pxr import Gf
+
+    stage = _stage()
+    arm = UsdGeom.Xform.Define(stage, "/World/Arm")
+    arm.AddTranslateOp().Set(Gf.Vec3d(1, 2, 0))
+    arm.AddOrientOp().Set(Gf.Quatf(1, 0, 0, 0))
+    arm.AddScaleOp().Set(Gf.Vec3f(1, 1, 1))
+    assert fc._face(arm, 175.0) == "set the asset's own xformOp:orient"
+    matrix = arm.ComputeLocalToWorldTransform(0)
+    forward = matrix.TransformDir((1, 0, 0))
+    assert abs(forward[0] + 0.9962) < 1e-3 and matrix.ExtractTranslation() == Gf.Vec3d(1, 2, 0)
+    bare = UsdGeom.Xform.Define(stage, "/World/Bare")
+    bare.AddTranslateOp().Set(Gf.Vec3d(3, 0, 0))
+    assert fc._face(bare, 90.0) == "added xformOp:orient after the translate"
+    turned = bare.ComputeLocalToWorldTransform(0)
+    assert turned.ExtractTranslation() == Gf.Vec3d(3, 0, 0) and turned.TransformDir((1, 0, 0))[1] > 0.99

@@ -41,6 +41,10 @@ def _layout(origin: list[float], colours: list[str]) -> dict[str, Any]:
     # Face the pick spot (0.85, 0) from the base (0.75, 0.6). Seen live: with the package 76 degrees to the
     # arm's side the hand arrived tilted and never held it; a cube straight ahead was picked 5 mm from target.
     facing = round(math.degrees(math.atan2(0.0 - 0.0, 0.85 - 1.45)), 1)
+    if abs(abs(facing) - 180.0) < 5.0:
+        # Seen live: at exactly 180 degrees (a quaternion with w = 0) the arm reached backwards and closed on air;
+        # 175 degrees still has the pick spot 5 degrees off straight ahead.
+        facing = math.copysign(175.0, facing)
     return {
         "belt": {"position": at(0.0, 0.0, 0.05), "size": [2.4, 0.4, 0.1]},
         "stopper": {"position": at(0.95, 0.0, 0.15), "size": [0.05, 0.4, 0.15]},
@@ -51,6 +55,22 @@ def _layout(origin: list[float], colours: list[str]) -> dict[str, Any]:
         "camera": at(0.85, 0.0, 2.0),
         "packages_region": (at(-1.1, -0.12, 0.25), at(-0.6, 0.12, 0.35)),
     }
+
+
+def _face(xform: Any, yaw_degrees: float) -> str:
+    """Turn a robot in place about Z. Seen live: franka.usd brings its own [translate, orient, scale] ops, and an
+    added rotateZ op stayed out of the composed xformOpOrder, so the asset's own orient op is set instead."""
+    quat = Gf.Rotation(Gf.Vec3d(0, 0, 1), yaw_degrees).GetQuat()
+    for op in xform.GetOrderedXformOps():
+        if op.GetOpName() == "xformOp:orient":
+            op.Set(Gf.Quatf(quat) if op.GetPrecision() == UsdGeom.XformOp.PrecisionFloat else quat)
+            return "set the asset's own xformOp:orient"
+    ops = xform.GetOrderedXformOps()
+    orient = xform.AddOrientOp()
+    orient.Set(Gf.Quatf(quat))
+    translate = [op for op in ops if op.GetOpType() == UsdGeom.XformOp.TypeTranslate]
+    xform.SetXformOpOrder(translate + [orient] + [op for op in ops if op not in translate])  # turn in place
+    return "added xformOp:orient after the translate"
 
 
 def _box(stage: Any, path: str, position: list[float], size: list[float], rgb: Any, kinematic: bool | None) -> None:
@@ -153,8 +173,7 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
     robot = robot_import.add_ready_robot(stage, "franka", f"{root}/Franka", position=layout["franka"], dry_run=False)
     if not robot.get("ok"):
         return undo("franka", robot.get("error"))
-    arm = UsdGeom.Xformable(stage.GetPrimAtPath(f"{root}/Franka"))
-    arm.AddRotateZOp(opSuffix="facePickSpot").Set(float(layout["franka_yaw"]))  # after translate: turns in place
+    _face(UsdGeom.Xformable(stage.GetPrimAtPath(f"{root}/Franka")), float(layout["franka_yaw"]))
     graph = omnigraph_helper.apply_recipe(stage, "conveyor", dry_run=False, graph_path=f"{root}/BeltGraph",
                                           belt=f"{root}/Belt", velocity=float(belt_speed))
     if not graph.get("ok"):
