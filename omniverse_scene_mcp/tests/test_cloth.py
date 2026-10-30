@@ -69,6 +69,13 @@ def test_apply_writes_nvidias_layout_and_undo_removes_it():
     assert len(mesh.GetFaceVertexIndicesAttr().Get()) == 6 * 6 * 6 and mesh.GetDoubleSidedAttr().Get()
     assert all(abs(p[2]) < 1e-9 for p in mesh.GetPointsAttr().Get())  # flat on the ground plane (Z up)
     assert cloth.POSE_API in cloth._api_names(mesh.GetPrim())
+    assert not mesh.GetSubdivisionSchemeAttr().HasAuthoredValue()  # smooth shading, not flat facets
+    look, _ = UsdShade.MaterialBindingAPI(mesh.GetPrim()).ComputeBoundMaterial()
+    assert look.GetPath() == "/World/Cloth/Look"
+    surface = UsdShade.Shader(stage.GetPrimAtPath("/World/Cloth/Look/Surface"))
+    assert surface.GetIdAttr().Get() == "UsdPreviewSurface"
+    assert abs(surface.GetInput("roughness").Get() - 0.35) < 1e-6  # silk is a little shiny
+    assert abs(root.GetAttribute("physxDeformableBody:linearDamping").Get() - 0.8) < 1e-6
     assert mesh.GetPrim().GetAttribute("deformablePose:default:omniphysics:purposes").Get() == ["bindPose"]
     assert len(mesh.GetPrim().GetAttribute("deformablePose:default:omniphysics:points").Get()) == 49
 
@@ -153,6 +160,11 @@ def test_refusals():
     assert "three numbers" in cloth.make_cloth(stage, "/World/C", position=[1, 2])["error"]
     assert "absolute prim path" in cloth.make_cloth(stage, "Cloth")["error"]
     assert "drape_over" in cloth.make_cloth(stage, "/World/C", drape_over="/World/Nope")["error"]
+    assert "color" in cloth.make_cloth(stage, "/World/C", color=[1, 0])["error"]
+    assert "at most 1" in cloth.make_cloth(stage, "/World/C", color=[2, 0, 0])["error"]
+    assert "damping" in cloth.make_cloth(stage, "/World/C", damping=-1)["error"]
+    custom = cloth.make_cloth(stage, "/World/C", color=[0.8, 0.1, 0.1], damping=2)["plan"]
+    assert custom["look"]["color"] == [0.8, 0.1, 0.1] and custom["fabric"]["damping"] == 2
     heavy = cloth.make_cloth(stage, "/World/C", resolution=100)
     assert heavy["ok"] and any("heavy for a 6 GB GPU" in w for w in heavy["warnings"])
 

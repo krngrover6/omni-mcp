@@ -37,16 +37,23 @@ MAX_RESOLUTION, HEAVY_RESOLUTION = 120, 80
 
 # Starting points, not measured fabrics. "cotton" is NVIDIA's Surface Deformable demo; the others scale it.
 # Stiffness: stretch = resists pulling longer, shear = resists skewing, bend = resists folding.
+# damping: like air resistance on every point (physxDeformableBody:linearDamping), so light fabric stops fluttering.
+# roughness: the look material's UsdPreviewSurface roughness (0 = mirror shine, 1 = matte).
 PRESETS: dict[str, dict[str, Any]] = {
     "cotton": {"static_friction": 0.4, "dynamic_friction": 0.2, "thickness_m": 0.002, "stretch": 1000.0,
-               "shear": 0.1, "bend": 0.2, "color": (0.85, 0.85, 0.8), "feel": "everyday fabric: drapes softly"},
+               "shear": 0.1, "bend": 0.2, "damping": 0.5, "color": (0.85, 0.85, 0.8), "roughness": 0.85,
+               "feel": "everyday fabric: drapes softly"},
     "silk": {"static_friction": 0.2, "dynamic_friction": 0.1, "thickness_m": 0.001, "stretch": 500.0,
-             "shear": 0.05, "bend": 0.01, "color": (0.9, 0.55, 0.65), "feel": "thin and slippery: flows into folds"},
+             "shear": 0.05, "bend": 0.01, "damping": 0.8, "color": (0.9, 0.55, 0.65), "roughness": 0.35,
+             "feel": "thin and slippery: flows into folds"},
     "denim": {"static_friction": 0.6, "dynamic_friction": 0.5, "thickness_m": 0.004, "stretch": 3000.0,
-              "shear": 1.0, "bend": 2.0, "color": (0.2, 0.3, 0.55), "feel": "thick and stiff: few, wide folds"},
+              "shear": 1.0, "bend": 2.0, "damping": 0.4, "color": (0.2, 0.3, 0.55), "roughness": 0.9,
+              "feel": "thick and stiff: few, wide folds"},
     "rubber": {"static_friction": 0.9, "dynamic_friction": 0.8, "thickness_m": 0.003, "stretch": 50.0,
-               "shear": 0.5, "bend": 0.5, "color": (0.15, 0.15, 0.15), "feel": "stretchy and grippy sheet"},
+               "shear": 0.5, "bend": 0.5, "damping": 0.4, "color": (0.15, 0.15, 0.15), "roughness": 0.6,
+               "feel": "stretchy and grippy sheet"},
 }
+MAX_DAMPING = 20.0
 
 
 def _meters_per_unit(stage: Any) -> float:
@@ -128,13 +135,16 @@ def _drape_target(stage: Any, path: str, mpu: float, z_up: bool) -> tuple[list[f
 @_guard
 def make_cloth(stage: Any, path: str = "/World/Cloth", *, size: Any = None, resolution: Any = 40,
                position: Any = None, drape_over: str | None = None, turn: Any = 0, preset: str = "cotton",
-               self_collision: Any = True, undo_stack: Any = None, dry_run: Any = True) -> dict[str, Any]:
+               color: Any = None, damping: Any = None, self_collision: Any = True, undo_stack: Any = None,
+               dry_run: Any = True) -> dict[str, Any]:
     """Preview (or with dry_run=False create) a cloth sheet that falls, folds and drapes when you press Play, the
     same setup as Isaac Sim's Surface Deformable demo. size is the square's side in metres (default 1, or a bit wider
     than the drape_over prim), resolution how many squares per side (more = smoother but heavier on the GPU),
     position [x, y, z] in metres (default 1 m up) or drape_over a prim path to hang it just above that prim, turn
-    degrees around the up axis, preset cotton/silk/denim/rubber, self_collision so folds do not pass through each
-    other. Adds a physics scene if there is none. Undo removes everything it made."""
+    degrees around the up axis, preset cotton/silk/denim/rubber, color [r, g, b] 0-1 to override the preset's,
+    damping (air resistance, 0-20; more = calmer, less fluttering), self_collision so folds do not pass through each
+    other. The sheet gets a real material (UsdPreviewSurface) and smooth shading, so it reacts to any sky or light.
+    Adds a physics scene if there is none. Undo removes everything it made."""
     _ready(stage)
     if not isinstance(path, str) or not Sdf.Path.IsValidPathString(path) or not Sdf.Path(path).IsAbsolutePath() \
             or Sdf.Path(path).IsAbsoluteRootPath():
@@ -153,6 +163,10 @@ def make_cloth(stage: Any, path: str = "/World/Cloth", *, size: Any = None, reso
     if not isinstance(self_collision, bool):
         raise _Refusal("self_collision must be true or false")
     turn_deg = _number(turn, "turn") or 0.0
+    if color is not None and (not isinstance(color, (list, tuple)) or len(color) != 3):
+        raise _Refusal("color must be three numbers [r, g, b] from 0 to 1, e.g. [0.8, 0.1, 0.1] for red")
+    rgb = tuple(_number(c, "color", low=0, high=1) for c in color) if color is not None else None
+    drag = _number(damping, "damping", low=0, high=MAX_DAMPING)
     mpu, z_up = _meters_per_unit(stage), _z_up(stage)
     warnings: list[str] = []
     drape = None
@@ -194,7 +208,12 @@ def make_cloth(stage: Any, path: str = "/World/Cloth", *, size: Any = None, reso
     material_path = materials_scope.AppendChild(f"{root.name}Fabric") if scope_is_new else \
         _free_child(stage, materials_scope, f"{root.name}Fabric")
     scene_path = scene.GetPath() if scene is not None else top.AppendChild("PhysicsScene")
-    fabric = PRESETS[preset]
+    fabric = dict(PRESETS[preset])
+    if rgb is not None:
+        fabric["color"] = rgb
+    if drag is not None:
+        fabric["damping"] = drag
+    look_path = root.AppendChild("Look")
 
     def units(metres: float) -> float:
         return metres / mpu
@@ -206,7 +225,9 @@ def make_cloth(stage: Any, path: str = "/World/Cloth", *, size: Any = None, reso
         "size_m": size_m, "resolution": resolution, "triangles": 2 * resolution * resolution,
         "position_m": position_m, "turn_deg": turn_deg, "preset": preset, "feel": fabric["feel"],
         "fabric": {k: fabric[k] for k in ("static_friction", "dynamic_friction", "thickness_m", "stretch", "shear",
-                                         "bend")},
+                                         "bend", "damping")},
+        "look": {"material": str(look_path), "color": list(fabric["color"]), "roughness": fabric["roughness"],
+                 "shading": "smooth"},
         "self_collision": self_collision, "drape_over": drape, "presets": sorted(PRESETS),
     }
     python = "\n".join([
@@ -274,9 +295,11 @@ def make_cloth(stage: Any, path: str = "/World/Cloth", *, size: Any = None, reso
         skin.CreateFaceVertexIndicesAttr().Set(Vt.IntArray(indices))
         skin.CreateExtentAttr().Set(UsdGeom.PointBased.ComputeExtent(Vt.Vec3fArray(points)))
         skin.CreateDoubleSidedAttr().Set(True)  # both sides visible while it folds
-        skin.CreateSubdivisionSchemeAttr().Set(UsdGeom.Tokens.none)
+        # No subdivisionScheme "none": seen live, that renders every triangle as a flat facet (it looked pixelated);
+        # the default (catmullClark) gives smooth normals that follow the moving points.
         skin.CreateDisplayColorAttr().Set([Gf.Vec3f(*fabric["color"])])
         _pose(skin.GetPrim(), points)
+        _look(stage, look_path, fabric, skin.GetPrim())
 
         sim = UsdGeom.Mesh.Define(stage, root.AppendChild("SimMesh"))  # filled by PhysX cooking at Play
         sim_prim = sim.GetPrim()
@@ -297,7 +320,9 @@ def make_cloth(stage: Any, path: str = "/World/Cloth", *, size: Any = None, reso
                 ("physxDeformableBody:enableSpeculativeCCD", Sdf.ValueTypeNames.Bool, True),
                 ("physxDeformableBody:solverPositionIterationCount", Sdf.ValueTypeNames.UInt, 16),
                 ("physxDeformableBody:collisionPairUpdateFrequency", Sdf.ValueTypeNames.UInt, 4),
-                ("physxDeformableBody:collisionIterationMultiplier", Sdf.ValueTypeNames.UInt, 4)):
+                ("physxDeformableBody:collisionIterationMultiplier", Sdf.ValueTypeNames.UInt, 4),
+                # Seen live: undamped silk fluttered like exhaust smoke when the car under it moved.
+                ("physxDeformableBody:linearDamping", Sdf.ValueTypeNames.Float, float(fabric["damping"]))):
             prim.CreateAttribute(name, value_type).Set(value)
         UsdShade.MaterialBindingAPI.Apply(prim).Bind(UsdShade.Material(material), UsdShade.Tokens.weakerThanDescendants,
                                                      PHYSICS_PURPOSE)
@@ -314,6 +339,19 @@ def make_cloth(stage: Any, path: str = "/World/Cloth", *, size: Any = None, reso
 
     made = [root, materials_scope if scope_is_new else material_path] + ([] if scene is not None else [scene_path])
     return _apply(stage, "make_cloth", made, [], mutate, verify, undo_stack, f"Make cloth {root.name}", common)
+
+
+def _look(stage: Any, path: Any, fabric: dict[str, Any], mesh: Any) -> None:
+    """A real material (UsdPreviewSurface) on the visible sheet, so it takes light and reflections from any sky or
+    lamp instead of showing a flat display colour."""
+    material = UsdShade.Material.Define(stage, path)
+    shader = UsdShade.Shader.Define(stage, path.AppendChild("Surface"))
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*fabric["color"]))
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(float(fabric["roughness"]))
+    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+    material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+    UsdShade.MaterialBindingAPI.Apply(mesh).Bind(material)
 
 
 def _pose(prim: Any, points: Any) -> None:
