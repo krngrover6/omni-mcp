@@ -34,12 +34,13 @@ def _layout(origin: list[float], colours: list[str]) -> dict[str, Any]:
 
     # Mirror of the one setup that worked live: an UNTURNED Franka (facing +X) with the object 0.6 m straight ahead
     # and the place spot about 45 degrees to the side. Every turned-robot layout failed live (the hand arrived
-    # tilted, reached backwards, or flung the package), so the BELT is turned instead: it runs toward -X, and the
-    # arm stands past its end facing back along it.
+    # tilted, reached backwards, or flung the package), so the belt carries toward -X instead (its Conveyor
+    # Belt node's direction), and the arm stands past its end facing back along it.
     spots = [(-0.95, 0.45), (-0.95, -0.45), (-1.3, 0.55), (-1.3, -0.55)]
     bins = {colour: at(spots[i][0], spots[i][1], 0.025) for i, colour in enumerate(colours)}
     return {
-        "belt": {"position": at(0.0, 0.0, 0.05), "size": [2.4, 0.4, 0.1], "yaw": 180.0},
+        # Seen live: turning the belt does NOT turn what a Conveyor Belt node does; its direction input does.
+        "belt": {"position": at(0.0, 0.0, 0.05), "size": [2.4, 0.4, 0.1], "yaw": 0.0, "direction": [-1.0, 0.0, 0.0]},
         "stopper": {"position": at(-0.95, 0.0, 0.15), "size": [0.05, 0.4, 0.15]},
         "pick_spot": at(-0.85, 0.0, 0.13),
         "franka": at(-1.45, 0.0, 0.0),
@@ -116,7 +117,7 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
     region_min, region_max = layout["packages_region"]
     parts = [
         {"part": "belt", "path": f"{root}/Belt",
-         "what": "kinematic rigid body + collider, 2.4 m long, turned 180 degrees so it carries toward -X",
+         "what": "kinematic rigid body + collider, 2.4 m long, carrying toward -X (conveyor direction)",
          "at": layout["belt"]["position"]},
         {"part": "stopper", "path": f"{root}/Stopper", "what": "static wall that stops packages at the pick spot",
          "at": layout["stopper"]["position"]},
@@ -134,7 +135,8 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
     ]
     robot_preview = robot_import.add_ready_robot(stage, "franka", f"{root}/Franka", position=layout["franka"])
     graph_preview = omnigraph_helper.plan_recipe("conveyor", stage=None, graph_path=f"{root}/BeltGraph",
-                                                 belt=f"{root}/Belt", velocity=float(belt_speed))
+                                                 belt=f"{root}/Belt", velocity=float(belt_speed),
+                                                 direction=layout["belt"]["direction"])
     problems = [p for p, r in (("franka", robot_preview), ("belt_graph", graph_preview)) if not r.get("ok")]
     base = {"ok": not problems, "dry_run": dry_run is not False, "root": root, "parts": parts,
             "pick_spot": layout["pick_spot"], "bins": layout["bins"],
@@ -174,7 +176,8 @@ def build_cell(stage: Any, root: str = "/World/FactoryCell", origin: Any = (0.0,
     if layout["franka_yaw"]:
         _face(UsdGeom.Xformable(stage.GetPrimAtPath(f"{root}/Franka")), float(layout["franka_yaw"]))
     graph = omnigraph_helper.apply_recipe(stage, "conveyor", dry_run=False, graph_path=f"{root}/BeltGraph",
-                                          belt=f"{root}/Belt", velocity=float(belt_speed))
+                                          belt=f"{root}/Belt", velocity=float(belt_speed),
+                                          direction=layout["belt"]["direction"])
     if not graph.get("ok"):
         return undo("belt_graph", graph.get("error") or graph)
     created += [f"{root}/Packages", f"{root}/Franka", f"{root}/BeltGraph"]
