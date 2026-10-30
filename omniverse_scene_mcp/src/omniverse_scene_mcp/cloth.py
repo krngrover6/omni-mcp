@@ -363,19 +363,39 @@ def _largest_move(rest: Any, points: Any) -> float:
 
 
 def _live_points(usd: Any, stage: Any, mesh_path: str) -> tuple[list[tuple[float, float, float]], str]:
-    """The sheet's simulated points: Fabric (where PhysX writes while it runs) via usdrt, else the USD points."""
+    """The sheet's simulated points: whichever copy moved furthest from the rest shape.
+
+    Seen live (Isaac Sim 6.1): the visible Mesh's points stayed flat in both Fabric and USD while it rendered draped;
+    PhysX wrote the draped shape to the sibling SimMesh's USD points. With mesh simplification off, the SimMesh is
+    cooked vertex for vertex from the Mesh (same count, same order, same space), so its points can be used directly.
+    """
+    mesh = UsdGeom.Mesh(stage.GetPrimAtPath(mesh_path))
+    rest = mesh.GetPointsAttr().Get() or []
+    sim_path = str(Sdf.Path(mesh_path).GetParentPath().AppendChild("SimMesh"))
+    candidates: list[tuple[Any, str]] = []
     try:
         import usdrt  # Kit only
 
         rt_stage = usdrt.Usd.Stage.Attach(usd.get_context().get_stage_id())
-        attr = rt_stage.GetPrimAtPath(mesh_path).GetAttribute("points")
-        value = attr.Get() if attr else None
-        if value is not None and len(value):
-            return [tuple(float(c) for c in p) for p in value], "fabric"
-    except Exception:  # noqa: BLE001 - no usdrt or no Fabric copy: fall back to USD
+        for path, label in ((mesh_path, "fabric"), (sim_path, "fabric SimMesh")):
+            attr = rt_stage.GetPrimAtPath(path).GetAttribute("points")
+            candidates.append((attr.Get() if attr else None, label))
+    except Exception:  # noqa: BLE001 - no usdrt or no Fabric copy
         pass
-    value = UsdGeom.Mesh(stage.GetPrimAtPath(mesh_path)).GetPointsAttr().Get() or []
-    return [tuple(float(c) for c in p) for p in value], "usd"
+    candidates.append((rest, "usd"))
+    sim = UsdGeom.Mesh(stage.GetPrimAtPath(sim_path))
+    if sim:
+        candidates.append((sim.GetPointsAttr().Get(), "usd SimMesh"))
+    best: tuple[list[tuple[float, float, float]], str] = ([tuple(float(c) for c in p) for p in rest], "usd")
+    best_move = 0.0
+    for value, label in candidates:
+        if value is None or len(value) != len(rest):
+            continue
+        points = [tuple(float(c) for c in p) for p in value]
+        move = _largest_move(rest, points)
+        if move > best_move:
+            best, best_move = (points, label), move
+    return best
 
 
 @_guard

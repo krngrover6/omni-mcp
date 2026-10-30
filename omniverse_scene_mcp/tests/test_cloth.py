@@ -209,6 +209,13 @@ def test_settle_captures_while_paused_and_writes_the_draped_shape_after_stop():
         joint_control._kit_module, joint_control._timeline_state, cloth._live_points = saved
         cloth._CAPTURED.clear()
     assert "rebuilt" in cloth.apply_settle(stage, "/World/Cloth", draped[:3])["error"]
+    # Seen live: PhysX left the visible Mesh flat and wrote the draped shape into the SimMesh's USD points.
+    sim = UsdGeom.Mesh(stage.GetPrimAtPath("/World/Cloth/SimMesh"))
+    sim.GetPointsAttr().Set([Gf.Vec3f(*p) for p in draped])
+    points, source = cloth._live_points(usd, stage, "/World/Cloth/Mesh")
+    assert source == "usd SimMesh" and round(points[0][2], 6) == round(draped[0][2], 6)
+    sim.GetPointsAttr().Set([Gf.Vec3f(0, 0, 0)])  # a differently cooked SimMesh is ignored
+    assert cloth._live_points(usd, stage, "/World/Cloth/Mesh")[1] == "usd"
 
 
 def test_registered_as_a_previewing_stage_tool():
