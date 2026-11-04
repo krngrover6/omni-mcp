@@ -169,6 +169,8 @@ _t("omni.graph.ui_nodes.OnWidgetClicked", "On Widget Clicked (BETA)", "ui_nodes"
 _t("isaacsim.core.nodes.OnPhysicsStep", "On Physics Step", "isaac_core_nodes", 1, "event",
    "Isaac Sim: starts the graph on every physics simulation step (only while the simulation runs).",
    exec_outputs=("step",))
+# Events that fire every frame: they interrupt a Delay waiting further down their own chain.
+_FRAME_EVENTS = ("omni.graph.action.OnTick", "omni.graph.action.OnPlaybackTick", "isaacsim.core.nodes.OnPhysicsStep")
 # ---- actions: they do something when their execution input fires
 _t("omni.graph.action.SendCustomEvent", "Send Custom Event", "action_nodes", 2, "action",
    "Sends a named custom event that On Custom Event nodes with the same name react to.", sends="custom")
@@ -275,6 +277,12 @@ _t("isaacsim.core.nodes.IsaacReadWorldPose", "Isaac Read World Pose", "isaac_cor
    "Reads a prim's position, rotation and scale in WORLD space (not relative to its parent).", targets=("prim",))
 _t("omni.graph.nodes.Distance3D", "Distance3D", "nodes_core", 1, "data",
    "Computes the straight-line distance between two 3D points.")
+_t("omni.graph.nodes.Subtract", "Subtract", "nodes_core", 2, "data",
+   "Subtracts B from A (numbers or vectors), e.g. box position - stopper position.", outputs=("difference",))
+_t("omni.graph.nodes.Magnitude", "Magnitude", "nodes_core", 1, "data",
+   "Gives the length of a vector, e.g. the distance held in a position difference.", outputs=("magnitude",))
+_t("omni.graph.nodes.ConstantDouble3", "Constant Double3", "nodes_core", 1, "constant",
+   "Holds one fixed 3-vector of doubles, such as a point (x, y, z).")
 _t("omni.graph.nodes.Compare", "Compare", "nodes_core", 1, "data",
    "Compares two values (equal, less than, ...) and gives true or false.", outputs=("result",))
 _t("omni.graph.nodes.ToString", "To String", "nodes_core", 1, "data",
@@ -602,6 +610,7 @@ class _Inspection:
             self._check_trigger(node)
             self._check_playback(node)
         self._check_events()
+        self._check_latent()
         for node in self.nodes.values():
             if node.type == "omni.graph.nodes.SetVariantSelection":
                 self._check_variant(node)
@@ -908,8 +917,42 @@ class _Inspection:
                              f"{node.name} takes the variant name from an event payload that no node in this stage "
                              f"sends; whoever sends it must use one of {variants} exactly.")
 
+    def _upstream_events(self, node: _Node) -> list[_Node]:
+        """Event nodes whose execution reaches node (walking execution wires backwards)."""
+        found, seen, todo = [], {node.path}, [node]
+        while todo:
+            current = todo.pop()
+            for wire in current.in_wires:
+                source = self.nodes.get(wire["from_node"])
+                if wire["kind"] != "execution" or source is None or source.path in seen:
+                    continue
+                seen.add(source.path)
+                (found if source.role == "event" else todo).append(source)
+        return found
+
+    def _check_latent(self) -> None:
+        # Seen live (Isaac Sim 6.1, session 6 homework): a Delay after On Playback Tick never fired Finished, even with
+        # Duration 0. omni.graph.action's changelog: "Latent chains of nodes will now be interrupted when their event
+        # node triggers." A per-frame event re-triggers every frame, so the wait is cancelled before it ends.
+        for node in self.nodes.values():
+            if node.type != "omni.graph.action.Delay":
+                continue
+            ticks = [event for event in self._upstream_events(node) if event.type in _FRAME_EVENTS]
+            if ticks:
+                self.problem(node, "warning", "delay_interrupted",
+                             f"{node.name} waits, but its chain starts at {ticks[0].name}, which fires every frame; "
+                             "each new frame interrupts the waiting chain, so Finished never fires.",
+                             "Give the wait its own event: send a Send Custom Event when the wait should start, and "
+                             "wire an On Custom Event with the same name into the Delay.")
+
     def _check_variable(self, node: _Node) -> None:
         var = _text(node.value("variableName"))
+        if node.type == "omni.graph.core.WriteVariable" and var and not self._satisfied(node, "value"):
+            # Seen live: a value typed into Write Variable's flexible (any) Value pin did not stick.
+            self.problem(node, "warning", "write_no_value",
+                         f"{node.name} writes graph variable {var!r} but has no value saved, so it writes nothing useful.",
+                         "Wire a Constant node (e.g. Constant Double) into its Value pin; a value typed into that "
+                         "flexible pin is often not kept.")
         if not var:
             return
         graph_path = (node.targets.get("graph") or [node.graph_path or ""])[0]
@@ -1903,9 +1946,18 @@ def _plan_drive_sequence(stage: Any, plan: _Plan, params: dict[str, Any]) -> str
         except ValueError as exc:
             return f"step {index}: {exc}"
     _driver(plan, robot, joints, radius, distance)
+    # Seen live (Isaac Sim 6.1, session 6): a Delay downstream of On Playback Tick never finishes, because
+    # omni.graph.action interrupts a latent chain each time its event node fires again (every frame). The route
+    # therefore runs from its own event: the first tick sends "route_start" once and On Custom Event starts the steps.
     plan.node("Start", "omni.graph.action.Once", "lets the first tick through only once")
+    plan.node("SendStart", "omni.graph.action.SendCustomEvent", "announces the route start (once)")
+    plan.node("RouteStart", "omni.graph.action.OnCustomEvent",
+              "starts the route from its own event, so the per-frame tick cannot interrupt the Delays")
     plan.wire("OnTick.outputs:tick", "Start.inputs:execIn", "execution", "start the route on the first frame")
-    previous = "Start.outputs:once"
+    plan.wire("Start.outputs:once", "SendStart.inputs:execIn", "execution", "send the start event once")
+    plan.value("SendStart.inputs:eventName", "route_start", "the event name (same on both nodes)")
+    plan.value("RouteStart.inputs:eventName", "route_start", "the event name (same on both nodes)")
+    previous = "RouteStart.outputs:execOut"
     for index, (linear, angular, seconds) in enumerate(clean, start=1):
         plan.node(f"Lin{index}", "omni.graph.core.WriteVariable", f"step {index}: speed {linear:g} m/s")
         plan.node(f"Ang{index}", "omni.graph.core.WriteVariable", f"step {index}: turn {angular:g} rad/s")
@@ -1927,6 +1979,8 @@ def _plan_drive_sequence(stage: Any, plan: _Plan, params: dict[str, Any]) -> str
     route = " -> ".join(f"({lin:g} m/s, {ang:g} rad/s for {sec:g} s)" for lin, ang, sec in clean)
     plan.explanation += [
         f"When Play starts, Once lets the first frame through, and the route runs step by step: {route} -> stop.",
+        "The steps hang off their own event (Send / On Custom Event 'route_start'), not off the tick: a per-frame "
+        "event would interrupt each Delay before it finished.",
         "Each step writes the two variables, then a Delay holds them; the Delay's Finished output starts the next "
         "step. Meanwhile the driver part turns the variables into wheel speeds every frame.",
         "A 90 degree turn at 1.5 rad/s takes about 1.05 s (pi/2 / 1.5).",

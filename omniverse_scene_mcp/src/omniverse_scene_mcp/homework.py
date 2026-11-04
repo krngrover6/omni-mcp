@@ -11,9 +11,9 @@ from collections import Counter, defaultdict
 from typing import Any, Callable
 
 try:
-    from pxr import Usd, UsdGeom, UsdPhysics, UsdShade
+    from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdShade
 except ImportError:  # pragma: no cover
-    Usd = UsdGeom = UsdPhysics = UsdShade = None
+    Gf = Usd = UsdGeom = UsdPhysics = UsdShade = None
 
 MAX_PRIMS = 50000
 POINTS = {"pass": 1.0, "partial": 0.5, "fail": 0.0}
@@ -138,6 +138,21 @@ def _session3(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
 
 
 # ------------------------------------------------------------------------------------------------ session 4
+def _hull_meshes(prim: Any) -> list[str]:
+    """Mesh colliders under prim that PhysX wraps in one convex hull (no approximation, or convexHull); none when any
+    of its meshes keeps a detailed shape (seen live: the body was decomposed, a small stripe mesh stayed a hull)."""
+    out = []
+    for item in Usd.PrimRange(prim, Usd.TraverseInstanceProxies()):
+        if item.IsA(UsdGeom.Mesh) and item.HasAPI(UsdPhysics.CollisionAPI):
+            approx = (UsdPhysics.MeshCollisionAPI(item).GetApproximationAttr().Get()
+                      if item.HasAPI(UsdPhysics.MeshCollisionAPI) else None)
+            if approx in (None, "none", "convexHull"):
+                out.append(str(item.GetPath()))
+            else:
+                return []
+    return out
+
+
 def _session4(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
     rows = []
     scenes = [p for p in prims if p.IsA(UsdPhysics.Scene)]
@@ -161,7 +176,16 @@ def _session4(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
                      "Pins must fall when hit: rigid body to move, collider to be hit, not kinematic.",
                      ["Name your pins so they include 'pin'.",
                       "Select each pin: Add > Physics > Rigid Body with Colliders Preset; leave Kinematic off."]))
-    balls = _named(prims, "ball") or [p for p in prims if p.IsA(UsdGeom.Sphere) and _rigid(p)]
+    # Seen live (session 4): a downloaded pin tipped over by itself. Its default convex hull (max 64 vertices in
+    # Isaac Sim 6.1) made the domed bottom pointy; Convex Decomposition on the pin mesh fixed it.
+    hulls = [mesh for pin in ready for mesh in _hull_meshes(pin)]
+    rows.append(_row("pins_stand", "Mesh pins keep their real shape for collisions", 0, "partial" if hulls else "pass",
+                     {"mesh_colliders_on_one_convex_hull": hulls[:8]},
+                     "A mesh collider without an approximation becomes one convex hull with at most 64 corners; a "
+                     "rounded bottom can turn pointy, so the pin tips over before anything hits it.",
+                     ["Press Play without the ball: if pins fall by themselves, select each pin's mesh and set "
+                      "Physics > Collider > Approximation to Convex Decomposition."]))
+    balls =_named(prims, "ball") or [p for p in prims if p.IsA(UsdGeom.Sphere) and _rigid(p)]
     ball = next((b for b in balls if _rigid(b) and _collider(b) and not _kinematic(b)), None)
     rows.append(_row("ball_dynamic", "The ball is a dynamic rigid body with a collider", 25,
                      "pass" if ball else "partial" if balls else "fail",
@@ -195,6 +219,39 @@ def _bodies(joint: Any) -> list[Any]:
             if prim:
                 out.append(prim)
     return out
+
+
+def _anchor_gap(joint: Any, cache: Any) -> float | None:
+    """World distance between the joint point seen from body0 and from body1 (0 = the two halves meet)."""
+    schema = UsdPhysics.Joint(joint)
+    points = []
+    for rel, attr in ((schema.GetBody0Rel(), schema.GetLocalPos0Attr()), (schema.GetBody1Rel(), schema.GetLocalPos1Attr())):
+        point = Gf.Vec3d(attr.Get() if attr and attr.Get() is not None else (0, 0, 0))
+        targets = rel.GetTargets() if rel else []
+        if targets:
+            body = joint.GetStage().GetPrimAtPath(targets[0])
+            if not body or not body.IsA(UsdGeom.Xformable):
+                return None
+            point = cache.GetLocalToWorldTransform(body).Transform(point)
+        points.append(point)
+    return (points[0] - points[1]).GetLength()
+
+
+_AXES = {"X": (1, 0, 0), "Y": (0, 1, 0), "Z": (0, 0, 1)}
+
+
+def _off_axle(joint: Any) -> str | None:
+    """For a revolute joint whose body1 is a cylinder (a wheel): its axle axis when the joint turns about another one."""
+    bodies = UsdPhysics.Joint(joint).GetBody1Rel().GetTargets()
+    wheel = joint.GetStage().GetPrimAtPath(bodies[0]) if bodies else None
+    if not wheel or not wheel.IsA(UsdGeom.Cylinder):
+        return None
+    axle = str(UsdGeom.Cylinder(wheel).GetAxisAttr().Get() or "Z")
+    turn = str(UsdPhysics.RevoluteJoint(joint).GetAxisAttr().Get() or "X")
+    rot = UsdPhysics.Joint(joint).GetLocalRot1Attr().Get()
+    rotation = Gf.Rotation(Gf.Quatd(rot)) if rot is not None else Gf.Rotation()
+    direction = rotation.TransformDir(Gf.Vec3d(*_AXES.get(turn, (1, 0, 0))))  # joint axis in the wheel's own frame
+    return None if abs(Gf.Dot(direction.GetNormalized(), Gf.Vec3d(*_AXES.get(axle, (0, 0, 1))))) > 0.9 else axle
 
 
 def _session5(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
@@ -235,6 +292,26 @@ def _session5(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
                      "Each wheel turns on its own revolute joint attached to the robot's base.",
                      ["Make a box base and four cylinders turned 90 degrees on Y, all rigid bodies with colliders.",
                       "Join each wheel to the base with a revolute joint on the wheel's axle axis."]))
+    # Seen live (session 5): wheels are cylinders turned 90 degrees on Y, so their axle is still their own Z axis;
+    # a joint about X or Y makes the wheel flip like a coin instead of rolling.
+    wrong = {str(j.GetPath()): axle for j in revolute if (axle := _off_axle(j))}
+    rows.append(_row("wheel_axles", "Wheel joints turn about the wheel's axle", 0, "partial" if wrong else "pass",
+                     {"joints_off_the_axle": dict(list(wrong.items())[:6])},
+                     "A wheel rolls only when its joint turns about the cylinder's own axis (its Axis attribute, "
+                     "usually Z), which stays the same however the cylinder is rotated.",
+                     ["Select each listed joint and set Axis to the wheel cylinder's axis (Z for a default cylinder)."]))
+    # Seen live (session 5): Isaac puts a new joint at body1's origin; a copied joint keeps its old localPos0, so its
+    # two halves no longer meet and PhysX yanks the bodies together at Play.
+    cache = UsdGeom.XformCache()
+    tolerance = 0.01 / (UsdGeom.GetStageMetersPerUnit(stage) or 1.0)  # 1 cm
+    apart = {str(j.GetPath()): round(gap, 4) for j in joints if (gap := _anchor_gap(j, cache)) is not None
+             and gap > tolerance}
+    rows.append(_row("joint_frames", "Each joint's two halves meet", 0, "partial" if apart else "pass",
+                     {"gaps_in_stage_units": dict(list(apart.items())[:6])},
+                     "A joint stores its point twice, once from each body. If the two disagree (a copied joint keeps "
+                     "the old body's point), PhysX pulls the bodies together when you press Play.",
+                     ["Delete each listed joint and create it again (select body0, then Ctrl-click body1, then "
+                      "Create > Physics > Joint); do not copy joints between bodies."]))
     static_pairs = [str(j.GetPath()) for j in joints if _bodies(j) and not any(_rigid(b) for b in _bodies(j))]
     rows.append(_row("joint_bodies", "Every joint has a moving body", 10, "pass" if not static_pairs else "fail",
                      {"joints_between_static_bodies": static_pairs[:6]},
@@ -356,15 +433,17 @@ def _session6(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
 
     kinds = Counter(kind for _prim, kind in nodes)
     detect = [k for k in kinds if k.endswith((".Branch", ".Compare")) or "Contact" in k or "Trigger" in k]
-    reads = [k for k in kinds if k.endswith("ReadPrimAttribute")]
+    reads = [k for k in kinds if k.endswith(("ReadPrimAttribute", "IsaacReadWorldPose"))]
     rows.append(_row("detect", "The graph can tell when the box reaches the stopper", 2,
                      "pass" if detect else "partial" if reads else "fail",
                      {"deciding_nodes": detect[:6], "reading_nodes": reads[:3]},
                      "To stop at the stopper, the graph must notice the box got there: read its position and "
                      "compare it with the stopper's, or use a contact/trigger sensor (the class's 'detection, "
                      "position or ray' options).",
-                     ["Read the box's xformOp:translate (Read Prim Attribute), compare one axis with the stopper "
-                      "position (Compare), and let a Branch decide."]))
+                     # Seen live: Read Prim Attribute's name list does not offer xformOp:translate in Isaac Sim 6.1.
+                     ["Read the box's position with Isaac Read World Pose (its Translation output), take the "
+                      "distance to the stopper point (Distance3D, or Subtract + Magnitude), Compare it with e.g. "
+                      "0.15 m, and let a Branch decide."]))
 
     # Seen live: a W-key graph writing a ball's velocity counted as "stopping the belt". Only stops that change the
     # conveyor's own speed variable, a riding box's velocity, or the belt node's Enabled pin count.
@@ -409,7 +488,10 @@ def _session6(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
                      {"delays_wired_onward": resumed[:6]},
                      "After the 5 s the box must move on, so the Delay's Finished output has to trigger "
                      "something that restores the speed.",
-                     ["Wire the Delay's Finished output into a Write Variable that sets the speed back."]))
+                     ["Wire the Delay's Finished output into a Write Variable that sets the speed back.",
+                      # Seen live: under On Playback Tick the Delay is interrupted every frame and never finishes.
+                      "Start the Delay from its own event (Send Custom Event -> On Custom Event), not from the "
+                      "per-frame tick chain, or it never finishes."]))
     return rows
 
 

@@ -107,6 +107,9 @@ def test_wheeled_robot_recipes_plan_controllers_variables_and_sense_decide_act()
     route = ogh.plan_recipe("drive_sequence", stage=stage, robot="/World/Jetbot")
     assert route["ok"] and sum(1 for n in route["nodes"] if n["type"] == "omni.graph.action.Delay") == 4, route
     assert any(c["from"] == "Wait4.outputs:finished" and c["to"] == "StopLin.inputs:execIn" for c in route["connections"])
+    # Seen live: Delays under the per-frame tick never finish, so the route hangs off its own custom event.
+    assert any(c["from"] == "RouteStart.outputs:execOut" and c["to"] == "Lin1.inputs:execIn" for c in route["connections"])
+    assert not any(c["from"] == "Start.outputs:once" and c["to"] == "Lin1.inputs:execIn" for c in route["connections"])
     stop = ogh.plan_recipe("obstacle_stop", stage=stage, robot="/World/Jetbot", sensor_prim="/World/Jetbot/chassis",
                            obstacle="/World/Obstacle", stop_distance=0.4)
     assert stop["ok"], stop

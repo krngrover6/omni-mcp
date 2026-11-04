@@ -195,6 +195,56 @@ def test_configurator_graph_story_is_plain_and_clean():
     assert {"Action Graph", "message bus", "payload", "target input", "constant node"} <= terms
 
 
+def stopper_graph(delay_from="tick", write_value=True):
+    """Session 6 homework shape: a tick stops the box, a Delay waits, a Write Variable sets the speed back."""
+    path = f"{G}/Stopper"
+    delay_source = f"{path}/on_playback_tick.outputs:tick" if delay_from == "tick" else f"{path}/on_custom_event.outputs:execOut"
+    value = "                custom double inputs:value = 0.3\n" if write_value else ""
+    body = (
+        node("on_playback_tick", "omni.graph.action.OnPlaybackTick",
+             "                custom uint outputs:tick (customData = {bool isExecution = 1})", 2)
+        + node("send_custom_event", "omni.graph.action.SendCustomEvent", f"""
+                custom token inputs:eventName = "box_stopped"
+                custom uint inputs:execIn
+                prepend uint inputs:execIn.connect = <{path}/on_playback_tick.outputs:tick>
+{EXEC_OUT}""", 2)
+        + node("on_custom_event", "omni.graph.action.OnCustomEvent", f"""
+                custom token inputs:eventName = "box_stopped"
+{EXEC_OUT}""", 3)
+        + node("delay", "omni.graph.action.Delay", f"""
+                custom double inputs:duration = 5
+                custom uint inputs:execIn
+                prepend uint inputs:execIn.connect = <{delay_source}>
+                custom uint outputs:finished (customData = {{bool isExecution = 1}})""", 2)
+        + node("write_variable", "omni.graph.core.WriteVariable", f"""
+                custom token inputs:variableName = "speed"
+{value}                custom uint inputs:execIn
+                prepend uint inputs:execIn.connect = <{path}/delay.outputs:finished>
+{EXEC_OUT}""", 2)
+    )
+    return graph("Stopper", body, "            custom double graph:variable:speed = 0.3")
+
+
+def test_delay_under_a_per_frame_event_is_flagged_and_custom_event_fixes_it():
+    # Seen live in Isaac Sim 6.1 (session 6): the tick interrupts the waiting Delay every frame.
+    bad = inspect_graphs(stage_from(stopper_graph(delay_from="tick")))
+    item = problem(bad, "delay_interrupted")
+    assert item["severity"] == "warning" and item["node"].endswith("/delay") and "Custom Event" in item["fix"]
+    good = inspect_graphs(stage_from(stopper_graph(delay_from="custom")))
+    assert "delay_interrupted" not in codes(good) and "write_no_value" not in codes(good)
+
+
+def test_write_variable_without_a_value_is_flagged():
+    result = inspect_graphs(stage_from(stopper_graph(delay_from="custom", write_value=False)))
+    item = problem(result, "write_no_value")
+    assert item["node"].endswith("/write_variable") and "Constant" in item["fix"]
+
+
+def test_session6_math_nodes_are_known():
+    for type_id in ("omni.graph.nodes.Subtract", "omni.graph.nodes.Magnitude", "omni.graph.nodes.ConstantDouble3"):
+        assert type_id in NODE_TYPES
+
+
 def test_event_name_that_differs_only_in_capitals_is_an_error():
     stage = stage_from(configurator(sender_event="setColor", listener_event="SetColor"))
     result = inspect_graphs(stage)

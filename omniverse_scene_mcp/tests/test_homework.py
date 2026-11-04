@@ -41,7 +41,7 @@ def test_session4_bowling_from_partial_to_full():
     ball = _body(stage, "/World/Ball", (0, 0, 0.5), kind=UsdGeom.Sphere)
     first = hw.check_homework(stage, 4)
     assert _status(first) == {"physics_scene": "partial", "floor_collider": "pass", "pins_dynamic": "pass",
-                              "ball_dynamic": "pass", "ball_launched": "partial"}
+                              "pins_stand": "pass", "ball_dynamic": "pass", "ball_launched": "partial"}
     assert "Linear Velocity" in first["next_step"] or "Physics Scene" in first["next_step"]
     UsdPhysics.RigidBodyAPI(ball.GetPrim()).CreateVelocityAttr().Set(Gf.Vec3f(0, 5, 0))
     UsdPhysics.Scene.Define(stage, "/World/physicsScene")
@@ -76,7 +76,7 @@ def test_session5_drawers_door_and_robot():
     assert middle["drawers"] == "pass" and middle["self_closing_door"] == "partial" and middle["robot_wheels"] == "fail"
     j.add_drive(stage, "/Door/RevoluteJoint", target_position=0, stiffness=500, dry_run=False)
     for i in range(4):
-        j.create_joint(stage, "revolute", "/Robot/Base", f"/Robot/Wheel{i}", axis="Y", dry_run=False)
+        j.create_joint(stage, "revolute", "/Robot/Base", f"/Robot/Wheel{i}", axis="Z", dry_run=False)
     j.add_articulation_root(stage, "/Robot/Base", dry_run=False)
     done = hw.check_homework(stage, 5)
     assert done["passed"] and done["read_only"]
@@ -91,6 +91,36 @@ def test_session5_flags_a_joint_between_static_bodies():
     joint.CreateBody0Rel().SetTargets([a.GetPath()])
     joint.CreateBody1Rel().SetTargets([b.GetPath()])
     assert _status(hw.check_homework(stage, 5))["joint_bodies"] == "fail"
+
+
+def test_session4_mesh_pin_on_one_convex_hull_is_flagged_until_decomposed():
+    # Seen live: the downloaded pin's default hull made its domed bottom pointy and it tipped over by itself.
+    stage = Usd.Stage.CreateInMemory()
+    pin = UsdGeom.Xform.Define(stage, "/World/Pin1").GetPrim()
+    UsdPhysics.RigidBodyAPI.Apply(pin)
+    body = UsdGeom.Mesh.Define(stage, "/World/Pin1/Body").GetPrim()
+    stripe = UsdGeom.Mesh.Define(stage, "/World/Pin1/Stripe").GetPrim()
+    for mesh in (body, stripe):
+        UsdPhysics.CollisionAPI.Apply(mesh)
+    assert _status(hw.check_homework(stage, 4))["pins_stand"] == "partial"
+    UsdPhysics.MeshCollisionAPI.Apply(body).CreateApproximationAttr().Set("convexDecomposition")
+    assert _status(hw.check_homework(stage, 4))["pins_stand"] == "pass"  # a hull on the small stripe is fine
+
+
+def test_session5_wheel_joint_off_the_axle_and_copied_joint_are_flagged():
+    stage = Usd.Stage.CreateInMemory()
+    _body(stage, "/Base", (0, 0, 0.5))
+    _body(stage, "/Wheel", (0.3, 0, 0.2), kind=UsdGeom.Cylinder)
+    j.create_joint(stage, "revolute", "/Base", "/Wheel", axis="Y", dry_run=False)
+    status = _status(hw.check_homework(stage, 5))
+    assert status["wheel_axles"] == "partial" and status["joint_frames"] == "pass"
+    joint = UsdPhysics.RevoluteJoint(stage.GetPrimAtPath("/Wheel/RevoluteJoint"))
+    joint.GetAxisAttr().Set("Z")
+    joint.GetLocalPos0Attr().Set(Gf.Vec3f(2, 0, 0))  # what a joint copied from another wheel keeps
+    result = hw.check_homework(stage, 5)
+    assert _status(result)["wheel_axles"] == "pass" and _status(result)["joint_frames"] == "partial"
+    row = next(r for r in result["results"] if r["rule"] == "joint_frames")
+    assert "/Wheel/RevoluteJoint" in row["evidence"]["gaps_in_stage_units"]
 
 
 def test_session3_references_and_materials():
