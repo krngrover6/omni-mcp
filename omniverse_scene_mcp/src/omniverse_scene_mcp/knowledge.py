@@ -41,6 +41,27 @@ def _flatten_tool_content(result: Any) -> str:
     return "\n".join(parts).strip()
 
 
+def _max_content_chars() -> int:
+    try:
+        return max(1000, int(os.environ.get("OMNIVERSE_KNOWLEDGE_MAX_CHARS", "12000")))
+    except ValueError:
+        return 12000
+
+
+def _trim_content(text: str, limit: int) -> tuple[str, bool]:
+    """Keep the answer small: NVIDIA's doc servers return ~100k characters per search (seen live 2026-11-14).
+
+    Cuts at the last result or paragraph boundary before the limit, so no result is cut mid-sentence."""
+    if len(text) <= limit:
+        return text, False
+    head = text[:limit]
+    for marker in ("\nTitle '", "\n## ", "\n---", "\n\n"):
+        cut = head.rfind(marker)
+        if cut > limit // 3:
+            return head[:cut].rstrip(), True
+    return head.rstrip(), True
+
+
 @dataclass(slots=True)
 class ToolSelection:
     tool_name: str
@@ -85,7 +106,11 @@ class StreamableMCPKnowledgeBackend:
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
                     tool_result = await session.call_tool(selection.tool_name, selection.arguments)
-                    return {
+                    # Only the flattened text goes back: the raw result repeated it twice (content +
+                    # structuredContent), which tripled ~100k-character answers.
+                    full = _flatten_tool_content(tool_result)
+                    content, trimmed = _trim_content(full, _max_content_chars())
+                    answer = {
                         "ok": not getattr(tool_result, "isError", False),
                         "backend": self.name,
                         "endpoint": self.endpoint,
@@ -93,9 +118,14 @@ class StreamableMCPKnowledgeBackend:
                         "tool": selection.tool_name,
                         "tool_arguments": selection.arguments,
                         "selection_reason": selection.explanation,
-                        "content": _flatten_tool_content(tool_result),
-                        "raw": _jsonable(tool_result),
+                        "content": content,
                     }
+                    if trimmed:
+                        answer["trimmed"] = (
+                            f"Showing the top results ({len(content):,} of {len(full):,} characters). "
+                            "Ask a narrower question for more, or set OMNIVERSE_KNOWLEDGE_MAX_CHARS."
+                        )
+                    return answer
         except Exception as exc:
             return {
                 "ok": False,

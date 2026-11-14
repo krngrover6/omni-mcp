@@ -2,6 +2,7 @@ from omniverse_scene_mcp.knowledge import (
     _extract_name,
     _extract_usd_method,
     _extract_usd_name,
+    _trim_content,
     build_bowerbot_backend,
     build_omni_ui_backend,
     build_usd_backend,
@@ -149,3 +150,14 @@ def test_bowerbot_selector_answers_questions_with_read_only_tools():
     assert select("new project Kitchen").tool_name == "create_project"
     assert select("package scene").tool_name == "package_scene"
     assert select("can you open project Kitchen").tool_name == "open_project"
+
+
+def test_trim_content_keeps_short_answers_and_cuts_long_ones_between_results():
+    # Seen live 2026-11-14: one usd_code search returned ~97k characters, sent three times.
+    short = "Title 'Payload' - a reference you can unload."
+    assert _trim_content(short, 1000) == (short, False)
+    results = "".join(f"Title 'Result {i}'\n{'x' * 400}\n" for i in range(50))
+    text, trimmed = _trim_content(results, 2000)
+    assert trimmed and len(text) <= 2000
+    assert text.startswith("Title 'Result 0'") and text.endswith("x")  # ends after a whole result
+    assert "Title 'Result 4'" not in text or text.count("Title '") == text.count("x" * 400)
