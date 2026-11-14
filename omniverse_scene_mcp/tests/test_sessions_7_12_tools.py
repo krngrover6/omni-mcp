@@ -185,6 +185,72 @@ def test_diagnose_sees_colliders_inside_instanced_parts():
     assert "no_collider" not in codes, codes
 
 
+def _prismatic_demo(local_pos1=(0, -60, 0)):
+    """Isaac's prismatic joint demo as seen live 2026-11-14: cm, static box0, dynamic box1, axis Y, drive target 40."""
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageMetersPerUnit(stage, 0.01)
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdPhysics.Scene.Define(stage, "/World/physicsScene")
+    for name, y in (("box0", 0), ("box1", 120)):
+        cube = UsdGeom.Cube.Define(stage, f"/World/{name}")
+        cube.GetSizeAttr().Set(100.0)
+        api = UsdGeom.XformCommonAPI(cube)
+        api.SetTranslate(Gf.Vec3d(0, y, 1000))
+        api.SetScale(Gf.Vec3f(0.1, 1, 0.1))
+        UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+    UsdPhysics.RigidBodyAPI.Apply(stage.GetPrimAtPath("/World/box1"))
+    joint = UsdPhysics.PrismaticJoint.Define(stage, "/World/prismaticJoint")
+    joint.CreateBody0Rel().SetTargets(["/World/box0"])
+    joint.CreateBody1Rel().SetTargets(["/World/box1"])
+    joint.CreateAxisAttr("Y")
+    joint.CreateLocalPos0Attr(Gf.Vec3f(0, 60, 0))
+    joint.CreateLocalPos1Attr(Gf.Vec3f(*local_pos1))
+    joint.CreateLowerLimitAttr(-50.0)
+    joint.CreateUpperLimitAttr(50.0)
+    drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), "linear")
+    drive.CreateTargetPositionAttr(40.0)
+    drive.CreateStiffnessAttr(100.0)
+    drive.CreateDampingAttr(0.0)
+    return stage
+
+
+def _joint_findings(stage):
+    return {f["code"]: f for f in dt.diagnose(stage, "joints")["findings"]}
+
+
+def test_diagnose_prismatic_demo_drive_moves_and_swings():
+    # Seen live: with matching frames the slider still moved 40 cm on Play (the drive) and never settled (damping 0).
+    found = _joint_findings(_prismatic_demo())
+    assert "joint_frames_misaligned" not in found and "joint_starts_slid" not in found, found
+    assert "drive_undamped" in found
+    assert "+40" in found["drive_moves_on_play"]["cause"], found["drive_moves_on_play"]
+
+
+def test_diagnose_prismatic_gap_along_axis_is_a_start_offset_not_a_jump():
+    # Seen live: localPos1 -40 showed a ghost 20 cm away, no jump on Play, and the drive moved it +20 (to Y 140).
+    found = _joint_findings(_prismatic_demo((0, -40, 0)))
+    assert "joint_frames_misaligned" not in found, found
+    assert "starts at 20" in found["joint_starts_slid"]["cause"], found["joint_starts_slid"]
+    assert "+20" in found["drive_moves_on_play"]["cause"], found["drive_moves_on_play"]
+    found = _joint_findings(_prismatic_demo((0, 0, 0)))  # starts at 60 cm, past the +50 end stop
+    assert "joint_starts_outside_limits" in found, found
+
+
+def test_diagnose_prismatic_gap_across_axis_and_hinge_gap_jump():
+    found = _joint_findings(_prismatic_demo((0, -60, 30)))
+    assert "joint_frames_misaligned" in found and "across" in found["joint_frames_misaligned"]["cause"], found
+    stage = _prismatic_demo()
+    stage.RemovePrim("/World/prismaticJoint")
+    hinge = UsdPhysics.RevoluteJoint.Define(stage, "/World/hinge")
+    hinge.CreateBody0Rel().SetTargets(["/World/box0"])
+    hinge.CreateBody1Rel().SetTargets(["/World/box1"])
+    hinge.CreateLocalPos0Attr(Gf.Vec3f(0, 60, 0))
+    hinge.CreateLocalPos1Attr(Gf.Vec3f(0, -40, 0))  # 20 cm apart: fine for a slider, a jump for a hinge
+    assert "joint_frames_misaligned" in _joint_findings(stage)
+    hinge.GetLocalPos1Attr().Set(Gf.Vec3f(0, -60, 0))
+    assert "joint_frames_misaligned" not in _joint_findings(stage)
+
+
 def _run_sorter(stage, code, inputs, times, modules=None):
     """Execute the colour-sort Script Node code against a USD stage, with fake omni.usd / omni.timeline."""
     import sys

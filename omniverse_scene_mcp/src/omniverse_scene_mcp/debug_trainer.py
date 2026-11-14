@@ -10,6 +10,7 @@ hints first and the answer last, like the class's "instructor breaks a scene" te
 
 from __future__ import annotations
 
+import math
 import os
 from itertools import combinations
 from pathlib import Path
@@ -186,12 +187,22 @@ def _joint_checks(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
                     out.append(_finding("warning", "drive_does_nothing", prim, "The motor does not move the joint.",
                                         "Its drive has stiffness 0 and damping 0, so it applies no force.",
                                         "Give it stiffness (position target) or damping (velocity target)."))
+                elif stiffness > 0 and damping == 0:
+                    # Seen live: the prismatic demo's drive (stiffness 100, damping 0) swung the slider back and
+                    # forth around its target for as long as it played.
+                    out.append(_finding("warning", "drive_undamped", prim,
+                                        "Press Play: it swings back and forth around the target and never settles.",
+                                        f"Its {kind} drive has stiffness {stiffness:g} but damping 0: a spring "
+                                        "with no brakes.",
+                                        "Add damping (start near a tenth of the stiffness and raise it until it "
+                                        "settles)."))
         for low_name, high_name in (("physics:lowerLimit", "physics:upperLimit"),):
             low, high = prim.GetAttribute(low_name), prim.GetAttribute(high_name)
             if low and high and low.Get() is not None and high.Get() is not None and low.Get() > high.Get():
                 out.append(_finding("error", "limits_reversed", prim, "The joint is locked or snaps around.",
                                     f"Its lower limit {low.Get():g} is above its upper limit {high.Get():g}.",
                                     "Swap the limits (scene_set_joint_limits)."))
+        out += _frame_checks(stage, prim)
     roots = [p for p in prims if p.HasAPI(UsdPhysics.ArticulationRootAPI)]
     for path in jointed_bodies:
         if not any(path.HasPrefix(root.GetPath()) for root in roots):
@@ -201,6 +212,116 @@ def _joint_checks(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
                                     "Its joints are not under an articulation root, so PhysX solves them loosely.",
                                     "Add an articulation root to the machine's base (scene_add_articulation_root)."))
                 break
+    return out
+
+
+_AXIS_INDEX = {"X": 0, "Y": 1, "Z": 2}
+
+
+def _joint_world_frame(stage: Any, joint: Any, index: int) -> Any:
+    """World matrix of a joint's frame on body0/body1 (localPos is scaled with the body, rotation is not)."""
+    rel = joint.GetBody0Rel() if index == 0 else joint.GetBody1Rel()
+    pos = (joint.GetLocalPos0Attr() if index == 0 else joint.GetLocalPos1Attr()).Get() or Gf.Vec3f(0, 0, 0)
+    rot = (joint.GetLocalRot0Attr() if index == 0 else joint.GetLocalRot1Attr()).Get() or Gf.Quatf(1, 0, 0, 0)
+    targets = rel.GetTargets()
+    body = stage.GetPrimAtPath(targets[0]) if targets else None
+    if targets and not body:
+        return None
+    world = (UsdGeom.Xformable(body).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+             if body and body.IsA(UsdGeom.Xformable) else Gf.Matrix4d(1))
+    frame = Gf.Matrix4d(1).SetRotateOnly(Gf.Rotation(Gf.Quatd(rot.GetReal(), Gf.Vec3d(rot.GetImaginary()))))
+    frame = frame * Gf.Matrix4d(world).RemoveScaleShear()
+    frame.SetTranslateOnly(world.Transform(Gf.Vec3d(pos)))
+    return frame
+
+
+def _frame_checks(stage: Any, prim: Any) -> list[dict[str, Any]]:
+    """Do the joint's two frames meet? Seen live on the prismatic demo (2026-11-14): Isaac draws a 'ghost' of body1
+    where the frames meet; a gap ALONG a slider's axis only means it starts already slid (no jump), a gap across the
+    axis makes body1 jump on Play, and a drive pulls from that start towards its target."""
+    out: list[dict[str, Any]] = []
+    joint = UsdPhysics.Joint(prim)
+    frame0, frame1 = _joint_world_frame(stage, joint, 0), _joint_world_frame(stage, joint, 1)
+    if frame0 is None or frame1 is None:
+        return out
+    relative = frame1 * frame0.GetInverse()  # frame1 seen from frame0
+    offset = relative.ExtractTranslation()
+    quat = relative.ExtractRotationQuat()
+    angle = Gf.Rotation(quat).GetAngle()
+    angle = min(angle, 360 - angle)
+    mpu = UsdGeom.GetStageMetersPerUnit(stage) or 1.0
+    tol = 0.001 / mpu  # 1 mm
+    unit = "m" if abs(mpu - 1) < 1e-9 else ("cm" if abs(mpu - 0.01) < 1e-9 else "units")
+    axis_attr = prim.GetAttribute("physics:axis")
+    axis = _AXIS_INDEX.get(str(axis_attr.Get()) if axis_attr else "X", 0)
+    kind = prim.GetTypeName()
+    current = None
+    if kind == "PhysicsPrismaticJoint":
+        along = offset[axis]
+        across = math.sqrt(sum(offset[i] ** 2 for i in range(3) if i != axis))
+        if across > tol or angle > 0.5:
+            out.append(_finding("warning", "joint_frames_misaligned", prim,
+                                "Press Play: the sliding body jumps sideways (or twists) onto its rail.",
+                                f"The two joint frames are {across:.3g} {unit} apart across the slide axis "
+                                f"{'XYZ'[axis]}" + (f" and turned {angle:.1f} deg" if angle > 0.5 else "") +
+                                "; a slider can only move along its axis, so PhysX snaps it.",
+                                "Make localPos0/localPos1 point at the same spot (only the along-axis part may "
+                                "differ), or recreate the joint with scene_create_joint."))
+        current = along
+        if abs(along) > tol:
+            out.append(_finding("info", "joint_starts_slid", prim,
+                                "Isaac shows a ghost of the sliding body away from the real one.",
+                                f"The frames are {along:.3g} {unit} apart ALONG the axis: no jump, the slider just "
+                                f"starts at {along:.3g} instead of 0. The ghost is where it would be at 0; limits "
+                                "and a drive target are measured from there.",
+                                "Fine if wanted. For a tidy start at 0, make localPos0 and localPos1 meet."))
+            low, high = prim.GetAttribute("physics:lowerLimit"), prim.GetAttribute("physics:upperLimit")
+            low_v = low.Get() if low and low.HasAuthoredValue() else None
+            high_v = high.Get() if high and high.HasAuthoredValue() else None
+            if (low_v is not None and along < low_v - tol) or (high_v is not None and along > high_v + tol):
+                out.append(_finding("warning", "joint_starts_outside_limits", prim,
+                                    "Press Play: the sliding body jumps to the nearest end stop.",
+                                    f"It starts at {along:.3g}, outside its limits ({low_v} to {high_v}).",
+                                    "Move the body inside the range or widen the limits (scene_set_joint_limits)."))
+    elif kind == "PhysicsRevoluteJoint":
+        gap = offset.GetLength()
+        axis0 = Gf.Vec3d(0, 0, 0)
+        axis0[axis] = 1
+        tilt = Gf.Rotation(quat).TransformDir(axis0)
+        tilt_deg = math.degrees(math.acos(max(-1.0, min(1.0, Gf.Dot(tilt, axis0)))))
+        if gap > tol or tilt_deg > 0.5:
+            out.append(_finding("warning", "joint_frames_misaligned", prim,
+                                "Press Play: the hinged body jumps to line up with the hinge.",
+                                f"The two joint frames are {gap:.3g} {unit} apart" +
+                                (f" and their axes differ by {tilt_deg:.1f} deg" if tilt_deg > 0.5 else "") +
+                                "; a hinge's two frames must meet exactly (it is the pivot).",
+                                "Make localPos0/localPos1 point at the same spot, or recreate the joint with "
+                                "scene_create_joint and a pivot."))
+        imag = quat.GetImaginary()
+        current = math.degrees(2 * math.atan2(imag[axis], quat.GetReal()))
+    elif kind in ("PhysicsFixedJoint", "PhysicsSphericalJoint"):
+        gap = offset.GetLength()
+        turned = angle > 0.5 and kind == "PhysicsFixedJoint"
+        if gap > tol or turned:
+            out.append(_finding("warning", "joint_frames_misaligned", prim,
+                                "Press Play: the joined bodies snap together.",
+                                f"The two joint frames are {gap:.3g} {unit} apart" +
+                                (f" and turned {angle:.1f} deg" if turned else "") + ".",
+                                "Make localPos0/localPos1 (and localRot) meet, or recreate the joint."))
+    if current is not None:
+        drive_kind = "linear" if kind == "PhysicsPrismaticJoint" else "angular"
+        if prim.HasAPI(UsdPhysics.DriveAPI, drive_kind):
+            drive = UsdPhysics.DriveAPI(prim, drive_kind)
+            stiffness = drive.GetStiffnessAttr().Get() or 0
+            target = drive.GetTargetPositionAttr().Get()
+            if stiffness > 0 and target is not None and abs(target - current) > (tol if drive_kind == "linear" else 0.5):
+                what = f"{unit}" if drive_kind == "linear" else "deg"
+                out.append(_finding("info", "drive_moves_on_play", prim,
+                                    "Press Play: it moves by itself, with nobody pushing it.",
+                                    f"Its {drive_kind} drive pulls from the start ({current:.3g}) to its target "
+                                    f"position {target:g} {what}, a move of {target - current:+.3g}.",
+                                    "Expected for a motor. To keep it still, set the target to the start value "
+                                    "or the stiffness to 0."))
     return out
 
 

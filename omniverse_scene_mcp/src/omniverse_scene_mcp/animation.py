@@ -773,6 +773,11 @@ def sample(stage: Any, prim_path: str, times: Any) -> dict[str, Any]:
         animated = [str(op.GetOpName()) for op in ops if op.GetNumTimeSamples() > 0]
         if not animated and not xformable.TransformMightBeTimeVarying():
             warnings.append(f"{sdf_path} has no animated transform ops, so every time shows the same pose (unless a parent moves).")
+            # Seen live (Isaac Sim 6.1): keys set with the timeline's key button / Curve Editor are not USD time
+            # samples; every time here showed the value at the playhead.
+            warnings.append("If it was keyed with Isaac's key button or Curve Editor, those keys are not USD time "
+                            "samples: this shows only the value at the current playhead. Move the playhead onto a "
+                            "key and read it again to check that key.")
         result = {
             "ok": True,
             "action": action,
