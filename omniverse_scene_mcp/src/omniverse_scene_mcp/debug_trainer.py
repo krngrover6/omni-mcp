@@ -322,6 +322,17 @@ def _frame_checks(stage: Any, prim: Any) -> list[dict[str, Any]]:
                                     f"position {target:g} {what}, a move of {target - current:+.3g}.",
                                     "Expected for a motor. To keep it still, set the target to the start value "
                                     "or the stiffness to 0."))
+            low, high = prim.GetAttribute("physics:lowerLimit"), prim.GetAttribute("physics:upperLimit")
+            low_v = low.Get() if low and low.HasAuthoredValue() else None
+            high_v = high.Get() if high and high.HasAuthoredValue() else None
+            if (stiffness > 0 and target is not None and low_v is not None and high_v is not None
+                    and low_v <= high_v and not low_v <= target <= high_v):
+                stop = high_v if target > high_v else low_v
+                out.append(_finding("warning", "drive_target_outside_limits", prim,
+                                    f"Press Play: it never reaches its target, it stops at the end stop {stop:g}.",
+                                    f"The drive target {target:g} is outside the limits ({low_v:g} to {high_v:g}); "
+                                    "limits win over drives (Omni Physics docs, Joints).",
+                                    "Put the target inside the limits, or widen the limits (scene_set_joint_limits)."))
     return out
 
 

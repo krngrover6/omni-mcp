@@ -226,6 +226,15 @@ def test_diagnose_prismatic_demo_drive_moves_and_swings():
     assert "+40" in found["drive_moves_on_play"]["cause"], found["drive_moves_on_play"]
 
 
+def test_diagnose_drive_target_outside_limits_stops_at_end_stop():
+    # Omni Physics docs (Joints, Prismatic): "Limits take priority over drive", so a target of 80 stops at 50.
+    stage = _prismatic_demo()
+    assert "drive_target_outside_limits" not in _joint_findings(stage)
+    stage.GetPrimAtPath("/World/prismaticJoint").GetAttribute("drive:linear:physics:targetPosition").Set(80.0)
+    found = _joint_findings(stage)
+    assert "end stop 50" in found["drive_target_outside_limits"]["symptom"], found
+
+
 def test_diagnose_prismatic_gap_along_axis_is_a_start_offset_not_a_jump():
     # Seen live: localPos1 -40 showed a ghost 20 cm away, no jump on Play, and the drive moved it +20 (to Y 140).
     found = _joint_findings(_prismatic_demo((0, -40, 0)))
