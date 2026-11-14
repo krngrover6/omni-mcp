@@ -148,6 +148,10 @@ _add("session_lessons", "class_transcripts:find_transcripts class_session_plan:s
 _INTERNAL = {"stage", "undo_stack", "deadline", "runner", "which", "env", "wait", "search_dirs"}
 
 
+# Tools whose findings can carry NVIDIA doc sources (router-side, after the live or saved-file call).
+DOC_SOURCE_TOOLS = frozenset({"scene_diagnose"})
+
+
 def function(name: str) -> Any:
     spec = FEATURES[name]
     return getattr(importlib.import_module("." + spec.module, __package__), spec.function)
@@ -225,6 +229,14 @@ def register(app: Any, router: Any, file_mode: Any) -> dict[str, Any]:
     tools = {}
     def make_call(name, spec):
         def call(**arguments):
+            docs = arguments.pop("docs", False) if name in DOC_SOURCE_TOOLS else False
+            result = run(**arguments)
+            if docs is True and isinstance(result, dict):
+                from .doc_sources import attach
+                result = attach(result)
+            return result
+
+        def run(**arguments):
             scene_file = arguments.pop("scene_file", None)
             if spec.location == "local":
                 return invoke(name, arguments)
@@ -250,8 +262,13 @@ def register(app: Any, router: Any, file_mode: Any) -> dict[str, Any]:
         parameters = list(signature(name).parameters.values())
         if spec.location == "stage" and not spec.mutates:
             parameters.append(inspect.Parameter("scene_file", inspect.Parameter.KEYWORD_ONLY, default=None, annotation=str | None))
+        doc = (inspect.getdoc(function(name)) or name).split("\n\n")[0]
+        if name in DOC_SOURCE_TOOLS:
+            parameters.append(inspect.Parameter("docs", inspect.Parameter.KEYWORD_ONLY, default=False, annotation=bool))
+            doc += ("\ndocs=True adds NVIDIA doc sources (title, link, short quote) to each finding, from the local "
+                    "USD Code doc MCP (port 9903); slower, needs that server running.")
         call.__name__ = name
-        call.__doc__ = (inspect.getdoc(function(name)) or name).split("\n\n")[0] + "\nOnly dry_run=False permits an edit; no automatic saving."
+        call.__doc__ = doc + "\nOnly dry_run=False permits an edit; no automatic saving."
         call.__signature__ = inspect.Signature(parameters, return_annotation=dict)
         call.__annotations__ = {p.name: p.annotation for p in parameters} | {"return": dict}
         app.tool(name=name)(call)
