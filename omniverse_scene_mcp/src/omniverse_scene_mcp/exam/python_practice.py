@@ -191,6 +191,40 @@ if payload.get("isaac"):
     _omni.usd, _omni.timeline = _omni_usd, _omni_timeline
     sys.modules.update({"omni": _omni, "omni.usd": _omni_usd, "omni.timeline": _omni_timeline})
 
+if payload.get("track_paths"):
+    # usd_code_verify: remember every path / attribute the code asked for that does not exist (a wrong path built
+    # with + is invisible to a static check). Boost.Python classes accept a Python replacement method.
+    result["missing"] = []
+
+    def _code_line():
+        return next((f.lineno for f in reversed(traceback.extract_stack()) if f.filename == "<your code>"), None)
+
+    def _note(kind, what):
+        item = {"kind": kind, "path": what, "line": _code_line()}
+        if len(result["missing"]) < 20 and item not in result["missing"]:
+            result["missing"].append(item)
+
+    _get_prim = Usd.Stage.GetPrimAtPath
+    _get_attr = Usd.Prim.GetAttribute
+
+    def _tracked_prim(self, path):
+        prim = _get_prim(self, path)
+        if not prim:
+            _note("prim", str(path))
+        return prim
+
+    def _tracked_attr(self, name):
+        attr = _get_attr(self, name)
+        if not attr and self:
+            _note("attribute", f"{self.GetPath()}.{name}")
+        return attr
+
+    try:
+        Usd.Stage.GetPrimAtPath = _tracked_prim
+        Usd.Prim.GetAttribute = _tracked_attr
+    except Exception:
+        pass
+
 namespace = {"__name__": "__main__", "__builtins__": __builtins__, "stage": stage}
 result["started"] = True
 try:
@@ -350,7 +384,16 @@ def trial_run(code: str, *, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict[str, A
     """Run an Isaac Sim Script Editor script on a throwaway practice scene (World + Box, Z-up, metres) in a separate
     process and report what it did: prims it created or removed, what it printed, and any error explained. Your real
     scenes are never touched; omni.usd gives the practice scene and omni.timeline only records Play/Stop."""
-    exercise = {"id": "trial", "title": "Trial run", "setup": {"scene": TRIAL_SCENE}, "checks": [], "isaac": True,
+    return run_on_scene(code, timeout_s=timeout_s)
+
+
+def run_on_scene(code: str, *, timeout_s: float = DEFAULT_TIMEOUT_S, scene_text: str | None = None,
+                 track_paths: bool = False) -> dict[str, Any]:
+    """trial_run on any scene text (default: the World + Box practice scene). Not a tool itself: usd_code_verify
+    passes a flattened copy of a saved scene, so the code never sees the user's own files. track_paths=True also
+    reports prim paths and attributes the code asked for that do not exist."""
+    exercise = {"id": "trial", "title": "Trial run", "setup": {"scene": scene_text or TRIAL_SCENE}, "checks": [],
+                "isaac": True, "track_paths": track_paths,
                 "hints": ["Read the error explanation, fix that line, and try again."], "report_vars": []}
     if not isinstance(code, str) or not code.strip():
         return _not_run(exercise, "code must be a string of Python source")
@@ -363,7 +406,14 @@ def trial_run(code: str, *, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict[str, A
     pxr_path = _pxr_path()
     if Usd is None or pxr_path is None:
         return _not_run(exercise, "USD Python bindings (pxr, usd-core) are not installed for this Python")
-    before = {"/World", "/World/Box"}
+    before: set[str] = {"/World", "/World/Box"}
+    if scene_text:
+        try:
+            layer = Sdf.Layer.CreateAnonymous("before.usda")
+            layer.ImportFromString(scene_text)
+            before = {str(p) for p in Usd.Stage.Open(layer).Traverse()} if layer else set()
+        except Exception:  # noqa: BLE001 - the child reports an unreadable scene
+            before = set()
     tmp = tempfile.mkdtemp(prefix="ousd_trial_", dir=TEMP_PARENT)
     try:
         work = os.path.join(tmp, "work")
@@ -385,8 +435,10 @@ def trial_run(code: str, *, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict[str, A
             "ok": True, "ran": graded.get("error") is None, "error": graded.get("error"),
             "created_prims": created[:60], "created_count": len(created), "removed_prims": removed,
             "stdout": graded.get("stdout", ""),
-            "note": "Ran on a practice scene (World + Box); in Isaac Sim the same code changes the open scene. "
-                    "Physics does not run here, so check motion in Isaac itself.",
+            **({"missing": (run.get("child") or {}).get("missing", [])} if track_paths else {}),
+            "note": ("Ran on a copy of your scene" if scene_text else "Ran on a practice scene (World + Box)") +
+                    "; in Isaac Sim the same code changes the open scene. Physics does not run here, so check "
+                    "motion in Isaac itself.",
         }
     finally:
         _remove_tree(tmp)
@@ -484,6 +536,7 @@ def _run_child(
         "result_file": RESULT_FILE,
         "report_vars": list(exercise.get("report_vars", [])),
         "isaac": bool(exercise.get("isaac")),
+        "track_paths": bool(exercise.get("track_paths")),
     }).encode("utf-8")
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
     started = time.monotonic()

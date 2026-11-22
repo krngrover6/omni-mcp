@@ -20,6 +20,7 @@ import importlib
 from typing import Any, Callable
 
 from .kit_index import KIT_TOPS, shared_index
+from .usd_signatures import signatures
 
 try:
     from pxr import Usd
@@ -78,6 +79,7 @@ class _Checker(ast.NodeVisitor):
     def __init__(self, kit: Any = None) -> None:
         self.kit = kit
         self.kit_checked = 0
+        self.arg_checked = 0
         self.env: dict[str, _Obj] = {}
         self.memo: dict[int, _Obj | None] = {}
         self.problems: dict[tuple[int, str], dict[str, Any]] = {}
@@ -308,9 +310,46 @@ class _Checker(ast.NodeVisitor):
             return _Obj("class", value)  # nested class, e.g. Usd.Stage.InitialLoadSet
         return _Obj("method", (base, name))
 
+    def _check_args(self, node: ast.Call, callee: _Obj) -> None:
+        """Compare the call's argument count (and keyword names) with USD's real overloads."""
+        if any(isinstance(a, ast.Starred) for a in node.args) or any(k.arg is None for k in node.keywords):
+            return
+        if callee.kind == "method":
+            base, name = callee.value
+            func = getattr(base.value, name, None)
+            constructor, extra, label = False, 1 if base.kind == "inst" else 0, f"{base.label()}.{name}"
+            shown = name
+        elif callee.kind == "class":
+            func, constructor, extra, label = callee.value, True, 1, callee.label()
+            shown = label.split(".")[-1]
+        elif callee.kind == "func":
+            func, constructor, extra = callee.value, False, 0
+            label = getattr(func, "__name__", "?")
+            shown = label
+        else:
+            return
+        overloads = signatures(func, constructor=constructor) if func is not None else None
+        if not overloads:
+            return
+        count = len(node.args) + len(node.keywords) + extra
+        keywords = tuple(k.arg for k in node.keywords if k.arg)
+        self.arg_checked += 1
+        if any(o.accepts(count, keywords) for o in overloads):
+            return
+        given = len(node.args) + len(node.keywords)
+        forms = [o.text(shown, skip_self=bool(extra)) for o in overloads[:4]]
+        bad_kw = [k for k in keywords if not any(k == p[0] for o in overloads for p in o.params)]
+        reason = (f"has no keyword {bad_kw[0]!r}" if bad_kw else
+                  f"is called with {given} argument{'s' if given != 1 else ''}, which matches none of its forms")
+        optional = " ([...] = optional)" if any("[" in f for f in forms) else ""
+        self._problem(node.lineno, label + "()", "wrong_arguments", f"{label} {reason}. USD accepts: "
+                      + " | ".join(forms) + optional + ".", [])
+
     def _call(self, node: ast.Call) -> _Obj | None:
         func = node.func
         callee = self._type(func)
+        if callee is not None:
+            self._check_args(node, callee)
         if isinstance(func, ast.Attribute) and not (callee is not None and callee.kind == "class"):
             method = func.attr
             if method == "get_stage":  # omni.usd.get_context().get_stage()
@@ -411,11 +450,34 @@ def _docs(calls: list[str], problems: list[dict[str, Any]], ask: Callable[[list[
             if found else "The doc server answered without sources; check it is running (docker start usd-code-mcp)."}
 
 
-def verify_code(code: str, run: Any = True, docs: Any = False, timeout_s: Any = 20.0,
+MAX_SCENE_BYTES = 20_000_000
+
+
+def _flat_copy(scene_file: Any) -> dict[str, Any]:
+    """The saved scene flattened into one layer of text (references and sublayers merged), plus its prim paths."""
+    from pathlib import Path
+
+    file = Path(str(scene_file))
+    if file.suffix.lower() not in (".usd", ".usda", ".usdc") or not file.is_file():
+        return {"ok": False, "error": f"scene_file must be an existing .usd, .usda or .usdc file: {scene_file}"}
+    stage = Usd.Stage.Open(str(file), Usd.Stage.LoadAll)
+    if stage is None:
+        return {"ok": False, "error": f"USD could not open {scene_file}"}
+    text = stage.Flatten().ExportToString()
+    if len(text) > MAX_SCENE_BYTES:
+        return {"ok": False, "error": f"{file.name} flattens to {len(text) // 1_000_000} MB, more than "
+                                      f"{MAX_SCENE_BYTES // 1_000_000} MB; save a smaller test scene and use that."}
+    return {"ok": True, "text": text, "source": str(file), "paths": [str(p.GetPath()) for p in stage.Traverse()],
+            "stage": stage}
+
+
+def verify_code(code: str, run: Any = True, docs: Any = False, timeout_s: Any = 20.0, scene_file: Any = None,
                 runner: Callable[[list[str]], list[dict[str, Any]]] | None = None) -> dict[str, Any]:
     """Check USD Python code before using it: every pxr name and method is looked up on the real USD classes (an
     invented call is reported with its line and the closest real names), then run=True runs it on a throwaway practice
-    scene (never your real scene) and docs=True attaches NVIDIA doc pages for the main calls. Read-only.
+    scene and docs=True attaches NVIDIA doc pages for the main calls. scene_file= runs it on a flattened COPY of that
+    saved scene instead (the file is never changed) and reports prim paths / attributes the code asked for that the
+    scene does not have, with the closest real paths. Read-only.
 
     verdict is 'ok' (no problem found and, when run, it ran), 'problems' or 'syntax_error'. Values of unknown type
     (function parameters, Kit objects) are skipped and counted in 'unchecked', never guessed."""
@@ -439,6 +501,7 @@ def verify_code(code: str, run: Any = True, docs: Any = False, timeout_s: Any = 
     result: dict[str, Any] = {
         "ok": True, "usd_version": _usd_version(), "problems": problems,
         "checked_names": len(checker.checked), "checked": sorted(checker.checked)[:40],
+        "calls_argument_checked": checker.arg_checked,
         "unchecked": checker.unchecked, "pxr_modules": sorted(set(checker.pxr_modules)),
     }
     if checker.kit_imports:
@@ -452,15 +515,37 @@ def verify_code(code: str, run: Any = True, docs: Any = False, timeout_s: Any = 
             result["kit_note"] = (f"Isaac Sim install not found at {checker.kit.root}, so Kit/Isaac names were not "
                                   "checked; ask the kit_docs or isaac_sim_docs MCP about them.")
     ran_ok = None
+    if scene_file is not None and run is not True:
+        return {"ok": False, "error": "scene_file needs run=True (the code is run on a copy of that scene)"}
     if run is True:
-        from .exam.python_practice import trial_run
+        from .exam.python_practice import run_on_scene
 
         try:
             timeout = float(timeout_s)
         except (TypeError, ValueError):
             timeout = 20.0
-        trial = trial_run(code, timeout_s=timeout)
+        scene_text, scene_paths, scene_stage = None, None, None
+        if scene_file is not None:
+            loaded = _flat_copy(scene_file)
+            if not loaded.get("ok"):
+                return loaded
+            scene_text, scene_paths, scene_stage = loaded["text"], loaded["paths"], loaded["stage"]
+            result["scene_file"] = loaded["source"]
+        trial = run_on_scene(code, timeout_s=timeout, scene_text=scene_text, track_paths=True)
+        missing = trial.pop("missing", []) or []
+        for item in missing:
+            if item["kind"] == "prim" and scene_paths:
+                item["did_you_mean"] = difflib.get_close_matches(item["path"], scene_paths, n=3, cutoff=0.6)
+            elif item["kind"] == "attribute" and scene_stage is not None:
+                prim_path, _, attr = item["path"].rpartition(".")
+                prim = scene_stage.GetPrimAtPath(prim_path)
+                if prim:
+                    names = [str(n) for n in prim.GetPropertyNames()]
+                    # High cutoff: a shared namespace alone ("physics:") must not suggest an unrelated attribute.
+                    item["did_you_mean"] = difflib.get_close_matches(attr, names, n=3, cutoff=0.85)
         result["run"] = trial
+        if missing:
+            result["missing"] = missing
         ran_ok = bool(trial.get("ok") and trial.get("ran"))
     if docs is True:
         result["docs"] = _docs(checker.calls, problems, runner)
@@ -472,6 +557,15 @@ def verify_code(code: str, run: Any = True, docs: Any = False, timeout_s: Any = 
     elif ran_ok is False:
         error = (result["run"].get("error") or {})
         result["next_step"] = f"The names exist, but the trial run failed: {error.get('explanation') or error}"
+        if result.get("missing"):
+            first = result["missing"][0]
+            result["next_step"] += (f" Line {first['line']} asked for {first['kind']} {first['path']}, which this "
+                                    "scene does not have.")
+    elif result.get("missing"):
+        first = result["missing"][0]
+        guess = f" Did you mean {first['did_you_mean'][0]}?" if first.get("did_you_mean") else ""
+        result["next_step"] = (f"It ran, but line {first['line']} asked for {first['kind']} {first['path']}, which "
+                               f"this scene does not have (fine only if the code checks for that).{guess}")
     else:
         result["next_step"] = ("Every USD name checked exists" + (" and the code ran on the practice scene" if ran_ok
                                else "") + ". Physics and Kit-only behaviour still need a live check.")

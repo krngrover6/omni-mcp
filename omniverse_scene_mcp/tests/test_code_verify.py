@@ -110,7 +110,7 @@ def test_docs_attach_pages_and_survive_a_dead_server():
 def test_registered_as_read_only_local_tool_without_internal_params():
     spec = features.FEATURES["usd_code_verify"]
     assert spec.location == "local" and spec.mutates is False
-    assert set(features.signature("usd_code_verify").parameters) == {"code", "run", "docs", "timeout_s"}
+    assert set(features.signature("usd_code_verify").parameters) == {"code", "run", "docs", "timeout_s", "scene_file"}
 
 
 def _fake_kit(tmp):
@@ -161,3 +161,56 @@ def test_kit_names_checked_against_the_install():
             assert names["omni.isaac.core"]["did_you_mean"][0] == "isaacsim.core.api"  # renamed module, installed
             assert names["isaacsim.core.api.Wrold"]["did_you_mean"][0] == "World"
             assert names["omni.usd.get_contxt"]["did_you_mean"][0] == "get_context"
+
+
+def test_wrong_argument_counts_and_keywords_use_usds_own_signatures():
+    code = ('from pxr import Usd, UsdGeom, UsdPhysics, Sdf\nstage = Usd.Stage.CreateInMemory()\n'
+            'cube = UsdGeom.Cube.Define("/World/Box")\n'
+            'good = UsdGeom.Cube.Define(stage, "/World/B")\n'
+            'good.GetSizeAttr().Set(2, 0, 5)\n'
+            'prim = good.GetPrim()\n'
+            'UsdPhysics.DriveAPI.Apply(prim)\n'
+            'prim.CreateAttribute("a", Sdf.ValueTypeNames.Float, custom=True)\n'
+            'prim.CreateAttribute("b", Sdf.ValueTypeNames.Float, custm=True)\n'
+            'print(Usd.TimeCode.Default(), Usd.GetVersion())\n')
+    result = verify_code(code, run=False)
+    lines = {p["line"]: p for p in result["problems"]}
+    assert set(lines) == {3, 5, 7, 9}, result["problems"]
+    assert "Define(stage: UsdStage, path: SdfPath)" in lines[3]["message"]
+    assert "[time: UsdTimeCode]" in lines[5]["message"]
+    assert "no keyword 'custm'" in lines[9]["message"]
+    assert result["calls_argument_checked"] >= 8
+
+
+def test_scene_file_runs_on_a_flattened_copy_and_reports_missing_paths():
+    import os
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "wheel.usda").write_text('#usda 1.0\n(\n defaultPrim = "Wheel"\n)\n'
+                                              'def Cylinder "Wheel"\n{\n double radius = 0.3\n}\n')
+        scene = Path(tmp) / "robot.usda"
+        scene.write_text('#usda 1.0\ndef Xform "World"\n{\n def Xform "Robot"\n {\n'
+                         '  def "Wheel1" (prepend references = @./wheel.usda@)\n  {\n  }\n }\n}\n')
+        before = scene.read_text()
+        code = ('import omni.usd\nstage = omni.usd.get_context().get_stage()\n'
+                'for name in ["Wheel1", "Wheel2"]:\n'
+                '    wheel = stage.GetPrimAtPath("/World/Robot/" + name)\n'
+                '    if wheel:\n'
+                '        print(name, wheel.GetAttribute("radius").Get())\n'
+                '        wheel.GetAttribute("radiuss")\n'
+                '        wheel.GetAttribute("radius").Set(9.0)\n'
+                'stage.GetRootLayer().Save()\n')
+        result = verify_code(code, scene_file=str(scene))
+        assert result["run"]["ran"] and "Wheel1 0.3" in result["run"]["stdout"]
+        missing = {(m["kind"], m["path"]): m for m in result["missing"]}
+        assert missing[("prim", "/World/Robot/Wheel2")]["did_you_mean"][0] == "/World/Robot/Wheel1"
+        assert missing[("prim", "/World/Robot/Wheel2")]["line"] == 4
+        assert missing[("attribute", "/World/Robot/Wheel1.radiuss")]["did_you_mean"] == ["radius"]
+        assert "line 7" in result["next_step"]
+        assert scene.read_text() == before  # the user's file is never written
+        assert "radius = 0.3" in (Path(tmp) / "wheel.usda").read_text()
+        assert sorted(os.listdir(tmp)) == ["robot.usda", "wheel.usda"]
+    assert not verify_code("print(1)", scene_file="nope.txt")["ok"]
+    assert not verify_code("print(1)", run=False, scene_file="x.usda")["ok"]
