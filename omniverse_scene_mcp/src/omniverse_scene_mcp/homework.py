@@ -1,4 +1,4 @@
-"""Homework checkers for mentorship sessions 3-6 and the session 14 factory cell, read-only.
+"""Homework checkers for mentorship sessions 3-7 and the session 14 factory cell, read-only.
 
 Each check looks for what the homework asks for by meaning (references, materials, rigid bodies, joint types and
 drives), not by exact prim paths, so any reasonable scene layout is graded. Results follow assignments.py: each rule
@@ -666,11 +666,78 @@ def _session14_for(stage: Any, prims: list[Any], pick: int) -> list[dict[str, An
     return rows
 
 
+# ------------------------------------------------------------------------------------------------ session 7
+def _drive_value(joint: Any, getter: str) -> float:
+    attr = getattr(UsdPhysics.DriveAPI(joint, "angular"), getter)()
+    value = attr.Get() if attr else None
+    return float(value) if value is not None else 0.0
+
+
+def _session7(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
+    """Class session 7, homework 1: drive the session 5 robot with W A S D from a Python script.
+
+    The script itself lives outside the scene (check it with python_check_script); this grades what the script needs
+    in the scene. Seen live (2026-11-20): the script sets each wheel's angular drive targetVelocity, so every wheel
+    needs a velocity drive: stiffness 0 (or the drive pulls the wheel back to its target angle) and damping > 0 (the
+    velocity part of the drive force is damping x speed error, so damping 0 means the wheel never spins).
+    """
+    rows = []
+    revolute = [p for p in prims if p.IsA(UsdPhysics.RevoluteJoint)]
+    shared: dict[str, list[Any]] = defaultdict(list)
+    for joint in revolute:
+        for body in _bodies(joint):
+            shared[str(body.GetPath())].append(joint)
+    base, wheels = max(shared.items(), key=lambda kv: len(kv[1]), default=(None, []))
+    rows.append(_row("robot_wheels", "The session 5 robot: wheels on revolute joints", 25,
+                     "pass" if len(wheels) >= 4 else "partial" if len(wheels) >= 2 else "fail",
+                     {"base": base, "wheel_joints": [str(j.GetPath()) for j in wheels[:6]]},
+                     "The script turns the wheels through their joints, so the robot from session 5 must be here.",
+                     ["Open your session 5 robot scene (or File > Add Reference to it) and save it as a new file "
+                      "for this homework."]))
+    no_drive = [str(j.GetPath()) for j in wheels if not j.HasAPI(UsdPhysics.DriveAPI, "angular")]
+    driven = [j for j in wheels if j.HasAPI(UsdPhysics.DriveAPI, "angular")]
+    rows.append(_row("wheel_drives", "Every wheel joint has an angular drive", 25,
+                     "fail" if not wheels or not driven else "partial" if no_drive else "pass",
+                     {"without_drive": no_drive[:6]},
+                     "The script can only set a speed on a drive: a joint without one just spins freely.",
+                     ["Select each listed joint: Property panel > Add > Physics > Angular Drive "
+                      "(or scene_add_drive joint_path=... target_velocity=0 damping=50)."]))
+    springy = {str(j.GetPath()): _drive_value(j, "GetStiffnessAttr") for j in driven
+               if _drive_value(j, "GetStiffnessAttr") > 0}
+    rows.append(_row("velocity_drive", "The drives are velocity drives (stiffness 0)", 20,
+                     "fail" if not driven else "partial" if springy else "pass",
+                     {"stiffness_not_zero": dict(list(springy.items())[:6])},
+                     "Stiffness pulls a wheel back to its target angle, so it fights the speed the script asks for: "
+                     "the robot jerks or barely moves.",
+                     ["Select each listed joint and set Angular Drive > Stiffness to 0."]))
+    slack = [str(j.GetPath()) for j in driven if _drive_value(j, "GetDampingAttr") <= 0]
+    rows.append(_row("drive_damping", "The drives have damping above 0", 20,
+                     "fail" if not driven else "partial" if slack else "pass",
+                     {"damping_zero": slack[:6]},
+                     "A velocity drive pushes with damping x (target speed - wheel speed). With damping 0 the "
+                     "target speed does nothing and the wheel never turns.",
+                     ["Select each listed joint and set Angular Drive > Damping to about 50 (your working robot "
+                      "used 50; raise it if the robot is sluggish)."]))
+    moving = {str(j.GetPath()): _drive_value(j, "GetTargetVelocityAttr") for j in driven
+              if _drive_value(j, "GetTargetVelocityAttr") != 0}
+    rows.append(_row("starts_still", "The robot stands still until a key is pressed", 5,
+                     "partial" if moving else "pass", {"target_velocity_not_zero": dict(list(moving.items())[:6])},
+                     "A saved target velocity makes the robot drive off the moment you press Play, before any key.",
+                     ["Set Angular Drive > Target Velocity back to 0 on each listed joint, then save."]))
+    scene = [p for p in prims if p.IsA(UsdPhysics.Scene)]
+    rows.append(_row("physics", "Physics is on (a Physics Scene)", 5, "pass" if scene else "fail",
+                     {"physics_scenes": [str(p.GetPath()) for p in scene][:3]},
+                     "Without a Physics Scene the wheels never turn when you press Play.",
+                     ["Create > Physics > Physics Scene (or scene_add_physics_scene)."]))
+    return rows
+
+
 SESSIONS = {
     3: ("Session 3: upgrade your warehouse with real assets", _session3),
     4: ("Session 4: bowling, knock every pin down", _session4),
     5: ("Session 5: drawers, a self-closing door and a ground robot", _session5),
     6: ("Session 6: a conveyor loop that stops the box for 5 seconds", _session6),
+    7: ("Session 7: drive the robot with W A S D (scene side; check the script with python_check_script)", _session7),
     14: ("Session 14: factory cell, an arm picks packages off a conveyor", _session14),
 }
 
@@ -682,14 +749,14 @@ def homework_sessions() -> dict[str, Any]:
 
 
 def check_homework(stage: Any, session: int) -> dict[str, Any]:
-    """Read-only: grade the open scene against a session's homework (3, 4, 5, 6 or 14). Each check is pass, partial, fail
+    """Read-only: grade the open scene against a session's homework (3, 4, 5, 6, 7 or 14). Each check is pass, partial, fail
     or unknown with evidence and how to fix it; next_step names the most useful thing to do now."""
     if Usd is None:
         return {"ok": False, "error": "pxr (USD) is not available"}
     if stage is None:
         return {"ok": False, "error": "No stage is open"}
     if isinstance(session, bool) or session not in SESSIONS:
-        return {"ok": False, "error": "session must be 3, 4, 5, 6 or 14 (Session 2's warehouse is assignment_check)"}
+        return {"ok": False, "error": "session must be 3, 4, 5, 6, 7 or 14 (Session 2's warehouse is assignment_check)"}
     dirty = {layer.identifier: layer.dirty for layer in stage.GetUsedLayers()}
     title, checker = SESSIONS[session]
     rows = checker(stage, _prims(stage))

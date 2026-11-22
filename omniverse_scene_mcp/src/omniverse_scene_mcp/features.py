@@ -140,6 +140,7 @@ _add("live_challenge", "live_challenge_start:challenge_start live_challenge_chec
      "Learning Python & homework")
 _add("exam.python_practice", "python_trial_run:trial_run", "local", "Learning Python & homework")
 _add("homework", "homework_sessions", "local", "Learning Python & homework")
+_add("code_verify", "usd_code_verify:verify_code", "local", "Knowledge & docs")
 _add("value_story","scene_why_value:why_value scene_what_if:what_if", "stage", "Live insight")
 _add("session_lessons", "class_transcripts:find_transcripts class_session_plan:session_plan class_lesson:lesson "
      "class_check_claims:check_claims", "local", "Learning Python & homework")

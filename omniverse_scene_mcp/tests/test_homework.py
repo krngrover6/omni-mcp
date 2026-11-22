@@ -144,8 +144,8 @@ def test_bad_session_and_no_stage():
     assert not hw.check_homework(Usd.Stage.CreateInMemory(), 2)["ok"]
     assert not hw.check_homework(Usd.Stage.CreateInMemory(), True)["ok"]
     assert not hw.check_homework(None, 5)["ok"]
-    assert [s["session"] for s in hw.homework_sessions()["sessions"]] == [3, 4, 5, 6, 14]
-    assert not hw.check_homework(Usd.Stage.CreateInMemory(), 7)["ok"]
+    assert [s["session"] for s in hw.homework_sessions()["sessions"]] == [3, 4, 5, 6, 7, 14]
+    assert not hw.check_homework(Usd.Stage.CreateInMemory(), 8)["ok"]
     assert features.FEATURES["homework_check"].mutates is False
 
 
@@ -313,3 +313,31 @@ def test_session14_factory_cell_from_a_lone_arm_to_a_full_cell():
     arm_node.CreateRelationship("inputs:targetPrim").SetTargets(["/World/Arm"])
     full = hw.check_homework(stage, 14)
     assert full["passed"] and set(_status(full).values()) == {"pass"}, _status(full)
+
+
+def test_session7_wasd_robot_needs_velocity_drives_on_every_wheel():
+    stage = Usd.Stage.CreateInMemory()
+    _body(stage, "/Robot/Base", (0, 0, 0.5))
+    for i in range(4):
+        _body(stage, f"/Robot/Wheel{i}", (i, 0, 0.2), kind=UsdGeom.Cylinder)
+        j.create_joint(stage, "revolute", "/Robot/Base", f"/Robot/Wheel{i}", axis="Z", dry_run=False)
+    bare = _status(hw.check_homework(stage, 7))
+    assert bare["robot_wheels"] == "pass" and bare["wheel_drives"] == "fail" and bare["physics"] == "fail"
+    for i in range(4):
+        j.add_drive(stage, f"/Robot/Wheel{i}/RevoluteJoint", target_velocity=0, damping=50, dry_run=False)
+    UsdPhysics.DriveAPI(stage.GetPrimAtPath("/Robot/Wheel0/RevoluteJoint"), "angular").GetStiffnessAttr().Set(500.0)
+    UsdPhysics.DriveAPI(stage.GetPrimAtPath("/Robot/Wheel1/RevoluteJoint"), "angular").GetDampingAttr().Set(0.0)
+    UsdPhysics.DriveAPI(stage.GetPrimAtPath("/Robot/Wheel2/RevoluteJoint"), "angular").GetTargetVelocityAttr().Set(-200.0)
+    UsdPhysics.Scene.Define(stage, "/World/physicsScene")
+    result = hw.check_homework(stage, 7)
+    status = _status(result)
+    assert status["wheel_drives"] == "pass" and status["velocity_drive"] == "partial"
+    assert status["drive_damping"] == "partial" and status["starts_still"] == "partial"
+    damping = next(r for r in result["results"] if r["rule"] == "drive_damping")
+    assert damping["evidence"]["damping_zero"] == ["/Robot/Wheel1/RevoluteJoint"]
+    UsdPhysics.DriveAPI(stage.GetPrimAtPath("/Robot/Wheel0/RevoluteJoint"), "angular").GetStiffnessAttr().Set(0.0)
+    UsdPhysics.DriveAPI(stage.GetPrimAtPath("/Robot/Wheel1/RevoluteJoint"), "angular").GetDampingAttr().Set(50.0)
+    UsdPhysics.DriveAPI(stage.GetPrimAtPath("/Robot/Wheel2/RevoluteJoint"), "angular").GetTargetVelocityAttr().Set(0.0)
+    done = hw.check_homework(stage, 7)
+    assert done["passed"] and done["read_only"]
+    assert any(s["session"] == 7 for s in hw.homework_sessions()["sessions"])
