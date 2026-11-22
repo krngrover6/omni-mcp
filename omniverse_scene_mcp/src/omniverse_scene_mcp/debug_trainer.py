@@ -84,6 +84,13 @@ def diagnose(stage: Any, focus: str | None = None) -> dict[str, Any]:
         findings += _animation_checks(stage, prims)
     order = {"error": 0, "warning": 1, "info": 2}
     findings.sort(key=lambda item: order[item["severity"]])
+    if findings:  # lessons the user recorded live (lesson_add with codes=...) show under the matching finding
+        from .study_memory import lessons_for_codes
+
+        learned = lessons_for_codes({f["code"] for f in findings})
+        for item in findings:
+            if item["code"] in learned:
+                item["lessons"] = learned[item["code"]][:2]
     head = findings[0] if findings else None
     return {
         "ok": True, "read_only": True, "focus": focus, "checked_prims": len(prims), "count": len(findings),

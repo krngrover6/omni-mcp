@@ -39,6 +39,9 @@ _KIT_RENAMES = (
     ("omni.isaac.nucleus", "isaacsim.storage.native"),
 )
 
+import re as _re
+
+_KIT_GETTER = _re.compile(r"^(get_\w+|acquire_\w+|\w+_interface)$")  # same rule as kit_members.py
 MAX_CODE_CHARS = 20000
 MAX_PROBLEMS = 20
 MAX_DOC_QUERIES = 3
@@ -80,6 +83,8 @@ class _Checker(ast.NodeVisitor):
         self.kit = kit
         self.kit_checked = 0
         self.arg_checked = 0
+        self.kit_members: list[dict[str, Any]] = []
+        self.kit_seen: set[tuple[str, str]] = set()
         self.env: dict[str, _Obj] = {}
         self.memo: dict[int, _Obj | None] = {}
         self.problems: dict[tuple[int, str], dict[str, Any]] = {}
@@ -172,7 +177,16 @@ class _Checker(ast.NodeVisitor):
         self.checked[f"{dotted}.{name}"] = self.checked.get(f"{dotted}.{name}", 0) + 1
         if name in info.classes:
             return _Obj("kenum", (dotted, name, info.classes[name]))
-        return None
+        return _Obj("kfunc", f"{dotted}.{name}")  # a Kit function / object: its members can be asked live
+
+    def _kit_chain_member(self, base: _Obj, name: str, line: int) -> _Obj:
+        """A member used on a Kit object (e.g. omni.usd.get_context().get_stage): kept for the live check."""
+        expression = base.value
+        item = (expression, name)
+        if item not in self.kit_seen and len(self.kit_members) < 40 and not name.startswith("__"):
+            self.kit_seen.add(item)
+            self.kit_members.append({"expression": expression, "name": name, "line": line})
+        return _Obj("kmeth", (expression, name))
 
     def _bind_pxr(self, name: str, bind: str, line: int, dotted: bool = False) -> None:
         try:
@@ -273,6 +287,11 @@ class _Checker(ast.NodeVisitor):
         name = node.attr
         if base is not None and base.kind == "kmod":
             return self._kit_member(base.value, name, node.lineno)
+        if base is not None and base.kind == "kobj":
+            return self._kit_chain_member(base, name, node.lineno)
+        if base is not None and base.kind in ("kfunc", "kmeth"):
+            self.unchecked += 1  # a member of a function itself, or of an uncalled method: nothing to ask
+            return None
         if base is not None and base.kind == "kenum":
             dotted, cls, members = base.value
             if name in members or name.startswith("__"):
@@ -350,6 +369,14 @@ class _Checker(ast.NodeVisitor):
         callee = self._type(func)
         if callee is not None:
             self._check_args(node, callee)
+        if callee is not None and callee.kind in ("kfunc", "kmeth"):
+            if isinstance(func, ast.Attribute) and func.attr == "get_stage":
+                return _Obj("inst", Usd.Stage)  # omni.usd.get_context().get_stage()
+            last = callee.value.rsplit(".", 1)[-1] if callee.kind == "kfunc" else callee.value[1]
+            if node.args or node.keywords or not _KIT_GETTER.match(last):
+                return None  # only argument-free getters are safe to repeat in the live app
+            expression = callee.value if callee.kind == "kfunc" else f"{callee.value[0]}.{callee.value[1]}"
+            return _Obj("kobj", f"{expression}()")
         if isinstance(func, ast.Attribute) and not (callee is not None and callee.kind == "class"):
             method = func.attr
             if method == "get_stage":  # omni.usd.get_context().get_stage()
@@ -471,8 +498,46 @@ def _flat_copy(scene_file: Any) -> dict[str, Any]:
             "stage": stage}
 
 
+MAX_LIVE_OBJECTS = 10
+
+
+def _live_kit_check(checker: _Checker, ask: Callable[[str, list[str]], Any] | None) -> dict[str, Any] | None:
+    """Ask the running Kit app (kit_object_members over the bridge) whether each method used on a Kit object exists."""
+    if not checker.kit_members:
+        return None
+    if ask is None:
+        return {"ok": False, "members_used": len(checker.kit_members),
+                "note": "Methods on Kit objects were not checked: no live Composer / Isaac bridge was reachable."}
+    by_expression: dict[str, list[dict[str, Any]]] = {}
+    for item in checker.kit_members:
+        by_expression.setdefault(item["expression"], []).append(item)
+    checked = 0
+    failed: list[str] = []
+    for expression, items in list(by_expression.items())[:MAX_LIVE_OBJECTS]:
+        try:
+            answer = ask(expression, [i["name"] for i in items])
+        except Exception:  # noqa: BLE001 - a bridge hiccup must not hide the static results
+            answer = None
+        if not isinstance(answer, dict) or not answer.get("ok") or not isinstance(answer.get("has"), dict):
+            failed.append(expression)
+            continue
+        for item in items:
+            checked += 1
+            if answer["has"].get(item["name"]) is False:
+                checker._problem(item["line"], f"{expression}.{item['name']}", "unknown_kit_member",
+                                 f"{expression} gives a {answer.get('type', 'object')} in the running app, and it "
+                                 f"has no {item['name']!r}.",
+                                 difflib.get_close_matches(item["name"], answer.get("members", []), n=3, cutoff=0.5))
+            else:
+                checker.checked[f"{expression}.{item['name']}"] = 1
+    return {"ok": checked > 0, "members_checked": checked, "objects_not_reached": failed[:5],
+            "note": "Checked inside the running app." + (" Some objects could not be reached (nothing open, or the "
+                                                          "bridge needs a reload)." if failed else "")}
+
+
 def verify_code(code: str, run: Any = True, docs: Any = False, timeout_s: Any = 20.0, scene_file: Any = None,
-                runner: Callable[[list[str]], list[dict[str, Any]]] | None = None) -> dict[str, Any]:
+                runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
+                kit_members: Callable[[str, list[str]], Any] | None = None) -> dict[str, Any]:
     """Check USD Python code before using it: every pxr name and method is looked up on the real USD classes (an
     invented call is reported with its line and the closest real names), then run=True runs it on a throwaway practice
     scene and docs=True attaches NVIDIA doc pages for the main calls. scene_file= runs it on a flattened COPY of that
@@ -497,6 +562,7 @@ def verify_code(code: str, run: Any = True, docs: Any = False, timeout_s: Any = 
                 "next_step": f"Fix line {exc.lineno} first: {exc.msg}."}
     checker = _Checker(shared_index())
     checker.visit(tree)
+    kit_live = _live_kit_check(checker, kit_members)
     problems = sorted(checker.problems.values(), key=lambda p: p["line"])
     result: dict[str, Any] = {
         "ok": True, "usd_version": _usd_version(), "problems": problems,
@@ -504,6 +570,8 @@ def verify_code(code: str, run: Any = True, docs: Any = False, timeout_s: Any = 
         "calls_argument_checked": checker.arg_checked,
         "unchecked": checker.unchecked, "pxr_modules": sorted(set(checker.pxr_modules)),
     }
+    if kit_live is not None:
+        result["kit_live"] = kit_live
     if checker.kit_imports:
         result["kit_imports"] = sorted(set(checker.kit_imports))
         if checker.kit.available:

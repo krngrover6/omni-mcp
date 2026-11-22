@@ -142,12 +142,16 @@ _add("exam.python_practice", "python_trial_run:trial_run", "local", "Learning Py
 _add("homework", "homework_sessions", "local", "Learning Python & homework")
 _add("code_verify", "usd_code_verify:verify_code", "local", "Knowledge & docs")
 _add("usda_check", "usda_check:check_usda", "local", "Knowledge & docs")
+_add("study_check", "study_check:check_study", "local", "Knowledge & docs")
+_add("kit_members", "kit_object_members:object_members", "kit", "Knowledge & docs")
+_add("study_memory", "snippet_save:save_snippet snippet_find:find_snippets lesson_add:add_lesson "
+     "lesson_find:find_lessons", "local", "Knowledge & docs", "snippet_save lesson_add")
 _add("value_story","scene_why_value:why_value scene_what_if:what_if", "stage", "Live insight")
 _add("session_lessons", "class_transcripts:find_transcripts class_session_plan:session_plan class_lesson:lesson "
      "class_check_claims:check_claims", "local", "Learning Python & homework")
 
 # search_dirs stays internal so MCP callers cannot point a reader at arbitrary folders.
-_INTERNAL = {"stage", "undo_stack", "deadline", "runner", "which", "env", "wait", "search_dirs"}
+_INTERNAL = {"stage", "undo_stack", "deadline", "runner", "which", "env", "wait", "search_dirs", "kit_members"}
 
 
 # Tools whose findings can carry NVIDIA doc sources (router-side, after the live or saved-file call).
@@ -179,7 +183,7 @@ def signature(name: str) -> inspect.Signature:
 
 
 def invoke(name: str, arguments: dict[str, Any], *, stage: Any = None, allow_kit: bool = False,
-           undo_stack: Any = None) -> dict:
+           undo_stack: Any = None, inject: dict[str, Any] | None = None) -> dict:
     """Call only an allowlisted function. Only literal False can authorize a write."""
     if name not in FEATURES:
         return {"ok": False, "error": f"Unknown feature: {name}"}
@@ -209,6 +213,9 @@ def invoke(name: str, arguments: dict[str, Any], *, stage: Any = None, allow_kit
             values["stage"] = stage
         if "undo_stack" in raw and not dry:
             values["undo_stack"] = undo_stack
+        for key, value in (inject or {}).items():  # router-side callbacks only, never from the caller's arguments
+            if key in _INTERNAL and key in raw:
+                values[key] = value
         result = fn(**values)
         return result if isinstance(result, dict) else {"ok": True, "result": result}
     except (ValueError, TypeError, KeyError, ImportError, OSError, RuntimeError) as exc:
@@ -238,10 +245,21 @@ def register(app: Any, router: Any, file_mode: Any) -> dict[str, Any]:
                 result = attach(result)
             return result
 
+        def kit_members(expression: str, member_names: list[str]) -> Any:
+            """usd_code_verify's live check: ask the open app's bridge (Composer or Isaac) about a Kit object."""
+            rpc = getattr(getattr(getattr(router, "_scene", None), "_bridge", None), "_rpc", None)
+            if not callable(rpc):
+                return None
+            return rpc("feature_call", {"tool": "kit_object_members",
+                                        "arguments": {"expression": expression, "names": member_names}})
+
         def run(**arguments):
-            scene_file = arguments.pop("scene_file", None)
             if spec.location == "local":
-                return invoke(name, arguments)
+                # A local tool's own scene_file parameter (usd_code_verify: the scene to run on) stays an argument;
+                # saved-file mode below is only for stage tools.
+                inject = {"kit_members": kit_members} if name == "usd_code_verify" else None
+                return invoke(name, arguments, inject=inject)
+            scene_file = arguments.pop("scene_file", None)
             if scene_file is not None:
                 if spec.mutates or spec.location != "stage":
                     return {"ok": False, "error": "Saved-file mode is read-only", "written": False}

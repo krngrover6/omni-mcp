@@ -35,6 +35,10 @@ os.environ["OMNIVERSE_SCENE_MCP_TEST"] = "1"
 # Integration tests exercise every tool; tests of the production starter default
 # pass an explicit empty environment to profiles or temporarily clear this value.
 os.environ.setdefault("OMNIVERSE_MCP_PROFILE", "all")
+# The tested-code library and lesson log are the user's own files: tests use an empty folder of their own.
+import tempfile as _tempfile  # noqa: E402
+
+os.environ["OMNIVERSE_MCP_MEMORY_DIR"] = _tempfile.mkdtemp(prefix="mcp_memory_test_")
 
 # ------------------------------------------------------------------------------------- local-only data, platforms
 
