@@ -56,13 +56,13 @@ def _finding(severity: str, code: str, prim: Any, symptom: str, cause: str, fix:
 
 def diagnose(stage: Any, focus: str | None = None) -> dict[str, Any]:
     """Read-only: why might this simulation misbehave? Findings name the symptom, the cause, the prim and the fix.
-    focus narrows to one kind: 'physics', 'joints', 'graph', 'assets' or 'scene'."""
+    focus narrows to one kind: 'physics', 'joints', 'graph', 'assets', 'scene' or 'animation'."""
     if Usd is None:
         return {"ok": False, "error": "pxr (USD) is not available here."}
     if stage is None:
         return {"ok": False, "error": "No stage is open."}
-    if focus is not None and focus not in ("physics", "joints", "graph", "assets", "scene"):
-        return {"ok": False, "error": "focus must be physics, joints, graph, assets or scene."}
+    if focus is not None and focus not in ("physics", "joints", "graph", "assets", "scene", "animation"):
+        return {"ok": False, "error": "focus must be physics, joints, graph, assets, scene or animation."}
     prims = []
     for prim in stage.Traverse():
         if len(prims) >= MAX_PRIMS:
@@ -80,6 +80,8 @@ def diagnose(stage: Any, focus: str | None = None) -> dict[str, Any]:
         findings += _graph_checks(stage, prims)
     if focus in (None, "assets"):
         findings += _asset_checks(stage, prims)
+    if focus in (None, "animation"):
+        findings += _animation_checks(stage, prims)
     order = {"error": 0, "warning": 1, "info": 2}
     findings.sort(key=lambda item: order[item["severity"]])
     head = findings[0] if findings else None
@@ -108,6 +110,64 @@ def _scene_checks(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
             out.append(_finding("info", "invisible", prim, "It is in the Stage panel but not in the viewport.",
                                 "Its visibility is 'invisible' (everything under it hides too).",
                                 "Set visibility back to 'inherited' (scene_set_attribute)."))
+    return out
+
+
+def _camera_rig(prim: Any) -> bool:
+    if prim.IsA(UsdGeom.Camera):
+        return True
+    return any(child.IsA(UsdGeom.Camera) for child in Usd.PrimRange(prim) if child != prim)
+
+
+def _animation_checks(stage: Any, prims: list[Any]) -> list[dict[str, Any]]:
+    """Lessons from the Isaac camera tour (2026-11-13, seen live)."""
+    out = []
+    start, end = stage.GetStartTimeCode(), stage.GetEndTimeCode()
+    has_range = stage.HasAuthoredMetadata("startTimeCode") or stage.HasAuthoredMetadata("endTimeCode")
+    for prim in prims:
+        if not prim.IsA(UsdGeom.Xformable):
+            continue
+        ops = UsdGeom.Xformable(prim).GetOrderedXformOps()
+        # Seen live: new Isaac Xforms got an Orient op (a quaternion), and the Curve Editor could not key it.
+        if any(op.GetOpType() == UsdGeom.XformOp.TypeOrient for op in ops) and _camera_rig(prim):
+            out.append(_finding("info", "orient_not_keyable", prim,
+                                "The Curve Editor will not key this camera rig's rotation.",
+                                "Its rotation is an Orient op (a quaternion); the Curve Editor keys Rotate (Euler "
+                                "angle) values.",
+                                "Edit > Preferences > Stage > Default Xform Op Type: choose Rotate (XYZ) for new prims; "
+                                "for this one, delete the Orient op in the Property panel and add a Rotate op."))
+        if has_range:
+            outside = []
+            for op in ops:
+                samples = op.GetTimeSamples()
+                if samples and (samples[0] < start or samples[-1] > end):
+                    outside.append(f"{op.GetName()} keys {samples[0]:g}..{samples[-1]:g}")
+            if outside:
+                out.append(_finding("warning", "keys_outside_timeline", prim, "Part of the animation never plays.",
+                                    f"Keys lie outside the timeline {start:g}..{end:g}: " + "; ".join(outside[:3]) + ".",
+                                    "Widen the timeline (the Start/End boxes under the viewport, in time codes) or "
+                                    "move the keys inside it."))
+    # Seen live: while Isaac plays, values land in the session layer, which is stronger than the file and never
+    # saved; typing a value then says "Overridden in a stronger layer".
+    session = stage.GetSessionLayer()
+    held: list[str] = []
+
+    def visit(path: Any) -> None:
+        if len(held) >= 8 or not path.IsPropertyPath() or str(path).startswith(_SYSTEM_ROOTS):
+            return
+        spec = session.GetAttributeAtPath(path)
+        if spec is not None and spec.HasDefaultValue():
+            held.append(str(path))
+
+    if session is not None:
+        session.Traverse(Sdf.Path.absoluteRootPath, visit)
+    if held:
+        out.append(_finding("info", "session_layer_override", None,
+                            "A value you type is 'Overridden in a stronger layer', or a change is gone after saving.",
+                            "The session layer (stronger than your file, never saved) holds: " + ", ".join(held) +
+                            ". Isaac writes there while the timeline plays.",
+                            "Stop the timeline, then type the value again; to keep a session value, set it on your "
+                            "own layer and save."))
     return out
 
 

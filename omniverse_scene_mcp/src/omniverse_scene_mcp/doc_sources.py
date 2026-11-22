@@ -41,6 +41,9 @@ QUERIES: dict[str, str] = {
     "invisible": "visibility invisible imageable prim",
     "missing_asset": "asset path does not resolve, unresolved reference",
     "wrong_prim_path": "prim path does not exist, relationship target path",
+    "orient_not_keyable": "xformOp orient quaternion versus rotateXYZ euler xform ops",
+    "keys_outside_timeline": "time samples startTimeCode endTimeCode stage time range",
+    "session_layer_override": "session layer is the strongest layer in the layer stack, not saved",
 }
 
 _HIT = re.compile(r"Title '(.*?)', URL '([^']+)'\s*\n---\n(.*?)(?=\n---|\Z)", re.S)

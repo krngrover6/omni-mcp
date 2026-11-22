@@ -19,10 +19,24 @@ import difflib
 import importlib
 from typing import Any, Callable
 
+from .kit_index import KIT_TOPS, shared_index
+
 try:
     from pxr import Usd
 except ImportError:  # pragma: no cover
     Usd = None
+
+# Old Isaac Sim module names (before 4.5) and where they live now. Seen in many tutorials and generated code.
+_KIT_RENAMES = (
+    ("omni.isaac.core.utils", "isaacsim.core.utils"),
+    ("omni.isaac.core", "isaacsim.core.api"),
+    ("omni.isaac.kit", "isaacsim.simulation_app"),
+    ("omni.isaac.core_nodes", "isaacsim.core.nodes"),
+    ("omni.isaac.wheeled_robots", "isaacsim.robot.wheeled_robots"),
+    ("omni.isaac.franka", "isaacsim.robot.manipulators.examples.franka"),
+    ("omni.isaac.sensor", "isaacsim.sensors.physics"),
+    ("omni.isaac.nucleus", "isaacsim.storage.native"),
+)
 
 MAX_CODE_CHARS = 20000
 MAX_PROBLEMS = 20
@@ -61,7 +75,9 @@ def _public(names: list[str]) -> list[str]:
 
 
 class _Checker(ast.NodeVisitor):
-    def __init__(self) -> None:
+    def __init__(self, kit: Any = None) -> None:
+        self.kit = kit
+        self.kit_checked = 0
         self.env: dict[str, _Obj] = {}
         self.memo: dict[int, _Obj | None] = {}
         self.problems: dict[tuple[int, str], dict[str, Any]] = {}
@@ -82,16 +98,79 @@ class _Checker(ast.NodeVisitor):
                 self._problem(node.lineno, f"from {module} import {alias.name}", "bad_import",
                               "Import USD modules as `from pxr import Usd, UsdGeom` (pxr has modules, not submodule "
                               "members).", [])
-        elif module.split(".")[0] in ("omni", "carb", "isaacsim", "omni_ui"):
+        elif module.split(".")[0] in KIT_TOPS:
             self.kit_imports.append(module)
+            if self._kit_module(module, node.lineno) is None:
+                return
+            for alias in node.names:
+                if alias.name != "*":
+                    found = self._kit_member(module, alias.name, node.lineno)
+                    self._bind(ast.Name(alias.asname or alias.name), found)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             if alias.name.startswith("pxr."):
                 short = alias.name.split(".", 1)[1]
                 self._bind_pxr(short, alias.asname or alias.name, node.lineno, dotted=alias.asname is None)
-            elif alias.name.split(".")[0] in ("omni", "carb", "isaacsim"):
+            elif alias.name.split(".")[0] in KIT_TOPS:
                 self.kit_imports.append(alias.name)
+                if self._kit_module(alias.name, node.lineno) is None:
+                    continue
+                if alias.asname:
+                    self.env[alias.asname] = _Obj("kmod", alias.name)
+                else:
+                    top = alias.name.split(".")[0]
+                    self.env[top] = _Obj("kmod", top)
+
+    # ---------------------------------------------------------------- Kit / Isaac modules (names only)
+    def _kit_module(self, dotted: str, line: int) -> Any:
+        """The module's info, True when it cannot be checked here, or None (after reporting) when it is not installed."""
+        if self.kit is None or not self.kit.available:
+            return True
+        info = self.kit.module(dotted)
+        if info is not None:
+            self.kit_checked += 1
+            return info
+        parent, _, last = dotted.rpartition(".")
+        options = []
+        above = self.kit.module(parent) if parent else None
+        if above is not None and last in above.names:
+            self.unchecked += 1  # registered at run time (seen: sys.modules["omni.replicator.core.backends"] = ...)
+            return True
+        if above is not None:
+            options = difflib.get_close_matches(last, sorted(above.names), n=3, cutoff=0.5)
+            options = [f"{parent}.{o}" for o in options]
+        for old, new in _KIT_RENAMES:
+            if dotted == old or dotted.startswith(old + "."):
+                moved = new + dotted[len(old):]
+                if self.kit.module(moved) is not None:  # suggest only what is really installed
+                    options = [moved] + options
+                break
+        self._problem(line, dotted, "unknown_kit_module",
+                      f"No module {dotted!r} in the installed Isaac Sim 6.1 (checked its exts and extscache).",
+                      options[:3], attr=dotted.split(".")[-1])
+        return None
+
+    def _kit_member(self, dotted: str, name: str, line: int) -> _Obj | None:
+        if self.kit is None or not self.kit.available:
+            return None
+        if self.kit.module(f"{dotted}.{name}") is not None:
+            self.kit_checked += 1
+            return _Obj("kmod", f"{dotted}.{name}")
+        info = self.kit.module(dotted)
+        if info is None or (name not in info.names and info.open):
+            self.unchecked += 1
+            return None
+        if name not in info.names:
+            self._problem(line, f"{dotted}.{name}", "unknown_kit_name",
+                          f"{dotted} has no {name!r} in the installed Isaac Sim 6.1.",
+                          difflib.get_close_matches(name, _public(sorted(info.names)), n=3, cutoff=0.5), attr=name)
+            return None
+        self.kit_checked += 1
+        self.checked[f"{dotted}.{name}"] = self.checked.get(f"{dotted}.{name}", 0) + 1
+        if name in info.classes:
+            return _Obj("kenum", (dotted, name, info.classes[name]))
+        return None
 
     def _bind_pxr(self, name: str, bind: str, line: int, dotted: bool = False) -> None:
         try:
@@ -99,6 +178,10 @@ class _Checker(ast.NodeVisitor):
         except ImportError:
             import pxr
 
+            if self.kit is not None and self.kit.available and self.kit.has_pxr_module(name):
+                self.kit_imports.append(f"pxr.{name}")  # Kit-only schema (PhysxSchema...): names not checked here
+                self.unchecked += 1
+                return
             known = [m for m in dir(pxr) if not m.startswith("_")]
             self._problem(line, f"pxr.{name}", "unknown_module", f"pxr has no module {name!r} in this USD.",
                           difflib.get_close_matches(name, known, n=3))
@@ -186,11 +269,23 @@ class _Checker(ast.NodeVisitor):
     def _attribute(self, node: ast.Attribute) -> _Obj | None:
         base = self._type(node.value)
         name = node.attr
+        if base is not None and base.kind == "kmod":
+            return self._kit_member(base.value, name, node.lineno)
+        if base is not None and base.kind == "kenum":
+            dotted, cls, members = base.value
+            if name in members or name.startswith("__"):
+                self.checked[f"{dotted}.{cls}.{name}"] = 1
+            else:
+                self._problem(node.lineno, f"{dotted}.{cls}.{name}", "unknown_kit_name",
+                              f"{dotted}.{cls} has no value {name!r} in the installed Isaac Sim 6.1.",
+                              difflib.get_close_matches(name, _public(sorted(members)), n=3, cutoff=0.5))
+            return None
         if base is None:
             if isinstance(node.value, (ast.Name, ast.Attribute, ast.Call)):
                 self.unchecked += 1
             return None
-        if base.kind == "list":
+        if base.kind in ("list", "method", "func"):
+            self.unchecked += 1  # e.g. layer.subLayerPaths.insert: a property's value, type unknown here
             return None
         holder = base.value
         if not hasattr(holder, name):
@@ -338,7 +433,7 @@ def verify_code(code: str, run: Any = True, docs: Any = False, timeout_s: Any = 
                               "message": f"{exc.msg} (line {exc.lineno}, column {exc.offset}). Nothing else was "
                                          "checked or run."}],
                 "next_step": f"Fix line {exc.lineno} first: {exc.msg}."}
-    checker = _Checker()
+    checker = _Checker(shared_index())
     checker.visit(tree)
     problems = sorted(checker.problems.values(), key=lambda p: p["line"])
     result: dict[str, Any] = {
@@ -348,8 +443,14 @@ def verify_code(code: str, run: Any = True, docs: Any = False, timeout_s: Any = 
     }
     if checker.kit_imports:
         result["kit_imports"] = sorted(set(checker.kit_imports))
-        result["kit_note"] = ("Kit/Isaac modules (omni, carb, isaacsim) are not checked here; ask the kit_docs or "
-                              "isaac_sim_docs MCP about them.")
+        if checker.kit.available:
+            result["kit_checked_names"] = checker.kit_checked
+            result["kit_note"] = ("Kit/Isaac modules, functions and enum values were looked up in the installed Isaac "
+                                  "Sim 6.1 files; methods on Kit objects are not checked (the stubs miss some). "
+                                  "Composer's Kit may differ slightly: ask kit_docs when unsure.")
+        else:
+            result["kit_note"] = (f"Isaac Sim install not found at {checker.kit.root}, so Kit/Isaac names were not "
+                                  "checked; ask the kit_docs or isaac_sim_docs MCP about them.")
     ran_ok = None
     if run is True:
         from .exam.python_practice import trial_run

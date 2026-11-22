@@ -111,3 +111,53 @@ def test_registered_as_read_only_local_tool_without_internal_params():
     spec = features.FEATURES["usd_code_verify"]
     assert spec.location == "local" and spec.mutates is False
     assert set(features.signature("usd_code_verify").parameters) == {"code", "run", "docs", "timeout_s"}
+
+
+def _fake_kit(tmp):
+    """A tiny Isaac-like install: carb.input (stub with an enum), omni.usd (star import), isaacsim.core.api."""
+    from pathlib import Path
+
+    root = Path(tmp)
+    carb = root / "kit" / "kernel" / "py" / "carb"
+    carb.mkdir(parents=True)
+    (carb / "__init__.py").write_text("")
+    (carb / "input.pyi").write_text(
+        "class KeyboardInput:\n    W: int\n    A: int\n    __members__: dict\n"
+        "class IInput:\n    def subscribe_to_keyboard_events(self, a, b) -> int: ...\n"
+        "def acquire_input_interface() -> IInput: ...\n")
+    usd = root / "extscache" / "omni.usd-1.0" / "omni" / "usd"
+    (usd / "_impl").mkdir(parents=True)
+    (usd / "__init__.py").write_text("from ._impl import *\n")
+    (usd / "_impl" / "__init__.py").write_text("def get_context(name=''):\n    pass\n")
+    api = root / "exts" / "isaacsim.core.api" / "isaacsim" / "core" / "api"
+    api.mkdir(parents=True)
+    (api / "__init__.py").write_text("from .world import World\n")
+    (api / "world.py").write_text("class World:\n    pass\n")
+    (root / "extscache" / "omni.usd.schema.physx-1" / "pxr" / "PhysxSchema").mkdir(parents=True)
+    return root
+
+
+def test_kit_names_checked_against_the_install():
+    import tempfile
+    from unittest import mock
+
+    from omniverse_scene_mcp import code_verify, kit_index
+
+    with tempfile.TemporaryDirectory() as tmp:
+        index = kit_index.KitIndex(_fake_kit(tmp))
+        with mock.patch.object(code_verify, "shared_index", return_value=index):
+            good = verify_code("import carb.input\nimport omni.usd\nfrom pxr import PhysxSchema\n"
+                               "from isaacsim.core.api import World\n"
+                               "iface = carb.input.acquire_input_interface()\niface.subscribe_to_keyboard_events(1, 2)\n"
+                               "K = carb.input.KeyboardInput\nprint(K.W, omni.usd.get_context())\n", run=False)
+            assert good["verdict"] == "ok", good["problems"]
+            assert good["kit_checked_names"] >= 4 and "carb.input.KeyboardInput.W" in good["checked"]
+            bad = verify_code("import carb.input\nimport omni.usd\nfrom omni.isaac.core import World\n"
+                              "from isaacsim.core.api import Wrold\ncarb.input.acquire_input_interfce()\n"
+                              "x = carb.input.KeyboardInput.WW\nomni.usd.get_contxt()\n", run=False)
+            names = {p["name"]: p for p in bad["problems"]}
+            assert set(names) == {"omni.isaac.core", "isaacsim.core.api.Wrold", "carb.input.acquire_input_interfce",
+                                  "carb.input.KeyboardInput.WW", "omni.usd.get_contxt"}
+            assert names["omni.isaac.core"]["did_you_mean"][0] == "isaacsim.core.api"  # renamed module, installed
+            assert names["isaacsim.core.api.Wrold"]["did_you_mean"][0] == "World"
+            assert names["omni.usd.get_contxt"]["did_you_mean"][0] == "get_context"
