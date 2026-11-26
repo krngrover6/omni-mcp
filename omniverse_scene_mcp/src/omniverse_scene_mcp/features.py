@@ -150,6 +150,10 @@ _add("usda_quiz", "usda_quiz:make_quiz usda_quiz_answer:answer_quiz", "local", "
 _add("spec_builder", "scene_build_from_spec:build_from_spec", "stage", "Scene: change safely",
      "scene_build_from_spec")
 _add("spec_builder", "scene_check_spec:check_spec scene_spec_from_scene:spec_from_scene", "stage", "Live insight")
+_add("asset_audit", "asset_library_inventory", "local", "Knowledge & docs")
+# asset_inventory_export never changes the scene (it only writes a NEW csv file when dry_run=False), so it also runs on
+# saved files (scene_file=...), like the course's Factory.usd.
+_add("asset_audit", "kind_check material_audit instancing_report asset_inventory_export", "stage", "Live insight")
 _add("kit_members", "kit_object_members:object_members", "kit", "Knowledge & docs")
 _add("study_memory", "snippet_save:save_snippet snippet_find:find_snippets lesson_add:add_lesson "
      "lesson_find:find_lessons", "local", "Knowledge & docs", "snippet_save lesson_add")
