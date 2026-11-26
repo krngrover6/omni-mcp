@@ -165,8 +165,12 @@ def kind_check(stage: Any) -> dict[str, Any]:
                                   "assembly prims (" + ", ".join(f"{c['path']} is {c['kind'] or 'no kind'}"
                                                                  for c in chain[:3]) + ")."})
     fixes = [{"path": path, "current_kind": kind or None, "set_kind": "group"} for path, kind in sorted(needs_group.items())]
+    # The same fix as Asset Validator's KindChecker "Fix Selected", ready for scene_build_from_spec (preview, one undo,
+    # checked after). Kinds on prims inside a referenced asset become overs in the authoring layer: the asset file
+    # stays as it is.
+    fix_spec = {"prims": [{"path": f["path"], "kind": "group"} for f in fixes[:500]]} if fixes else None
     return {"ok": True, "read_only": True, "broken_models": len(broken), "problems": broken[:100],
-            "fix_plan": fixes[:100],
+            "fix_plan": fixes[:100], "fix_spec": fix_spec,
             "next_step": ("Give the listed ancestors kind group (assembly for a whole line or cell), e.g. with "
                           "scene_build_from_spec: {\"path\": ..., \"kind\": \"group\"}, or Asset Validator > KindChecker > "
                           "Fix Selected." if broken else "The kind hierarchy is valid: every model kind is a real model."),
@@ -235,8 +239,8 @@ def material_audit(stage: Any, root_path: Any = None) -> dict[str, Any]:
             "defined_in_files": dict(files), "table": rows[:150],
             "unused": [r["material"] for r in rows if r["used_by"] == 0][:50], "unbound_examples": unbound[:20],
             "next_step": ("Shared materials come from " + ", ".join(f"{k} ({v})" for k, v in files.most_common(3))
-                          + ". To swap one everywhere without touching the asset, rebind it in an override sublayer "
-                          "(the course's MaterialOverride.usd)." if rows else "No materials in this scene.")}
+                          + ". To swap one everywhere without touching the asset: material_replace(from_material=<name>, "
+                          "to_material=<path>, layer='MaterialOverride.usd')." if rows else "No materials in this scene.")}
 
 
 # ------------------------------------------------------------------------------------------------ instancing
