@@ -146,6 +146,8 @@ _add("study_check", "study_check:check_study", "local", "Knowledge & docs")
 _add("usda_explain", "usda_explain:explain_usda", "local", "Learning Python & homework")
 _add("click_watch", "click_snapshot click_changes", "stage", "Live insight")
 _add("extension_check", "extension_check:check_extension", "local", "Knowledge & docs")
+_add("mdl_info", "mdl_info", "local", "Knowledge & docs")
+_add("spec_builder", "look_presets", "local", "Knowledge & docs")
 _add("usda_quiz", "usda_quiz:make_quiz usda_quiz_answer:answer_quiz", "local", "Learning Python & homework")
 _add("spec_builder", "scene_build_from_spec:build_from_spec", "stage", "Scene: change safely",
      "scene_build_from_spec")
@@ -154,7 +156,9 @@ _add("asset_audit", "asset_library_inventory", "local", "Knowledge & docs")
 # asset_inventory_export never changes the scene (it only writes a NEW csv file when dry_run=False), so it also runs on
 # saved files (scene_file=...), like the course's Factory.usd.
 _add("asset_audit", "kind_check material_audit instancing_report asset_inventory_export", "stage", "Live insight")
-_add("asset_edit", "material_replace asset_repoint", "stage", "Scene: change safely", "material_replace asset_repoint")
+_add("asset_edit", "material_replace asset_repoint material_bind_pattern", "stage", "Scene: change safely",
+     "material_replace asset_repoint material_bind_pattern")
+_add("asset_audit", "texture_check", "stage", "Live insight")
 _add("asset_edit", "asset_collect material_library_create", "local", "Assets & physics",
      "asset_collect material_library_create")
 _add("kit_members", "kit_object_members:object_members", "kit", "Knowledge & docs")

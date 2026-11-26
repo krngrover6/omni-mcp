@@ -147,6 +147,48 @@ def material_replace(stage: Any, from_material: str, to_material: str, root_path
                          "layer to see the original materials again; Ctrl+Z undoes it; save to keep it."}
 
 
+# ------------------------------------------------------------------------------------------------ bind by pattern
+def material_bind_pattern(stage: Any, pattern: str, material: str, root_path: Any = None, layer: Any = None,
+                          geometry_only: Any = True, *, undo_stack: Any = None, dry_run: Any = True) -> dict[str, Any]:
+    """Bind one material to every prim whose NAME matches a pattern (wildcards, case-insensitive: "*wheel*",
+    "Tire_??"), e.g. all wheels -> rubber. geometry_only=True (default) binds meshes/shapes only; False binds matching
+    Xforms too (their children inherit it unless they have their own binding). Goes through scene_build_from_spec:
+    preview, one undo, checked after (a stronger layer winning makes it roll back)."""
+    import fnmatch
+
+    from .spec_builder import build_from_spec
+
+    if not isinstance(pattern, str) or not pattern.strip():
+        return {"ok": False, "error": "pattern is required, e.g. *wheel*"}
+    target = stage.GetPrimAtPath(material) if isinstance(material, str) and material.startswith("/") else None
+    if not target or not target.IsA(UsdShade.Material):
+        return {"ok": False, "error": f"material {material!r} is not a Material prim path"}
+    start = stage.GetPrimAtPath(root_path) if isinstance(root_path, str) else stage.GetPseudoRoot()
+    if not start:
+        return {"ok": False, "error": f"No prim at {root_path!r}"}
+    from pxr import UsdGeom
+
+    matched, locked = [], []
+    for prim in Usd.PrimRange(start, Usd.TraverseInstanceProxies()):
+        if prim.IsA(UsdShade.Material) or prim.IsA(UsdShade.Shader):
+            continue
+        if geometry_only is not False and not prim.IsA(UsdGeom.Gprim):
+            continue
+        if fnmatch.fnmatch(prim.GetName().lower(), pattern.lower()):
+            (locked if prim.IsInstanceProxy() else matched).append(str(prim.GetPath()))
+    if not matched:
+        return {"ok": False, "error": f"No {'geometry ' if geometry_only is not False else ''}prim name matches "
+                                      f"{pattern!r}" + (f" outside instances ({len(locked)} inside)" if locked else ""),
+                "inside_instances": len(locked)}
+    spec = {"prims": [{"path": p, "material": material} for p in matched[:MAX_EDITS]]}
+    if layer is not None:
+        spec["layer"] = layer
+    result = build_from_spec(stage, spec, undo_stack=undo_stack, dry_run=dry_run)
+    result.update({"pattern": pattern, "matched": len(matched), "examples": [p.rsplit("/", 1)[-1] for p in matched[:8]],
+                   "inside_instances": len(locked)})
+    return result
+
+
 # ------------------------------------------------------------------------------------------------ asset_repoint
 def _relative_to_layer(layer: Any, new_path: str) -> str:
     target = Path(new_path)

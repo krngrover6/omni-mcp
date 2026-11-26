@@ -39,7 +39,35 @@ MAX_PRIMS = 500
 TOLERANCE = 1e-4
 _PRIM_KEYS = {"path", "type", "kind", "translate", "rotate", "scale", "attributes", "reference", "payload",
               "material", "instanceable", "active", "variants", "doc", "match_units"}
-_MATERIAL_KEYS = {"path", "color", "roughness", "metallic", "opacity", "emissive"}
+_MATERIAL_KEYS = {"path", "color", "roughness", "metallic", "opacity", "emissive", "mdl", "inputs", "preset",
+                  "_converted"}  # _converted: filled in by the plan itself
+_PREVIEW_KEYS = ("color", "roughness", "metallic", "opacity", "emissive")
+# Starting points, not measured materials: tune them in Composer. Input names are OmniPBR / OmniGlass parameters,
+# checked against the installed .mdl files (mdl_info) like any other MDL input.
+LOOK_PRESETS: dict[str, dict[str, Any]] = {
+    "chrome": {"mdl": "OmniPBR", "inputs": {"diffuse_color_constant": [0.85, 0.85, 0.85], "metallic_constant": 1.0,
+                                             "reflection_roughness_constant": 0.05}},
+    "brushed_aluminium": {"mdl": "OmniPBR", "inputs": {"diffuse_color_constant": [0.8, 0.8, 0.82],
+                                                        "metallic_constant": 1.0, "reflection_roughness_constant": 0.35}},
+    "steel": {"mdl": "OmniPBR", "inputs": {"diffuse_color_constant": [0.6, 0.6, 0.62], "metallic_constant": 1.0,
+                                            "reflection_roughness_constant": 0.25}},
+    "rubber_black": {"mdl": "OmniPBR", "inputs": {"diffuse_color_constant": [0.02, 0.02, 0.02],
+                                                   "metallic_constant": 0.0, "reflection_roughness_constant": 0.85,
+                                                   "specular_level": 0.3}},
+    "plastic_white": {"mdl": "OmniPBR", "inputs": {"diffuse_color_constant": [0.8, 0.8, 0.8],
+                                                    "reflection_roughness_constant": 0.4}},
+    "plastic_black": {"mdl": "OmniPBR", "inputs": {"diffuse_color_constant": [0.03, 0.03, 0.03],
+                                                    "reflection_roughness_constant": 0.4}},
+    "paint_glossy": {"mdl": "OmniPBR", "inputs": {"diffuse_color_constant": [0.6, 0.02, 0.02],
+                                                   "metallic_constant": 0.3, "reflection_roughness_constant": 0.2}},
+    "concrete_floor": {"mdl": "OmniPBR", "inputs": {"diffuse_color_constant": [0.45, 0.45, 0.43],
+                                                     "reflection_roughness_constant": 0.9}},
+    "glass_clear": {"mdl": "OmniGlass", "inputs": {"glass_color": [1.0, 1.0, 1.0], "glass_ior": 1.5,
+                                                    "frosting_roughness": 0.0}},
+    "glass_tinted": {"mdl": "OmniGlass", "inputs": {"glass_color": [0.6, 0.8, 0.9], "glass_ior": 1.5}},
+    "light_panel": {"mdl": "OmniPBR", "inputs": {"enable_emission": True, "emissive_color": [1.0, 1.0, 1.0],
+                                                  "emissive_intensity": 1000.0}},
+}
 _KINDS = {"component", "group", "assembly", "subcomponent", "model"}
 
 
@@ -328,6 +356,16 @@ def _plan(stage: Any, spec: Any) -> dict[str, Any]:
         if unknown:
             errors.append(f"{path}: unknown material keys {sorted(unknown)} (use {sorted(_MATERIAL_KEYS)})")
         existing = stage.GetPrimAtPath(path)
+        if existing and not existing.IsA(UsdShade.Material):
+            errors.append(f"{path}: exists as {existing.GetTypeName() or 'a typeless prim'}, not a Material")
+            continue
+        if "preset" in item or "mdl" in item:
+            changes = _plan_mdl(stage, layer, path, item, existing, errors)
+            if changes is not None:
+                steps.append({"path": str(path), "what": "material", "action": "create" if not existing else
+                              ("update" if changes else "ok"), "changes": changes if existing else
+                              [f"new {item.get('mdl')} material"]})
+            continue
         changes = []
         shader = UsdShade.Shader(stage.GetPrimAtPath(path.AppendChild("PreviewSurface"))) if existing else None
         for key, input_name in (("color", "diffuseColor"), ("roughness", "roughness"), ("metallic", "metallic"),
@@ -516,6 +554,9 @@ def _apply(stage: Any, spec: dict[str, Any], plan: dict[str, Any]) -> None:
         UsdGeom.Xform.Define(stage, parent)
     for item in spec.get("materials") or []:
         path = Sdf.Path(item["path"])
+        if "mdl" in item:
+            _apply_mdl(stage, path, item)
+            continue
         material = UsdShade.Material.Define(stage, path)
         shader = UsdShade.Shader.Define(stage, path.AppendChild("PreviewSurface"))
         shader.CreateIdAttr("UsdPreviewSurface")
@@ -584,6 +625,95 @@ def _apply(stage: Any, spec: dict[str, Any], plan: dict[str, Any]) -> None:
             vset.SetVariantSelection(body.get("select", next(iter(body["options"]))))
 
 
+# ------------------------------------------------------------------------------------------------ MDL materials
+def _plan_mdl(stage: Any, layer: Any, path: Any, item: dict[str, Any], existing: Any,
+              errors: list[str]) -> list[str] | None:
+    """Validate an MDL material entry against the installed .mdl file; returns the list of changes (None = error)."""
+    from .mdl_info import mdl_parameters, texture_color_space
+
+    if "preset" in item:
+        preset = LOOK_PRESETS.get(item["preset"]) if isinstance(item["preset"], str) else None
+        if preset is None:
+            errors.append(f"{path}: unknown preset {item['preset']!r} (use {sorted(LOOK_PRESETS)})")
+            return None
+        item.setdefault("mdl", preset["mdl"])
+        item["inputs"] = {**preset["inputs"], **(item.get("inputs") or {})}
+        item.pop("preset")
+    if any(k in item for k in _PREVIEW_KEYS):
+        errors.append(f"{path}: an MDL material takes its values in inputs (e.g. diffuse_color_constant), not "
+                      f"{[k for k in _PREVIEW_KEYS if k in item]}")
+        return None
+    name = item.get("mdl")
+    file, params = mdl_parameters(name) if isinstance(name, str) else (None, [])
+    if file is None:
+        errors.append(f"{path}: no MDL material {name!r} in the local install (try OmniPBR, OmniGlass, "
+                      "OmniSurfaceBase; mdl_info lists inputs)")
+        return None
+    by_name = {p["name"]: p for p in params}
+    inputs = item.get("inputs") or {}
+    if not isinstance(inputs, dict):
+        errors.append(f"{path}: inputs must be an object input name -> value")
+        return None
+    shader = UsdShade.Shader(stage.GetPrimAtPath(path.AppendChild("Shader"))) if existing else None
+    changes = []
+    if existing and (not shader or shader.GetSourceAssetSubIdentifier("mdl") != name):
+        changes.append(f"shader -> {name}")
+    converted = {}
+    for key, value in inputs.items():
+        param = by_name.get(key)
+        if param is None:
+            guess = difflib.get_close_matches(key, list(by_name), n=1)
+            errors.append(f"{path}: {name} has no input {key!r}" + (f"; did you mean {guess[0]!r}?" if guess else
+                                                                   " (mdl_info lists them)"))
+            continue
+        if param["usd_type"] is None:
+            errors.append(f"{path}: {key} is an MDL {param['mdl_type']} (an option list): set it in Composer")
+            continue
+        type_obj = Sdf.ValueTypeNames.Find(param["usd_type"])
+        if param["usd_type"] == "asset":
+            if not isinstance(value, str):
+                errors.append(f"{path}: {key} is a texture: give a file path")
+                continue
+            local = _resolve_local(layer, value)
+            if local is not None and not local.is_file():
+                errors.append(f"{path}: {key}: texture {value!r} not found (looked at {local})")
+                continue
+            converted[key] = (type_obj, Sdf.AssetPath(value), texture_color_space(key))
+            wanted = value
+        else:
+            try:
+                converted[key] = (type_obj, _convert(type_obj, value), None)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{path}: {key}: {value!r} is not a {param['mdl_type']} ({exc})")
+                continue
+            wanted = converted[key][1]
+        current = shader.GetInput(key).Get() if shader and shader.GetInput(key) else None
+        current = current.path if hasattr(current, "path") else current
+        if not _same(current, wanted):
+            changes.append(key)
+    item["_converted"] = converted
+    return changes
+
+
+def _apply_mdl(stage: Any, path: Any, item: dict[str, Any]) -> None:
+    """Write the material the way Composer does: Material + Shader "Shader" with info:mdl:sourceAsset @<Name>.mdl@ and
+    subIdentifier <Name>, typed inputs:<mdl name>, and outputs:mdl:surface/displacement/volume -> Shader.outputs:out."""
+    name = item["mdl"]
+    material = UsdShade.Material.Define(stage, path)
+    shader = UsdShade.Shader.Define(stage, path.AppendChild("Shader"))
+    shader.SetSourceAsset(Sdf.AssetPath(f"{name}.mdl"), "mdl")
+    shader.SetSourceAssetSubIdentifier(name, "mdl")
+    out = shader.CreateOutput("out", Sdf.ValueTypeNames.Token)
+    material.CreateSurfaceOutput("mdl").ConnectToSource(out)
+    material.CreateDisplacementOutput("mdl").ConnectToSource(out)
+    material.CreateVolumeOutput("mdl").ConnectToSource(out)
+    for key, (type_obj, value, color_space) in (item.get("_converted") or {}).items():
+        attr = shader.CreateInput(key, type_obj).GetAttr()
+        attr.Set(value)
+        if color_space:
+            attr.SetColorSpace(color_space)
+
+
 def _summary(steps: list[dict[str, Any]]) -> dict[str, int]:
     counts = {"create": 0, "update": 0, "ok": 0}
     for step in steps:
@@ -648,6 +778,17 @@ def build_from_spec(stage: Any, spec: Any, *, undo_stack: Any = None, dry_run: A
             "verified": "The scene was checked against the spec after building: everything matches.",
             "next_step": "Look in the viewport. Ctrl+Z in Composer (or scene_undo_last) undoes the whole build; save "
                          "with Ctrl+S when happy."}
+
+
+def look_presets() -> dict[str, Any]:
+    """Ready material looks for specs: {"path": ..., "preset": "chrome"} (chrome, brushed_aluminium, steel,
+    rubber_black, plastic_white/black, paint_glossy, concrete_floor, glass_clear/tinted, light_panel). Each is an
+    OmniPBR / OmniGlass material with starting values you can override with "inputs"."""
+    return {"ok": True, "presets": {name: {"mdl": p["mdl"], "inputs": p["inputs"]} for name, p in LOOK_PRESETS.items()},
+            "example": {"materials": [{"path": "/World/Looks/m_Chrome", "preset": "chrome"},
+                                      {"path": "/World/Looks/m_RedPaint", "preset": "paint_glossy",
+                                       "inputs": {"diffuse_color_constant": [0.7, 0.05, 0.05]}}]},
+            "note": "Starting points, not measured materials: tune them in Composer's Property panel."}
 
 
 def check_spec(stage: Any, spec: Any) -> dict[str, Any]:

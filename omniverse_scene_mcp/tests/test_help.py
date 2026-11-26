@@ -119,8 +119,10 @@ def test_help_without_a_topic_returns_every_group_and_the_quick_start():
     text = json.dumps(guide)
     # Guards against runaway size; raised from 60 KB to 64 KB when the joint and homework tools were added, and to
     # 68 KB for the eight step-by-step Action Graph tools (class session 6), and to 76 KB for the session 7-15 and
-    # study/robot tools (mistakes, schemas, diagrams, recordings). Topic help (router_help('graph')) stays small.
-    assert len(text) < 76000, len(text)
+    # study/robot tools (mistakes, schemas, diagrams, recordings), and to 84 KB for the 2026-11-26 batch (~33 tools:
+    # code/usda checkers, spec builder, digital-twin course audits and edits, MDL looks). Topic help
+    # (router_help('graph')) stays small.
+    assert len(text) < 84000, len(text)
     # The result is a copy: changing it never changes the catalog.
     guide["groups"][0]["tools"][0]["name"] = "changed"
     assert tool_guide.TOOL_CATALOG["Scene: look"][0]["name"] == "scene_summary"

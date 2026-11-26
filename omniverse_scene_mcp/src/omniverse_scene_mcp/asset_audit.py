@@ -253,6 +253,84 @@ def material_audit(stage: Any, root_path: Any = None) -> dict[str, Any]:
                           "to_material=<path>, layer='MaterialOverride.usd')." if rows else "No materials in this scene.")}
 
 
+# ------------------------------------------------------------------------------------------------ textures
+def _image_size(path: Path) -> tuple[int, int] | None:
+    """(width, height) from a PNG or JPEG header, without loading the image."""
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(26)
+            if head[:8] == b"\x89PNG\r\n\x1a\n":
+                return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+            if head[:2] == b"\xff\xd8":
+                handle.seek(2)
+                while True:
+                    marker = handle.read(2)
+                    if len(marker) < 2 or marker[0] != 0xFF:
+                        return None
+                    length = int.from_bytes(handle.read(2), "big")
+                    if marker[1] in (0xC0, 0xC1, 0xC2):
+                        data = handle.read(5)
+                        return int.from_bytes(data[3:5], "big"), int.from_bytes(data[1:3], "big")
+                    handle.seek(length - 2, 1)
+    except OSError:
+        return None
+    return None
+
+
+def texture_check(stage: Any, gpu_budget_gb: Any = 6.0) -> dict[str, Any]:
+    """Every texture the scene's shaders use: missing files, colour-space mistakes (normal / roughness / metallic maps
+    must be raw, colour maps sRGB: a normal map read as sRGB shades wrongly), and an estimate of the GPU memory the
+    PNG/JPEG textures need (width x height x 4 bytes, +1/3 for mipmaps) against gpu_budget_gb (the laptop: 6). Read-only."""
+    from .mdl_info import texture_color_space
+
+    files: dict[str, dict[str, Any]] = {}
+    missing, wrong_space = [], []
+    for prim in Usd.PrimRange(stage.GetPseudoRoot(), Usd.TraverseInstanceProxies()):
+        if not prim.IsA(UsdShade.Shader):
+            continue
+        for shader_input in UsdShade.Shader(prim).GetInputs():
+            attr = shader_input.GetAttr()
+            if attr.GetTypeName() != Sdf.ValueTypeNames.Asset:
+                continue
+            value = attr.Get()
+            if not value or not value.path:
+                continue
+            name = shader_input.GetBaseName()
+            where = f"{prim.GetPath()}.inputs:{name}"
+            if not value.resolvedPath:
+                if len(missing) < 50:
+                    missing.append({"input": where, "file": value.path})
+                continue
+            space = attr.GetColorSpace() or "auto"
+            expected = texture_color_space(name)
+            if space not in ("auto", expected) and len(wrong_space) < 50:
+                wrong_space.append({"input": where, "colorSpace": space, "should_be": expected,
+                                    "why": "data maps (normal, roughness, metallic) must not be gamma-corrected"
+                                    if expected == "raw" else "colour maps are stored gamma-corrected (sRGB)"})
+            entry = files.setdefault(value.resolvedPath, {"file": value.resolvedPath, "used_by": 0})
+            entry["used_by"] += 1
+    total = 0
+    for entry in files.values():
+        size = _image_size(Path(entry["file"]))
+        if size:
+            entry["size"] = f"{size[0]}x{size[1]}"
+            entry["gpu_mb"] = round(size[0] * size[1] * 4 * 4 / 3 / 1e6, 1)
+            total += entry["gpu_mb"]
+    biggest = sorted(files.values(), key=lambda e: -e.get("gpu_mb", 0))[:10]
+    try:
+        budget_mb = float(gpu_budget_gb) * 1000
+    except (TypeError, ValueError):
+        budget_mb = 6000.0
+    return {"ok": True, "read_only": True, "textures": len(files), "missing": missing, "wrong_color_space": wrong_space,
+            "gpu_estimate_mb": round(total), "gpu_budget_mb": round(budget_mb), "biggest": biggest,
+            "next_step": (f"{len(missing)} texture file(s) are missing: fix their paths first." if missing else
+                          f"{len(wrong_space)} texture(s) have the wrong colour space." if wrong_space else
+                          "Textures resolve and colour spaces are right.") +
+                         (f" Textures alone need ~{round(total)} MB of the {round(budget_mb)} MB GPU: downsize the "
+                          "biggest." if total > budget_mb * 0.5 else ""),
+            "note": "Only PNG and JPEG sizes are read; EXR/TGA/DDS count as 0 MB. 'auto' lets Kit decide the colour space."}
+
+
 # ------------------------------------------------------------------------------------------------ instancing
 def instancing_report(stage: Any, min_repeats: Any = 3) -> dict[str, Any]:
     """Prototypes and instances (the Statistics panel's PrototypeCount, TotalInstanceCount, TotalPrimCount), and
