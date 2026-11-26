@@ -104,6 +104,8 @@ def _flat(value: Any) -> list[float] | None:
 def _same(a: Any, b: Any) -> bool:
     if a is None or b is None:
         return a is b
+    if hasattr(a, "path") or hasattr(b, "path"):  # Sdf.AssetPath: compare what was written, not where it resolved
+        return getattr(a, "path", a) == getattr(b, "path", b)
     if isinstance(a, (str, bool)) or isinstance(b, (str, bool)):
         return str(a) == str(b)
     fa, fb = _flat(a), _flat(b)

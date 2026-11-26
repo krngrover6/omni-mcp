@@ -148,6 +148,11 @@ _add("click_watch", "click_snapshot click_changes", "stage", "Live insight")
 _add("extension_check", "extension_check:check_extension", "local", "Knowledge & docs")
 _add("mdl_info", "mdl_info", "local", "Knowledge & docs")
 _add("asset_structure", "asset_scaffold", "local", "Assets & physics", "asset_scaffold")
+_add("show_deliver", "scene_camera_frame scene_lighting_rig", "stage", "Lights/cameras/materials",
+     "scene_camera_frame scene_lighting_rig")
+_add("show_deliver", "asset_paths_report asset_validator_run", "local", "Knowledge & docs")
+_add("show_deliver", "asset_paths_fix project_package project_git_files", "local", "Assets & physics",
+     "asset_paths_fix project_package project_git_files")
 _add("asset_structure", "mesh_check", "stage", "Live insight")
 _add("asset_structure", "scene_set_pivot scene_scatter", "stage", "Scene: change safely", "scene_set_pivot scene_scatter")
 _add("spec_builder", "look_presets", "local", "Knowledge & docs")

@@ -371,7 +371,7 @@ def material_library_create(dest: str, materials: Any, dry_run: Any = True) -> d
 
 
 # ------------------------------------------------------------------------------------------------ asset_collect
-def asset_collect(source: str, dest_folder: str, dry_run: Any = True) -> dict[str, Any]:
+def asset_collect(source: str, dest_folder: str, dry_run: Any = True, base_folder: Any = None) -> dict[str, Any]:
     """Copy a local USD file and everything it depends on (layers, references, payloads, textures, MDL files) into
     dest_folder, keeping their layout relative to the source file, so the project no longer depends on outside
     folders. Files outside the source's folder go into dest_folder/_external/. Never overwrites. Remote (http, cloud)
@@ -384,7 +384,9 @@ def asset_collect(source: str, dest_folder: str, dry_run: Any = True) -> dict[st
         return {"ok": False, "error": f"source must be an existing USD file: {source}"}
     layers, assets, unresolved = UsdUtils.ComputeAllDependencies(Sdf.AssetPath(str(src)))
     files = sorted({Path(l.realPath) for l in layers if l.realPath} | {Path(a) for a in assets if a})
-    base = src.parent
+    # base_folder: keep the layout relative to this folder (project_package passes the project root, so a scene in
+    # Assemblies/ that references ../Assets/... keeps working). Default: the source file's own folder.
+    base = Path(str(base_folder)) if base_folder is not None else src.parent
     plan, remote = [], []
     for path in files:
         if "://" in str(path):
@@ -412,7 +414,7 @@ def asset_collect(source: str, dest_folder: str, dry_run: Any = True) -> dict[st
     for source_file, target in plan:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_file, target)
-    entry = dest / src.name
+    entry = dest / src.resolve().relative_to(base.resolve()) if base_folder is not None else dest / src.name
     return {"ok": True, "dry_run": False, "written": True, **result, "entry_file": str(entry),
             "next_step": f"Collected. Point the placed prop at it: asset_repoint(from_asset=<old path>, "
                          f"to_asset='{entry}')."}
