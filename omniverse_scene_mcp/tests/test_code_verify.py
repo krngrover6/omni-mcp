@@ -214,3 +214,16 @@ def test_scene_file_runs_on_a_flattened_copy_and_reports_missing_paths():
         assert sorted(os.listdir(tmp)) == ["robot.usda", "wheel.usda"]
     assert not verify_code("print(1)", scene_file="nope.txt")["ok"]
     assert not verify_code("print(1)", run=False, scene_file="x.usda")["ok"]
+
+
+def test_scene_file_run_lists_only_prims_the_code_created():
+    # Seen live 2026-11-26: every prim of the scene was listed as created (prims compared as text, not paths).
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        scene = Path(tmp) / "s.usda"
+        scene.write_text('#usda 1.0\ndef Xform "World"\n{\n    def Cube "Box"\n    {\n    }\n}\n')
+        result = verify_code("from pxr import UsdGeom\nimport omni.usd\nstage = omni.usd.get_context().get_stage()\n"
+                             "UsdGeom.Sphere.Define(stage, '/World/Ball')\n", scene_file=str(scene))
+        assert result["run"]["created_prims"] == ["/World/Ball"] and result["run"]["removed_prims"] == []

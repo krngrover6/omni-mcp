@@ -108,14 +108,11 @@ def check_study(folder: Any = "exam-prep/25-day-plan", include_html: Any = False
                     continue
                 found = result.get("problems", [])
             counts["checked"] += 1
-            # usda_check puts a "#usda 1.0" line in front of a block that has none; its lines count that line too.
-            shift = 1 if kind == "usda" and path.suffix.lower() != ".usda" and not code.lstrip().startswith("#usda") \
-                else 0
             for item in found:
                 counts["problems"] += 1
                 if len(problems) < MAX_REPORTED:
                     at = item.get("line")
-                    problems.append({"file": rel, "line": (line + at - 1 - shift) if isinstance(at, int) else line,
+                    problems.append({"file": rel, "line": (line + at - 1) if isinstance(at, int) else line,
                                      "kind": kind, "code": item.get("code"),
                                      "message": item.get("message"), **({"fix": item["fix"]} if item.get("fix") else {}),
                                      **({"tip": item["tip"]} if item.get("tip") else {})})

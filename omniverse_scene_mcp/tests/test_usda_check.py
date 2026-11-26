@@ -100,3 +100,9 @@ def test_parse_error_line_and_file_mode():
         assert not check_usda(path=str(Path(tmp) / "notes.txt"))["ok"]
     assert not check_usda()["ok"] and not check_usda(text="x", path="y")["ok"]
     assert features.FEATURES["usda_check"].mutates is False
+
+
+def test_line_numbers_match_the_text_given_without_a_header():
+    # Seen live 2026-11-26: pasted text had no #usda line and every line came back one too high.
+    result = check_usda(text='def Mesh "Box"\n{\n    double size = 50\n}\n')
+    assert [p["line"] for p in result["problems"]] == [3]

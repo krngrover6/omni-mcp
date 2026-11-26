@@ -411,7 +411,10 @@ def run_on_scene(code: str, *, timeout_s: float = DEFAULT_TIMEOUT_S, scene_text:
         try:
             layer = Sdf.Layer.CreateAnonymous("before.usda")
             layer.ImportFromString(scene_text)
-            before = {str(p) for p in Usd.Stage.Open(layer).Traverse()} if layer else set()
+            # Keep the stage in a variable: a temporary one expires mid-Traverse ("expired prim", seen 2026-11-26).
+            before_stage = Usd.Stage.Open(layer)
+            before = {str(p.GetPath()) for p in before_stage.Traverse()}
+            del before_stage
         except Exception:  # noqa: BLE001 - the child reports an unreadable scene
             before = set()
     tmp = tempfile.mkdtemp(prefix="ousd_trial_", dir=TEMP_PARENT)

@@ -86,8 +86,11 @@ def check_usda(text: Any = None, path: Any = None) -> dict[str, Any]:
         layer = Sdf.Layer.FindOrOpen(str(file))
         if layer is None:
             return {"ok": False, "error": f"USD could not open {path}"}
-        text = layer.ExportToString()
+        # Lines must match the file the user opens: read a .usda's own text (USD's re-export reformats it).
+        text = file.read_text(encoding="utf-8", errors="replace") if file.suffix.lower() == ".usda" \
+            else layer.ExportToString()
         source = str(file)
+        added = 0
     else:
         if not isinstance(text, str) or not text.strip():
             return {"ok": False, "error": "text must be non-empty .usda text"}
@@ -129,7 +132,9 @@ def check_usda(text: Any = None, path: Any = None) -> dict[str, Any]:
             return
         prim_name = path.name if hasattr(path, "name") else str(path)
         hint = (" Did you mean " + " or ".join(f"`{s}`" for s in suggestions) + "?") if suggestions else ""
-        problems.append({"code": code, "prim": str(path), "line": _line_of(lines, prim_name, token),
+        found = _line_of(lines, prim_name, token)
+        line = found - added if isinstance(found, int) else None  # lines of the text the user gave, not our header
+        problems.append({"code": code, "prim": str(path), "line": line,
                          "message": message + hint, "fix": fix, "did_you_mean": suggestions or []})
 
     specs: list[Any] = []
