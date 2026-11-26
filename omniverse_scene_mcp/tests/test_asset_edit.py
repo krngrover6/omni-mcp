@@ -120,3 +120,31 @@ def test_kind_check_fix_spec_repairs_the_hierarchy_through_the_spec_builder():
     assert spec_builder.build_from_spec(stage, report["fix_spec"], dry_run=False)["written"]
     assert asset_audit.kind_check(stage)["broken_models"] == 0
     assert features.FEATURES["material_replace"].mutates and features.FEATURES["asset_collect"].mutates
+
+
+def test_override_sublayer_weaker_than_the_root_binding_is_refused_in_the_preview():
+    # Seen live 2026-11-26 on the course's N_02_PCB_Router.usd: its bindings are written in the ROOT layer, so a
+    # MaterialOverride.usd sublayer (weaker) cannot win. The preview must say so instead of rolling back after a yes.
+    with tempfile.TemporaryDirectory() as tmp:
+        stage = Usd.Stage.CreateNew(str(Path(tmp) / "N_02.usda"))
+        white = UsdShade.Material.Define(stage, "/World/Material/Paint_Eggshell_White")
+        UsdShade.Material.Define(stage, "/World/Material/Steel_Stainless")
+        for name in ("WallL", "WallR"):
+            UsdShade.MaterialBindingAPI.Apply(UsdGeom.Cube.Define(stage, f"/World/Machine/{name}").GetPrim()).Bind(white)
+        Sdf.Layer.CreateNew(str(Path(tmp) / "MaterialOverride.usda"))
+        stage.GetRootLayer().subLayerPaths.insert(0, "./MaterialOverride.usda")
+        stage.GetRootLayer().Save()
+        blocked = e.material_replace(stage, "/World/Material/Paint_Eggshell_White", "/World/Material/Steel_Stainless",
+                                     layer="MaterialOverride.usda")
+        assert not blocked["ok"] and blocked["blocked_by_stronger_layer"] == {"N_02.usda": 2}
+        assert "STRONGER" in blocked["error"] and "REFERENCED" in blocked["fix"]
+        # The fix it suggests: reference the asset into a wrapper; local beats reference, the asset stays untouched.
+        before = (Path(tmp) / "N_02.usda").read_text()
+        wrapper = Usd.Stage.CreateNew(str(Path(tmp) / "N_02_Steel.usda"))
+        wrapper.DefinePrim("/World").GetReferences().AddReference("./N_02.usda", "/World")
+        done = e.material_replace(wrapper, "/World/Material/Paint_Eggshell_White", "/World/Material/Steel_Stainless",
+                                  dry_run=False)
+        assert done["written"] and done["prims"] == 2
+        wall = wrapper.GetPrimAtPath("/World/Machine/WallL")
+        assert str(UsdShade.MaterialBindingAPI(wall).ComputeBoundMaterial()[0].GetPath()) == "/World/Material/Steel_Stainless"
+        assert (Path(tmp) / "N_02.usda").read_text() == before

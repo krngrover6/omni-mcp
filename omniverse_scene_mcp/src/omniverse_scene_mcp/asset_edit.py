@@ -92,8 +92,31 @@ def material_replace(stage: Any, from_material: str, to_material: str, root_path
         targets = rel.GetTargets() if rel else []
         if targets and matches(targets[0]):
             (locked if prim.IsInstanceProxy() else edits).append(str(prim.GetPath()))
+    # Seen live 2026-11-26 (course N_02_PCB_Router): the binding was written in the ROOT layer, and the override layer
+    # was its sublayer, which is weaker, so every rebind lost. Check layer strength BEFORE asking for a yes.
+    order = [l.identifier for l in stage.GetLayerStack(includeSessionLayers=True)]
+    target_rank = order.index(layer_obj.identifier) if layer_obj.identifier in order else len(order)
+    stronger: dict[str, int] = {}
+    for path in edits:
+        rel = stage.GetPrimAtPath(path).GetRelationship("material:binding")
+        for spec in rel.GetPropertyStack(Usd.TimeCode.Default()) if rel else []:
+            rank = order.index(spec.layer.identifier) if spec.layer.identifier in order else len(order)
+            if rank < target_rank:  # a local layer above the target holds this binding: the target cannot win
+                stronger[spec.layer.GetDisplayName()] = stronger.get(spec.layer.GetDisplayName(), 0) + 1
+                break
     base = {"from": sources[:10], "to": to_material, "layer": layer_obj.GetDisplayName(), "prims": len(edits),
-            "examples": edits[:10], "inside_instances": len(locked), "locked_examples": locked[:5]}
+            "examples": [p.rsplit("/", 2)[-2] + "/" + p.rsplit("/", 1)[-1] for p in edits[:5]],
+            "inside_instances": len(locked), "locked_examples": locked[:3]}
+    if stronger:
+        names = ", ".join(f"{name} ({count})" for name, count in stronger.items())
+        return {"ok": False, "dry_run": dry_run is not False, "written": False, "blocked_by_stronger_layer": stronger,
+                **base,
+                "error": f"{sum(stronger.values())} of these bindings are written in {names}, which is STRONGER than "
+                         f"{layer_obj.GetDisplayName()} in the layer stack (a root layer always beats its sublayers), "
+                         "so an override there cannot win.",
+                "fix": "Do the swap where this asset is REFERENCED instead (a wrapper file or the production-line "
+                       "assembly): local opinions beat referenced ones (L before R in LIVRPS), and the asset file stays "
+                       "untouched. Or choose a layer at least as strong as the one named above."}
     if locked:
         base["warning"] = (f"{len(locked)} binding(s) sit inside instances and cannot be changed per copy: switch "
                            "off Instanceable on their instance root, or change the material inside the asset itself.")

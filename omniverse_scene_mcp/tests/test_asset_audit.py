@@ -65,9 +65,10 @@ def test_material_audit_counts_users_defining_file_and_unbound_geometry():
         UsdShade.MaterialBindingAPI.Apply(cube).Bind(material)
     UsdGeom.Cube.Define(stage, "/World/Bare")
     result = a.material_audit(stage)
-    top = result["table"][0]
+    top = result["used"][0]
     assert top["name"] == "m_PolishedSteel" and top["used_by"] == 2 and top["shader"] == "MDL OmniPBR.mdl (OmniPBR)"
-    assert result["unused"] == ["/World/Looks/m_Unused"] and result["unbound_examples"] == ["/World/Bare"]
+    assert result["unused_count"] == 1 and result["unused_examples"] == ["m_Unused"]
+    assert result["unbound_examples"] == ["World/Bare"]
 
 
 def test_instancing_report_counts_prototypes_and_suggests_repeated_assets():

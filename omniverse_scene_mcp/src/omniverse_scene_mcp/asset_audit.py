@@ -234,10 +234,14 @@ def material_audit(stage: Any, root_path: Any = None) -> dict[str, Any]:
                      "shader": _shader_kind(material), "used_by": users.get(str(prim.GetPath()), 0)})
     rows.sort(key=lambda r: -r["used_by"])
     files = Counter(r["defined_in"] for r in rows)
+    used = [r for r in rows if r["used_by"]]
+    unused = [r["material"] for r in rows if not r["used_by"]]
+    # Kept short on purpose (seen live 2026-11-26: N_02 listed 44 unused materials and long CAD paths).
     return {"ok": True, "read_only": True, "materials": len(rows), "geometry": gprims,
             "geometry_without_material": len([u for u in unbound if u != "..."]) + (1 if "..." in unbound else 0),
-            "defined_in_files": dict(files), "table": rows[:150],
-            "unused": [r["material"] for r in rows if r["used_by"] == 0][:50], "unbound_examples": unbound[:20],
+            "defined_in_files": dict(files), "used": used[:40], "unused_count": len(unused),
+            "unused_examples": [u.rsplit("/", 1)[-1] for u in unused[:8]],
+            "unbound_examples": [u.rsplit("/", 2)[-2] + "/" + u.rsplit("/", 1)[-1] for u in unbound[:5] if u != "..."],
             "next_step": ("Shared materials come from " + ", ".join(f"{k} ({v})" for k, v in files.most_common(3))
                           + ". To swap one everywhere without touching the asset: material_replace(from_material=<name>, "
                           "to_material=<path>, layer='MaterialOverride.usd')." if rows else "No materials in this scene.")}
