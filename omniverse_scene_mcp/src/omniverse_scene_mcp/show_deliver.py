@@ -59,6 +59,17 @@ def _parent_is_identity(stage: Any, path: str) -> bool:
     return Gf.IsClose(matrix, Gf.Matrix4d(1), 1e-9)
 
 
+def _size_warning(stage: Any, box: Any, target: str) -> str | None:
+    """A plain warning when the target's real size (stage units x metersPerUnit) is unbelievable: a units mix-up
+    (e.g. a mm-modelled asset labelled metres, scaled again by Composer's Metrics Assembler) looks like this."""
+    metres = max(box.GetSize()) * UsdGeom.GetStageMetersPerUnit(stage)
+    if 0.005 <= metres <= 500:
+        return None
+    return (f"{target} is {metres:,.3g} m across in this stage (metersPerUnit {UsdGeom.GetStageMetersPerUnit(stage)}): "
+            "that looks like a units mix-up, not a real object. Check the asset's metersPerUnit vs its geometry and any "
+            "xformOp:scale:unitsResolve (scene_properties), fix with match_units, then frame/light it.")
+
+
 def _axes(stage: Any) -> tuple[Any, Any, Any]:
     """(up, right, forward) world vectors for the stage's up axis."""
     if UsdGeom.GetStageUpAxis(stage) == "Z":
@@ -121,6 +132,9 @@ def scene_camera_frame(stage: Any, target: str, camera: str = "/World/Cameras/He
     result.update({"camera": camera, "target": target, "distance": round(distance, 4),
                    "field_of_view_deg": round(math.degrees(fov), 2), "focal_length": focal,
                    "tip": "In Composer: viewport camera menu (top left) > Cameras > pick it to look through it."})
+    warning = _size_warning(stage, box, target)
+    if warning:
+        result["units_warning"] = warning
     return result
 
 
@@ -188,6 +202,9 @@ def scene_lighting_rig(stage: Any, target: str, rig: str = "studio_3point", root
     result = build_from_spec(stage, {"prims": lights}, undo_stack=undo_stack, dry_run=dry_run)
     result.update({"rig": rig, "target": target, "lights": [l["path"].rsplit("/", 1)[-1] for l in lights],
                    "note": "Intensities are starting points; RTX exposure differs per scene. Tune in the Property panel."})
+    warning = _size_warning(stage, box, target)
+    if warning:
+        result["units_warning"] = warning
     return result
 
 
@@ -223,6 +240,10 @@ def asset_paths_report(scene: str) -> dict[str, Any]:
     if not root.is_file():
         return {"ok": False, "error": f"scene must be a saved USD file: {scene}"}
     layers, _, unresolved = UsdUtils.ComputeAllDependencies(Sdf.AssetPath(str(root)))
+    # A missing path counts only if the composed scene really uses it (USD's own unresolved list). Files written in a
+    # layer but never used (old list-op items, seen 2026-11-26 in the course machines: "../../../../../../Omniverse
+    # Material Lib/Material.usd") are "stale", not breakage.
+    used_missing = {str(Path(str(u)).resolve()).lower() for u in unresolved if ":" in str(u) or Path(str(u)).is_absolute()}
     counts: Counter[str] = Counter()
     rows = []
     for layer in layers:
@@ -230,12 +251,14 @@ def asset_paths_report(scene: str) -> dict[str, Any]:
         for asset in sorted(set(_all_asset_paths(layer))):
             kind, path = _kind_of(asset, base)
             missing = path is not None and not path.exists()
-            counts["missing" if missing else kind] += 1
-            if kind in ("absolute", "remote") or missing:
+            stale = missing and str(path.resolve()).lower() not in used_missing
+            counts["stale" if stale else "missing" if missing else kind] += 1
+            if (kind in ("absolute", "remote") or missing) and not stale:
                 rows.append({"layer": layer.GetDisplayName(), "path": asset,
                              "problem": "missing on disk" if missing else f"{kind} path"})
     return {"ok": True, "read_only": True, "layers": len(layers), "counts": dict(counts),
-            "problems": rows[:100], "unresolved": [str(u) for u in unresolved][:20],
+            "problems": rows[:30], "more_problems": max(0, len(rows) - 30),
+            "app_provided": sorted({str(u) for u in unresolved if str(u).endswith(".mdl") and ":" not in str(u)}),
             "next_step": ("asset_paths_fix rewrites absolute local paths as relative ones." if counts["absolute"] else
                           "Paths are portable." if not rows else "Fix missing files first (asset_repoint / move them).")}
 
@@ -309,6 +332,7 @@ def project_package(scene: str, dest: str, usdz: Any = False, dry_run: Any = Tru
         project_root = source.resolve().parent
     collect = asset_collect(str(source), str(target), dry_run=dry_run, base_folder=str(project_root))
     collect["project_root"] = str(project_root)
+    collect["copies"] = collect.get("copies", [])[:5]  # short on purpose: the full list costs tokens (seen live)
     if not collect.get("ok") or dry_run is not False:
         collect["next_step"] = collect.get("next_step", "") + " Packaging also rewrites absolute paths and verifies."
         return collect

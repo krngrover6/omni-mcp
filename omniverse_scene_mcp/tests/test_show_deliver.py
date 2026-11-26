@@ -47,6 +47,13 @@ def test_camera_frame_puts_the_whole_target_in_view_for_both_up_axes():
         to_centre = (box.GetMidpoint() - matrix.ExtractTranslation()).GetNormalized()
         assert Gf.Dot(looking, to_centre) > 0.9999  # aimed at the centre
     stage = _box_stage()
+    assert "units_warning" not in s.scene_camera_frame(stage, "/World/Machine")  # 200 cm: believable
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)  # same numbers read as metres: a 200 m box
+    assert "units_warning" not in s.scene_camera_frame(stage, "/World/Machine")
+    UsdGeom.Cube(stage.GetPrimAtPath("/World/Machine")).GetSizeAttr().Set(2000.0)  # 2 km: a units mix-up
+    assert "units mix-up" in s.scene_camera_frame(stage, "/World/Machine")["units_warning"]
+    assert "units_warning" in s.scene_lighting_rig(stage, "/World/Machine")
+    stage = _box_stage()
     assert not s.scene_camera_frame(stage, "/World/Nope")["ok"]
     assert not s.scene_camera_frame(stage, "/World/Machine", direction=[0, 0, 1])["ok"]  # straight down: no up vector
     UsdGeom.XformCommonAPI(UsdGeom.Xform.Define(stage, "/World/Moved")).SetTranslate(Gf.Vec3d(1, 0, 0))
