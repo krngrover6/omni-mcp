@@ -188,6 +188,80 @@ def find_lessons(query: Any = "", code: Any = None, limit: Any = 8) -> dict[str,
     return {"ok": True, "count": len(scored), "lessons": [item for _, item in scored[:count]]}
 
 
+# ------------------------------------------------------------------------------------------------ flashcards
+# Personal cards for the user's own weak spots (say-back mistakes from lessons), separate from the exam question bank.
+# Leitner boxes: a right answer moves the card up one box (seen again later), a wrong one back to box 1 (tomorrow).
+INTERVAL_DAYS = (1, 2, 4, 8, 16, 32)
+
+
+def _today() -> _dt.date:
+    return _dt.date.today()
+
+
+def add_card(front: str, back: str, tags: Any = None, source: Any = "", dry_run: Any = True) -> dict[str, Any]:
+    """Add a personal flashcard for one of YOUR weak spots (a question on the front, the answer on the back), e.g.
+    front="What does uniform mean?", back="One value for all time: it cannot be animated." source = where the
+    mistake happened (e.g. "Day 4 quiz"). Replaces a card with the same front."""
+    try:
+        entry = {"front": _text(front, "front", 300, required=True), "back": _text(back, "back", 800, required=True),
+                 "tags": _tags(tags), "source": _text(source, "source", 200)}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    cards = _load("cards")
+    old = next((c for c in cards if c.get("front", "").lower() == entry["front"].lower()), None)
+    cards = [c for c in cards if c is not old]
+    if len(cards) >= MAX_ENTRIES:
+        return {"ok": False, "error": f"you already have {MAX_ENTRIES} cards"}
+    entry.update({"id": (old or {}).get("id") or (max([c.get("id", 0) for c in cards] + [0]) + 1),
+                  "box": (old or {}).get("box", 1), "due": (old or {}).get("due", _today().isoformat()),
+                  "right": (old or {}).get("right", 0), "wrong": (old or {}).get("wrong", 0)})
+    plan = {"ok": True, "dry_run": dry_run is not False, "card": {k: entry[k] for k in ("id", "front", "back", "tags")},
+            "replaces": old is not None, "file": str(memory_dir() / "cards.json")}
+    if dry_run is not False:
+        plan["next_step"] = "Call again with dry_run=False to add it."
+        return plan
+    plan["written"] = _save("cards", cards + [entry])
+    return plan
+
+
+def due_cards(limit: Any = 5, tag: Any = None) -> dict[str, Any]:
+    """Your personal flashcards due today, most overdue first: only the front is shown. Answer out loud (or say it back
+    in one sentence), then call card_answer with the id and whether you were right."""
+    today = _today().isoformat()
+    wanted = tag.strip().lower() if isinstance(tag, str) and tag.strip() else None
+    cards = [c for c in _load("cards") if c.get("due", today) <= today and (not wanted or wanted in c.get("tags", []))]
+    cards.sort(key=lambda c: (c.get("due", today), c.get("box", 1)))
+    count = max(1, min(20, int(limit) if isinstance(limit, int) and not isinstance(limit, bool) else 5))
+    upcoming = sorted((c.get("due", today) for c in _load("cards") if c.get("due", today) > today))
+    return {"ok": True, "due_count": len(cards),
+            "cards": [{"id": c["id"], "front": c["front"], "box": c.get("box", 1), "tags": c.get("tags", [])}
+                      for c in cards[:count]],
+            "next_due": upcoming[0] if upcoming else None,
+            "note": "Back sides are hidden on purpose: answer first, then card_answer shows the right answer."
+            if cards else "Nothing due today."}
+
+
+def answer_card(card_id: Any, correct: Any) -> dict[str, Any]:
+    """Record your answer to a personal flashcard: correct=True moves it up a box (seen again later), False sends it
+    back to box 1 (tomorrow). Shows the back of the card. Writes only your cards file."""
+    if isinstance(card_id, bool) or not isinstance(card_id, int):
+        return {"ok": False, "error": "card_id must be the card's number"}
+    if not isinstance(correct, bool):
+        return {"ok": False, "error": "correct must be true or false"}
+    cards = _load("cards")
+    card = next((c for c in cards if c.get("id") == card_id), None)
+    if card is None:
+        return {"ok": False, "error": f"No card {card_id}"}
+    box = min(len(INTERVAL_DAYS), card.get("box", 1) + 1) if correct else 1
+    card.update({"box": box, "due": (_today() + _dt.timedelta(days=INTERVAL_DAYS[box - 1])).isoformat(),
+                 "right": card.get("right", 0) + int(correct), "wrong": card.get("wrong", 0) + int(not correct),
+                 "last": _today().isoformat()})
+    _save("cards", cards)
+    return {"ok": True, "id": card_id, "front": card["front"], "back": card["back"], "box": box, "due": card["due"],
+            "message": (f"Right! Next time: {card['due']}." if correct else
+                        f"Not yet: here is the answer. You will see it again tomorrow ({card['due']}).")}
+
+
 def lessons_for_codes(codes: set[str]) -> dict[str, list[dict[str, str]]]:
     """{finding code: [{title, lesson, seen}]} for scene_diagnose. Never raises."""
     out: dict[str, list[dict[str, str]]] = {}

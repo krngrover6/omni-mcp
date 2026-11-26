@@ -144,9 +144,12 @@ _add("code_verify", "usd_code_verify:verify_code", "local", "Knowledge & docs")
 _add("usda_check", "usda_check:check_usda", "local", "Knowledge & docs")
 _add("study_check", "study_check:check_study", "local", "Knowledge & docs")
 _add("usda_explain", "usda_explain:explain_usda", "local", "Learning Python & homework")
+_add("click_watch", "click_snapshot click_changes", "stage", "Live insight")
 _add("kit_members", "kit_object_members:object_members", "kit", "Knowledge & docs")
 _add("study_memory", "snippet_save:save_snippet snippet_find:find_snippets lesson_add:add_lesson "
      "lesson_find:find_lessons", "local", "Knowledge & docs", "snippet_save lesson_add")
+_add("study_memory", "card_add:add_card card_due:due_cards card_answer:answer_card", "local",
+     "Learning Python & homework", "card_add")
 _add("value_story","scene_why_value:why_value scene_what_if:what_if", "stage", "Live insight")
 _add("session_lessons", "class_transcripts:find_transcripts class_session_plan:session_plan class_lesson:lesson "
      "class_check_claims:check_claims", "local", "Learning Python & homework")
