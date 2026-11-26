@@ -24,6 +24,7 @@ Spec shape (JSON):
 """
 from __future__ import annotations
 
+import copy
 import difflib
 import math
 from pathlib import Path
@@ -37,7 +38,7 @@ except ImportError:  # pragma: no cover
 MAX_PRIMS = 500
 TOLERANCE = 1e-4
 _PRIM_KEYS = {"path", "type", "kind", "translate", "rotate", "scale", "attributes", "reference", "payload",
-              "material", "instanceable", "active", "variants", "doc"}
+              "material", "instanceable", "active", "variants", "doc", "match_units"}
 _MATERIAL_KEYS = {"path", "color", "roughness", "metallic", "opacity", "emissive"}
 _KINDS = {"component", "group", "assembly", "subcomponent", "model"}
 
@@ -105,6 +106,89 @@ def _convert(type_name: Any, value: Any) -> Any:
     return cls(value)
 
 
+# ------------------------------------------------------------------------------------------------ transforms
+# Composer gives new prims translate + orient (a quaternion) + scale, which XformCommonAPI cannot edit. Seen live
+# 2026-11-26 in NVIDIA's CL6_Line_Full.usd: every machine is placed that way. Rotations in specs are XYZ Euler degrees
+# (rotateXYZ: X first). Verified numerically against USD: compose = Rx * Ry * Rz matches a rotateXYZ op and an orient
+# op to 2e-7; decompose = Decompose(Z, Y, X) reversed round-trips to 4e-13 (Decompose(X, Y, Z) is wrong).
+def _compose(angles: Any) -> Any:
+    x_axis, y_axis, z_axis = Gf.Vec3d.XAxis(), Gf.Vec3d.YAxis(), Gf.Vec3d.ZAxis()
+    return Gf.Rotation(x_axis, angles[0]) * Gf.Rotation(y_axis, angles[1]) * Gf.Rotation(z_axis, angles[2])
+
+
+def _rot_matrix(angles: Any) -> list[float]:
+    matrix = Gf.Matrix4d().SetRotate(_compose(angles))
+    return [matrix[i][j] for i in range(3) for j in range(3)]
+
+
+def _euler(rotation: Any) -> tuple[float, float, float]:
+    z, y, x = rotation.Decompose(Gf.Vec3d.ZAxis(), Gf.Vec3d.YAxis(), Gf.Vec3d.XAxis())
+    return x, y, z
+
+
+def _orient_stack(prim: Any) -> dict[str, Any] | None:
+    """{'translate': op, 'orient': op, 'scale': op} when the prim uses (a subset of) Composer's stack, else None."""
+    kinds = {UsdGeom.XformOp.TypeTranslate: "translate", UsdGeom.XformOp.TypeOrient: "orient",
+             UsdGeom.XformOp.TypeScale: "scale"}
+    found: dict[str, Any] = {}
+    for op in UsdGeom.Xformable(prim).GetOrderedXformOps():
+        name = kinds.get(op.GetOpType())
+        if name is None or name in found or op.IsInverseOp():
+            return None
+        found[name] = op
+    order = [n for n in ("translate", "orient", "scale") if n in found]
+    if [kinds[op.GetOpType()] for op in UsdGeom.Xformable(prim).GetOrderedXformOps()] != order:
+        return None
+    return found if "orient" in found else None
+
+
+def _read_trs(prim: Any) -> tuple[Any, Any, Any] | None:
+    """(translate, rotateXYZ degrees, scale) of a prim's own transform, or None for stacks the builder cannot edit."""
+    api = UsdGeom.XformCommonAPI(prim)
+    if api:
+        t, r, s, _, _ = api.GetXformVectors(Usd.TimeCode.Default())
+        return tuple(t), tuple(r), tuple(s)
+    stack = _orient_stack(prim)
+    if stack is None:
+        return None
+    t = stack["translate"].Get() if "translate" in stack else (0.0, 0.0, 0.0)
+    q = stack["orient"].Get()
+    r = _euler(Gf.Rotation(Gf.Quatd(q.GetReal(), Gf.Vec3d(q.GetImaginary())))) if q is not None else (0.0, 0.0, 0.0)
+    s = stack["scale"].Get() if "scale" in stack else (1.0, 1.0, 1.0)
+    return tuple(t if t is not None else (0, 0, 0)), r, tuple(s if s is not None else (1, 1, 1))
+
+
+def _write_trs(prim: Any, values: dict[str, Any]) -> None:
+    stack = _orient_stack(prim)
+    if stack is None:
+        api = UsdGeom.XformCommonAPI(prim)
+        if "translate" in values:
+            api.SetTranslate(Gf.Vec3d(*values["translate"]))
+        if "rotate" in values:
+            api.SetRotate(Gf.Vec3f(*values["rotate"]), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+        if "scale" in values:
+            api.SetScale(Gf.Vec3f(*values["scale"]))
+        return
+    xformable = UsdGeom.Xformable(prim)
+    if "translate" in values and "translate" not in stack:
+        stack["translate"] = xformable.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble)
+    if "scale" in values and "scale" not in stack:
+        stack["scale"] = xformable.AddScaleOp(UsdGeom.XformOp.PrecisionFloat)
+    xformable.SetXformOpOrder([stack[n] for n in ("translate", "orient", "scale") if n in stack])
+    if "translate" in values:
+        op = stack["translate"]
+        op.Set(Gf.Vec3d(*values["translate"]) if op.GetPrecision() == UsdGeom.XformOp.PrecisionDouble
+               else Gf.Vec3f(*values["translate"]))
+    if "rotate" in values:
+        quat = _compose(values["rotate"]).GetQuat()
+        op = stack["orient"]
+        op.Set(Gf.Quatd(quat) if op.GetPrecision() == UsdGeom.XformOp.PrecisionDouble else Gf.Quatf(quat))
+    if "scale" in values:
+        op = stack["scale"]
+        op.Set(Gf.Vec3d(*values["scale"]) if op.GetPrecision() == UsdGeom.XformOp.PrecisionDouble
+               else Gf.Vec3f(*values["scale"]))
+
+
 def _asset_parts(value: Any) -> tuple[str, str | None]:
     if isinstance(value, str):
         return value, None
@@ -164,6 +248,36 @@ def _check_spec_shape(spec: Any) -> tuple[list[dict[str, Any]], list[dict[str, A
     return prims, materials
 
 
+def _match_units(stage: Any, layer: Any, item: dict[str, Any], warnings: list[str]) -> None:
+    """"match_units": true on a reference/payload adds what Composer's Metrics Assembler would (Scale:unitsResolve):
+    scale = asset metersPerUnit / stage metersPerUnit, and +90 deg about X for a Y-up asset in a Z-up stage (or -90
+    the other way). Opt-in only: the course's machine files SAY metres but are modelled in mm (seen 2026-11-26), so
+    trusting the label would make them 1000x too big. Changes the item in place."""
+    if item.get("match_units") is not True:
+        return
+    arc = item.get("reference", item.get("payload"))
+    if arc is None:
+        raise _SpecError(f"{item.get('path')}: match_units needs a reference or payload")
+    asset, _ = _asset_parts(arc)
+    local = _resolve_local(layer, asset)
+    asset_layer = Sdf.Layer.FindOrOpen(str(local)) if local is not None and local.is_file() else None
+    if asset_layer is None:
+        raise _SpecError(f"{item.get('path')}: match_units cannot read {asset!r}")
+    info = asset_layer.pseudoRoot
+    asset_mpu = float(info.GetInfo("metersPerUnit")) if info.HasInfo("metersPerUnit") else 0.01
+    asset_up = str(info.GetInfo("upAxis")) if info.HasInfo("upAxis") else "Y"
+    stage_mpu = UsdGeom.GetStageMetersPerUnit(stage)
+    stage_up = str(UsdGeom.GetStageUpAxis(stage))
+    factor = asset_mpu / stage_mpu
+    base = _vec3(item["scale"], "scale") if "scale" in item else (1.0, 1.0, 1.0)
+    item["scale"] = [v * factor for v in base]
+    if asset_up != stage_up and "rotate" not in item:
+        item["rotate"] = [90.0, 0.0, 0.0] if (asset_up, stage_up) == ("Y", "Z") else [-90.0, 0.0, 0.0]
+    warnings.append(f"{item['path']}: match_units: asset is {asset_up}-up, {asset_mpu:g} m/unit; stage is {stage_up}-up, "
+                    f"{stage_mpu:g} m/unit -> scale x{factor:g}" + (f", rotate {item['rotate']}" if asset_up != stage_up
+                                                                   else ""))
+
+
 def _plan(stage: Any, spec: Any) -> dict[str, Any]:
     """Validate and diff. Returns {"errors", "warnings", "steps", "parents", "layer", ...}; never writes."""
     errors: list[str] = []
@@ -171,6 +285,13 @@ def _plan(stage: Any, spec: Any) -> dict[str, Any]:
     steps: list[dict[str, Any]] = []
     prims, materials = _check_spec_shape(spec)
     layer = _layer_for(stage, spec.get("layer"))
+    for item in prims:
+        if isinstance(item, dict) and item.get("match_units") is True:
+            try:
+                _match_units(stage, layer, item, warnings)
+                item["match_units"] = "done"  # applied once: plan and the check after building see the same numbers
+            except _SpecError as exc:
+                errors.append(str(exc))
     if layer is None or not layer.permissionToEdit:
         errors.append("The target layer is read-only.")
     mpu = spec.get("meters_per_unit")
@@ -263,15 +384,18 @@ def _plan(stage: Any, spec: Any) -> dict[str, Any]:
                     errors.append(f"{path}: {exc}")
         if xform_values:
             if existing and existing.IsA(UsdGeom.Xformable):
-                api = UsdGeom.XformCommonAPI(existing)
-                if not api:
-                    if "rotate" in xform_values:
-                        errors.append(f"{path}: its transform uses ops the builder cannot edit safely (e.g. an Orient "
-                                      "quaternion); change its rotation by hand or delete and rebuild the prim.")
+                trs = _read_trs(existing)
+                if trs is None:
+                    errors.append(f"{path}: its transform uses ops the builder cannot edit safely (a matrix or an "
+                                  "unusual op order); change it by hand or delete and rebuild the prim.")
                 else:
-                    t, r, s, _, _ = api.GetXformVectors(Usd.TimeCode.Default())
-                    current = {"translate": t, "rotate": r, "scale": s}
-                    changes += [k for k, v in xform_values.items() if not _same(current[k], v)]
+                    current = {"translate": trs[0], "rotate": trs[1], "scale": trs[2]}
+                    for key, value in xform_values.items():
+                        # Rotations compare as matrices: (180, 0, 0) and (-180, 0, 0) are the same turn.
+                        same = _same(_rot_matrix(current[key]), _rot_matrix(value)) if key == "rotate" else \
+                            _same(current[key], value)
+                        if not same:
+                            changes.append(key)
             elif existing and not existing.IsA(UsdGeom.Xformable):
                 errors.append(f"{path}: a {existing.GetTypeName()} has no transform")
             else:
@@ -421,13 +545,7 @@ def _apply(stage: Any, spec: dict[str, Any], plan: dict[str, Any]) -> None:
                     else:
                         arcs.AddReference(asset) if kind == "reference" else arcs.AddPayload(asset)
         if any(k in item for k in ("translate", "rotate", "scale")):
-            api = UsdGeom.XformCommonAPI(prim)
-            if "translate" in item:
-                api.SetTranslate(Gf.Vec3d(*_vec3(item["translate"], "translate")))
-            if "rotate" in item:
-                api.SetRotate(Gf.Vec3f(*_vec3(item["rotate"], "rotate")), UsdGeom.XformCommonAPI.RotationOrderXYZ)
-            if "scale" in item:
-                api.SetScale(Gf.Vec3f(*_vec3(item["scale"], "scale")))
+            _write_trs(prim, {k: _vec3(item[k], k) for k in ("translate", "rotate", "scale") if k in item})
         definition = prim.GetPrimDefinition()
         for name, raw in (item.get("attributes") or {}).items():
             custom_type, value = (raw.get("type"), raw["value"]) if isinstance(raw, dict) and "value" in raw \
@@ -481,6 +599,7 @@ def build_from_spec(stage: Any, spec: Any, *, undo_stack: Any = None, dry_run: A
     spec skips what already matches. See the module doc for the spec shape (prims, materials, variants...)."""
     if Usd is None:
         return {"ok": False, "error": "USD Python bindings (pxr) are not available"}
+    spec = copy.deepcopy(spec)  # match_units fills in numbers: never change the caller's spec
     try:
         plan = _plan(stage, spec)
     except _SpecError as exc:
@@ -536,6 +655,7 @@ def check_spec(stage: Any, spec: Any) -> dict[str, Any]:
     different (what is left to build) per prim, plus spec errors. passed=True only when everything matches."""
     if Usd is None:
         return {"ok": False, "error": "USD Python bindings (pxr) are not available"}
+    spec = copy.deepcopy(spec)
     try:
         plan = _plan(stage, spec)
     except _SpecError as exc:
@@ -558,6 +678,7 @@ def spec_from_scene(stage: Any, root_path: str = "/World", max_prims: Any = 200)
         return {"ok": False, "error": f"No prim at {root_path!r}"}
     limit = max(1, min(MAX_PRIMS, int(max_prims) if isinstance(max_prims, int) else 200))
     prims = []
+    skipped: list[str] = []
     walk = iter(Usd.PrimRange(root))
     for prim in walk:
         if len(prims) >= limit:
@@ -568,9 +689,11 @@ def spec_from_scene(stage: Any, root_path: str = "/World", max_prims: Any = 200)
         if prim.GetTypeName():
             entry["type"] = str(prim.GetTypeName())
         if prim.IsA(UsdGeom.Xformable):
-            api = UsdGeom.XformCommonAPI(prim)
-            if api:
-                t, r, s, _, _ = api.GetXformVectors(Usd.TimeCode.Default())
+            trs = _read_trs(prim)
+            if trs is None and UsdGeom.Xformable(prim).GetOrderedXformOps():
+                skipped.append(str(prim.GetPath()))  # never silent (seen 2026-11-26: orient stacks were dropped)
+            if trs is not None:
+                t, r, s = trs
                 if not _same(t, (0, 0, 0)):
                     entry["translate"] = [round(v, 6) for v in t]
                 if not _same(r, (0, 0, 0)):
@@ -594,4 +717,5 @@ def spec_from_scene(stage: Any, root_path: str = "/World", max_prims: Any = 200)
     return {"ok": True, "read_only": True, "spec": {"meters_per_unit": UsdGeom.GetStageMetersPerUnit(stage),
                                                      "up_axis": str(UsdGeom.GetStageUpAxis(stage)), "prims": prims},
             "count": len(prims), "truncated": len(prims) >= limit,
+            "transforms_not_exported": skipped[:20],
             "note": "Materials' own settings and variant contents are not exported; references keep their contents."}

@@ -148,3 +148,41 @@ def test_override_sublayer_weaker_than_the_root_binding_is_refused_in_the_previe
         wall = wrapper.GetPrimAtPath("/World/Machine/WallL")
         assert str(UsdShade.MaterialBindingAPI(wall).ComputeBoundMaterial()[0].GetPath()) == "/World/Material/Steel_Stainless"
         assert (Path(tmp) / "N_02.usda").read_text() == before
+
+
+def test_material_library_copies_materials_with_relative_mdl_paths_and_never_overwrites():
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "Source").mkdir()
+        (Path(tmp) / "Source" / "Steel_Stainless.mdl").write_text("mdl 1.0;")
+        src = Usd.Stage.CreateNew(str(Path(tmp) / "Material.usda"))
+        material = UsdShade.Material.Define(src, "/Material_ver3/Steel_Stainless")
+        shader = UsdShade.Shader.Define(src, "/Material_ver3/Steel_Stainless/Shader")
+        shader.SetSourceAsset(Sdf.AssetPath("./Source/Steel_Stainless.mdl"), "mdl")
+        material.CreateSurfaceOutput("mdl").ConnectToSource(shader.ConnectableAPI(), "out")
+        src.Save()
+        (Path(tmp) / "Library").mkdir()
+        dest = Path(tmp) / "Library" / "MaterialLibrary.usda"
+        wanted = [{"source": str(Path(tmp) / "Material.usda"), "prim": "/Material_ver3/Steel_Stainless",
+                   "name": "m_PolishedSteel"}]
+        assert e.material_library_create(str(dest), wanted)["dry_run"] and not dest.exists()
+        made = e.material_library_create(str(dest), wanted, dry_run=False)
+        assert made["ok"] and made["materials"][0]["mdl"] == "../Source/Steel_Stainless.mdl"  # relative, rebased
+        assert made["materials"][0]["mdl_found"] and made["materials"][0]["shader"]
+        library = Usd.Stage.Open(str(dest))
+        copied = UsdShade.Material(library.GetPrimAtPath("/World/Looks/m_PolishedSteel"))
+        assert str(copied.ComputeSurfaceSource("mdl")[0].GetPath()) == "/World/Looks/m_PolishedSteel/Shader"
+        assert library.GetDefaultPrim().GetName() == "World"
+        again = e.material_library_create(str(dest), wanted)
+        assert not again["ok"] and "nothing is overwritten" in again["errors"][0]
+        bad = e.material_library_create(str(dest), [{"source": str(Path(tmp) / "Material.usda"),
+                                                     "prim": "/Material_ver3", "name": "m X"}])
+        assert not bad["ok"]
+
+
+def test_material_audit_lists_materials_from_outside_the_subtree():
+    stage = Usd.Stage.CreateInMemory()
+    steel = UsdShade.Material.Define(stage, "/World/MaterialLibrary/Looks/m_PolishedSteel")
+    part = UsdGeom.Cube.Define(stage, "/World/Line/N_02/Wall").GetPrim()
+    UsdShade.MaterialBindingAPI.Apply(part).Bind(steel)
+    used = asset_audit.material_audit(stage, "/World/Line/N_02")["used"]
+    assert [(u["name"], u["used_by"]) for u in used] == [("m_PolishedSteel", 1)]

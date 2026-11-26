@@ -137,3 +137,62 @@ def test_spec_from_scene_round_trips_and_tools_are_registered():
     assert features.FEATURES["scene_build_from_spec"].mutates
     assert not features.FEATURES["scene_check_spec"].mutates and not features.FEATURES["scene_spec_from_scene"].mutates
     assert features.signature("scene_build_from_spec").parameters["dry_run"].default is True
+
+
+def test_composer_orient_stacks_are_read_exported_and_edited():
+    # Seen live 2026-11-26: Composer places prims with translate + orient (quaternion) + scale. NVIDIA's
+    # CL6_Line_Full.usd does it for every machine; the exporter used to DROP those positions silently.
+    from pxr import Gf
+
+    stage = Usd.Stage.CreateInMemory()
+    machine = UsdGeom.Xform.Define(stage, "/World/N_02")
+    machine.AddTranslateOp().Set(Gf.Vec3d(492.2, -1957.9, 0))
+    machine.AddOrientOp().Set(Gf.Quatf(sb._compose((0, 0, 90)).GetQuat()))
+    machine.AddScaleOp().Set(Gf.Vec3f(1, 1, 1))
+    exported = sb.spec_from_scene(stage, "/World")
+    entry = next(p for p in exported["spec"]["prims"] if p["path"] == "/World/N_02")
+    assert entry["translate"] == [492.2, -1957.9, 0] and abs(entry["rotate"][2] - 90) < 1e-4
+    assert exported["transforms_not_exported"] == []
+    assert sb.check_spec(stage, exported["spec"])["passed"]
+    move = {"prims": [{"path": "/World/N_02", "translate": [600, -1957.9, 0], "rotate": [0, 0, 180]}]}
+    assert sb.build_from_spec(stage, move)["counts"] == {"create": 0, "update": 1, "ok": 0}
+    assert sb.build_from_spec(stage, move, dry_run=False)["written"]
+    ops = [op.GetOpName() for op in machine.GetOrderedXformOps()]
+    assert ops == ["xformOp:translate", "xformOp:orient", "xformOp:scale"]  # Composer's stack kept, not replaced
+    expected = Gf.Matrix4d().SetRotate(sb._compose((0, 0, 180))) * Gf.Matrix4d().SetTranslate(Gf.Vec3d(600, -1957.9, 0))
+    got = machine.GetLocalTransformation()
+    assert all(abs(got[i][j] - expected[i][j]) < 1e-3 for i in range(4) for j in range(4))
+    same_turn = {"prims": [{"path": "/World/N_02", "rotate": [0, 0, -180]}]}  # same turn, other numbers
+    assert sb.build_from_spec(stage, same_turn)["counts"]["ok"] == 1
+
+
+def test_matrix_transforms_are_never_dropped_silently():
+    from pxr import Gf
+
+    stage = Usd.Stage.CreateInMemory()
+    prim = UsdGeom.Xform.Define(stage, "/World/Cad")
+    prim.AddTransformOp().Set(Gf.Matrix4d().SetTranslate(Gf.Vec3d(1, 2, 3)))
+    assert sb.spec_from_scene(stage, "/World")["transforms_not_exported"] == ["/World/Cad"]
+    result = sb.build_from_spec(stage, {"prims": [{"path": "/World/Cad", "translate": [0, 0, 0]}]})
+    assert not result["ok"] and "cannot edit safely" in result["errors"][0]
+
+
+def test_match_units_scales_and_turns_a_referenced_asset_like_the_metrics_assembler():
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "pallet.usda").write_text('#usda 1.0\n(\n    defaultPrim = "Pallet"\n    metersPerUnit = 1\n'
+                                               '    upAxis = "Y"\n)\ndef Xform "Pallet"\n{\n}\n')
+        stage = Usd.Stage.CreateNew(str(Path(tmp) / "factory.usda"))
+        UsdGeom.SetStageMetersPerUnit(stage, 0.01)
+        UsdGeom.SetStageUpAxis(stage, "Z")
+        spec = {"prims": [{"path": "/World/Pallet", "type": "Xform", "reference": "./pallet.usda",
+                           "match_units": True}]}
+        preview = sb.build_from_spec(stage, spec)
+        assert "scale x100" in " ".join(preview["warnings"]) and "rotate [90.0, 0.0, 0.0]" in " ".join(preview["warnings"])
+        assert spec["prims"][0]["match_units"] is True and "scale" not in spec["prims"][0]  # caller's spec untouched
+        assert sb.build_from_spec(stage, spec, dry_run=False)["written"]
+        xform = UsdGeom.XformCommonAPI(stage.GetPrimAtPath("/World/Pallet"))
+        _, rotate, scale, _, _ = xform.GetXformVectors(Usd.TimeCode.Default())
+        assert tuple(scale) == (100, 100, 100) and tuple(rotate) == (90, 0, 0)
+        assert sb.check_spec(stage, spec)["passed"]  # the same spec checks out after building
+        no_arc = sb.build_from_spec(stage, {"prims": [{"path": "/World/X", "type": "Xform", "match_units": True}]})
+        assert not no_arc["ok"] and "needs a reference" in " ".join(no_arc["errors"])

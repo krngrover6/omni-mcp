@@ -226,6 +226,108 @@ def asset_repoint(stage: Any, from_asset: str, to_asset: str, *, undo_stack: Any
                          (" Some repointed prims have no children now: check those paths." if unresolved else "")}
 
 
+# ------------------------------------------------------------------------------------------------ material library
+def _rebase(asset: str, src_dir: Path, dst_dir: Path) -> str:
+    """An asset path rewritten relative to dst_dir. Relative paths are read from src_dir; absolute local paths too
+    (Stage.Flatten() makes every path absolute: seen 2026-11-26, the library got C:/... MDL paths). Remote and
+    search paths (no ./ prefix, e.g. OmniPBR.mdl) are kept as they are."""
+    if not asset or "://" in asset:
+        return asset
+    if Path(asset).is_absolute() or (len(asset) > 2 and asset[1] == ":"):
+        target = Path(asset).resolve()
+    elif asset.startswith("."):
+        target = (src_dir / asset).resolve()
+    else:
+        return asset
+    try:
+        rel = os.path.relpath(target, dst_dir.resolve()).replace("\\", "/")
+    except ValueError:  # another drive: cannot be relative
+        return asset
+    return rel if rel.startswith(".") else f"./{rel}"
+
+
+def material_library_create(dest: str, materials: Any, dry_run: Any = True) -> dict[str, Any]:
+    """Make (or add to) a central material library file like the course's Assets/Material/MaterialLibrary.usd: each
+    entry {"source": <usd file>, "prim": <material path in it>, "name": "m_PolishedSteel"} is copied under /World/Looks
+    with its shader, and relative MDL/texture paths are rewritten for the new file's folder. Existing names are never
+    overwritten. Afterwards every copy is checked to still find its surface shader and its MDL file."""
+    if Sdf is None:
+        return {"ok": False, "error": "USD Python bindings (pxr) are not available"}
+    if not isinstance(materials, list) or not materials:
+        return {"ok": False, "error": 'materials: a list of {"source": file, "prim": path, "name": "m_..."}'}
+    dest_path = Path(str(dest))
+    if dest_path.suffix.lower() not in (".usd", ".usda", ".usdc") or not dest_path.parent.is_dir():
+        return {"ok": False, "error": f"dest must be a .usd/.usda file in an existing folder: {dest}"}
+    existing = Sdf.Layer.FindOrOpen(str(dest_path)) if dest_path.exists() else None
+    plan, errors = [], []
+    flattened: dict[str, Any] = {}
+    for item in materials:
+        if not isinstance(item, dict) or not all(isinstance(item.get(k), str) for k in ("source", "prim", "name")):
+            errors.append(f"bad entry {item!r}: needs source, prim and name")
+            continue
+        name = item["name"]
+        if not Sdf.Path.IsValidIdentifier(name):
+            errors.append(f"{name!r} is not a valid prim name (letters, digits, _; no spaces)")
+            continue
+        src = Path(item["source"])
+        if not src.is_file():
+            errors.append(f"{name}: source file not found: {src}")
+            continue
+        if str(src) not in flattened:
+            stage = Usd.Stage.Open(str(src))
+            flattened[str(src)] = stage.Flatten() if stage else None
+        layer = flattened[str(src)]
+        spec = layer.GetPrimAtPath(item["prim"]) if layer is not None and Sdf.Path.IsValidPathString(item["prim"]) \
+            else None
+        if spec is None or spec.typeName != "Material":
+            errors.append(f"{name}: {item['prim']} is not a Material in {src.name}")
+            continue
+        target = Sdf.Path("/World/Looks").AppendChild(name)
+        if existing is not None and existing.GetPrimAtPath(target):
+            errors.append(f"{name}: already in the library (nothing is overwritten)")
+            continue
+        plan.append({"name": name, "from": f"{src.name}:{item['prim']}", "src": src, "layer": layer,
+                     "path": item["prim"], "target": target})
+    shown = [{"name": p["name"], "from": p["from"], "to": str(p["target"])} for p in plan]
+    if errors:
+        return {"ok": False, "dry_run": dry_run is not False, "written": False, "errors": errors, "materials": shown}
+    if dry_run is not False:
+        return {"ok": True, "dry_run": True, "written": False, "file": str(dest_path), "materials": shown,
+                "new_file": existing is None,
+                "next_step": f"Preview only: {len(plan)} material(s) into {dest_path.name}. Apply with dry_run=False."}
+    library = existing or Sdf.Layer.CreateNew(str(dest_path))
+    if existing is None:
+        library.defaultPrim = "World"
+        world = Sdf.CreatePrimInLayer(library, "/World")
+        world.specifier = Sdf.SpecifierDef
+        world.typeName = "Xform"
+        looks = Sdf.CreatePrimInLayer(library, "/World/Looks")
+        looks.specifier = Sdf.SpecifierDef
+        looks.typeName = "Scope"
+    for item in plan:
+        temp = Sdf.Layer.CreateAnonymous("material.usda")
+        Sdf.CreatePrimInLayer(temp, item["target"].GetParentPath())
+        Sdf.CopySpec(item["layer"], item["path"], temp, item["target"])
+        UsdUtils.ModifyAssetPaths(temp, lambda a, s=item["src"].parent: _rebase(a, s, dest_path.parent))
+        Sdf.CopySpec(temp, item["target"], library, item["target"])
+    library.Save()
+    check = Usd.Stage.Open(str(dest_path))
+    report = []
+    for item in plan:
+        material = UsdShade.Material(check.GetPrimAtPath(item["target"]))
+        shader = material.ComputeSurfaceSource("mdl")[0] or material.ComputeSurfaceSource("")[0]
+        asset = shader.GetSourceAsset("mdl") if shader else None
+        found = bool(asset and asset.path and (asset.resolvedPath or (dest_path.parent / asset.path).is_file()))
+        report.append({"name": item["name"], "shader": bool(shader), "mdl": asset.path if asset else None,
+                       "mdl_found": found})
+    broken = [r["name"] for r in report if not r["shader"] or (r["mdl"] and not r["mdl_found"])]
+    return {"ok": not broken, "dry_run": False, "written": str(dest_path), "materials": report,
+            "problems": broken,
+            "next_step": ("Reference this file into a scene (drag it onto World: an orange arrow = reference), then "
+                          "bind its m_ materials, e.g. with material_replace." if not broken else
+                          "Some copies lost their shader or MDL file: check those paths.")}
+
+
 # ------------------------------------------------------------------------------------------------ asset_collect
 def asset_collect(source: str, dest_folder: str, dry_run: Any = True) -> dict[str, Any]:
     """Copy a local USD file and everything it depends on (layers, references, payloads, textures, MDL files) into

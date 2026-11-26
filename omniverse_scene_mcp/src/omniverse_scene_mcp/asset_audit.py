@@ -227,6 +227,12 @@ def material_audit(stage: Any, root_path: Any = None) -> dict[str, Any]:
                 unbound.append(str(prim.GetPath()))
             elif len(unbound) == 50:
                 unbound.append("...")
+    # Materials used under root_path but defined elsewhere (e.g. a referenced MaterialLibrary) count too
+    # (seen 2026-11-26: 60 parts used m_PolishedSteel from the library and the audit did not list it).
+    inside = {str(p.GetPath()) for p in materials}
+    for path in users:
+        if path not in inside and stage.GetPrimAtPath(path):
+            materials.append(stage.GetPrimAtPath(path))
     rows = []
     for prim in materials:
         material = UsdShade.Material(prim)

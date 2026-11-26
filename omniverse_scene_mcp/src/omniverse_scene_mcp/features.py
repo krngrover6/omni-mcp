@@ -155,7 +155,8 @@ _add("asset_audit", "asset_library_inventory", "local", "Knowledge & docs")
 # saved files (scene_file=...), like the course's Factory.usd.
 _add("asset_audit", "kind_check material_audit instancing_report asset_inventory_export", "stage", "Live insight")
 _add("asset_edit", "material_replace asset_repoint", "stage", "Scene: change safely", "material_replace asset_repoint")
-_add("asset_edit", "asset_collect", "local", "Assets & physics", "asset_collect")
+_add("asset_edit", "asset_collect material_library_create", "local", "Assets & physics",
+     "asset_collect material_library_create")
 _add("kit_members", "kit_object_members:object_members", "kit", "Knowledge & docs")
 _add("study_memory", "snippet_save:save_snippet snippet_find:find_snippets lesson_add:add_lesson "
      "lesson_find:find_lessons", "local", "Knowledge & docs", "snippet_save lesson_add")
