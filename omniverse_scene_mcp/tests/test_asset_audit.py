@@ -111,3 +111,49 @@ def test_inventory_export_sees_tags_inside_instances_and_writes_a_new_csv_only()
         assert not a.asset_inventory_export(stage, csv_path=str(out), dry_run=False)["ok"]  # never overwrites
     for name in ("kind_check", "material_audit", "instancing_report", "asset_inventory_export", "asset_library_inventory"):
         assert features.FEATURES[name].mutates is False, name
+
+
+def _machine(folder, mpu, size):
+    """A Z-up asset whose cube is `size` numbers across, labelled metersPerUnit=mpu."""
+    path = Path(folder) / f"machine_{size}.usda"
+    stage = Usd.Stage.CreateNew(str(path))
+    UsdGeom.SetStageUpAxis(stage, "Z")
+    UsdGeom.SetStageMetersPerUnit(stage, mpu)
+    root = UsdGeom.Xform.Define(stage, "/Machine")
+    UsdGeom.Cube.Define(stage, "/Machine/Body").GetSizeAttr().Set(float(size))
+    stage.SetDefaultPrim(root.GetPrim())
+    stage.GetRootLayer().Save()
+    return str(path)
+
+
+def _place(stage, path, asset, scale=None, rotate=None):
+    prim = UsdGeom.Xform.Define(stage, path)
+    prim.GetPrim().GetReferences().AddReference(asset)
+    if rotate is not None:
+        prim.AddXformOp(UsdGeom.XformOp.TypeRotateX, UsdGeom.XformOp.PrecisionDouble, "unitsResolve").Set(rotate)
+    if scale is not None:
+        prim.AddXformOp(UsdGeom.XformOp.TypeScale, UsdGeom.XformOp.PrecisionDouble, "unitsResolve").Set((scale,) * 3)
+
+
+def test_units_check_finds_the_mm_labelled_metres_trap_and_missing_resolve():
+    with tempfile.TemporaryDirectory() as tmp:
+        wrong = _machine(tmp, 1.0, 2000)   # mm numbers labelled metres: the course's machines
+        right = _machine(tmp, 0.001, 1500)  # honest mm
+        stage = Usd.Stage.CreateInMemory()
+        UsdGeom.SetStageUpAxis(stage, "Y")
+        UsdGeom.SetStageMetersPerUnit(stage, 0.01)
+        _place(stage, "/World/Wrong", wrong, scale=100.0, rotate=-90.0)  # what Composer writes
+        _place(stage, "/World/Good", right, scale=0.1, rotate=-90.0)
+        _place(stage, "/World/Unresolved", right)  # referenced without the Metrics Assembler
+        result = a.units_check(stage)
+        rows = {row["prim"]: row for row in result["assets"]}
+        assert result["ok"] and result["assets_checked"] == 3 and result["with_problems"] == 2
+        assert rows["/World/Good"]["problems"] == [] and abs(rows["/World/Good"]["real_size_m"] - 1.5) < 1e-6
+        wrong_row = rows["/World/Wrong"]
+        assert wrong_row["real_size_m"] == 2000 and wrong_row["likely_label"][0]["unit"] == "mm"
+        assert wrong_row["likely_label"][0]["fix_scale"] == 0.1 and "should be 0.1" in wrong_row["problems"][0]
+        unresolved = " ".join(rows["/World/Unresolved"]["problems"])
+        assert "no unitsResolve scale yet" in unresolved and "needs -90" in unresolved
+        assert a.units_check(stage, prim="/World/Good")["assets_checked"] == 1
+        assert not a.units_check(stage, prim="/World/Nope")["ok"]
+    assert not features.FEATURES["units_check"].mutates

@@ -24,6 +24,7 @@ else:
 
 MAX_ARRAY_ITEMS = 32
 MAX_LIST_ITEMS = 100
+MAX_BROKEN_KINDS = 10  # CAD files can have thousands, each with a long path
 MAX_DICT_KEYS = 100
 MAX_STRING_CHARS = 4000
 MAX_PROPERTIES = 300
@@ -1000,8 +1001,10 @@ def _census(stage: Any, budget: TimeBudget | None = None) -> tuple[dict[str, Any
         if prim.IsModel():
             if len(models) < MAX_LIST_ITEMS:
                 models.append(entry)
-        elif Kind.Registry.IsA(kind, Kind.Tokens.model) and len(broken) < MAX_LIST_ITEMS:
-            broken.append(entry)
+        elif Kind.Registry.IsA(kind, Kind.Tokens.model):
+            counts["broken_kinds"] += 1
+            if len(broken) < MAX_BROKEN_KINDS:
+                broken.append(entry)
     common = by_type.most_common(MAX_TYPE_BUCKETS)
     census = {
         "total": counts["total"],
@@ -1021,7 +1024,9 @@ def _census(stage: Any, budget: TimeBudget | None = None) -> tuple[dict[str, Any
         "models": models,
         "models_truncated": len(models) >= MAX_LIST_ITEMS,
         "broken_model_kinds": broken,
-        "note": "broken_model_kinds lists prims with a model kind whose ancestors are not all group/assembly, so IsModel() is False.",
+        "broken_model_kind_count": counts["broken_kinds"],
+        "note": "broken_model_kinds lists prims with a model kind whose ancestors are not all group/assembly, so IsModel() is "
+                f"False (first {MAX_BROKEN_KINDS}; the count has them all). kind_check lists and fixes them.",
     }
     if budget is not None:
         census["truncated_by_time"] = stopped

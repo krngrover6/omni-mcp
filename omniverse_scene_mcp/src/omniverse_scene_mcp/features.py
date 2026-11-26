@@ -166,7 +166,7 @@ _add("asset_audit", "asset_library_inventory", "local", "Knowledge & docs")
 _add("asset_audit", "kind_check material_audit instancing_report asset_inventory_export", "stage", "Live insight")
 _add("asset_edit", "material_replace asset_repoint material_bind_pattern", "stage", "Scene: change safely",
      "material_replace asset_repoint material_bind_pattern")
-_add("asset_audit", "texture_check", "stage", "Live insight")
+_add("asset_audit", "texture_check units_check", "stage", "Live insight")
 _add("asset_edit", "asset_collect material_library_create", "local", "Assets & physics",
      "asset_collect material_library_create")
 _add("kit_members", "kit_object_members:object_members", "kit", "Knowledge & docs")

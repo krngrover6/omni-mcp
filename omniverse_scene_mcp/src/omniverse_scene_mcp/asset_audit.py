@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import io
 import re
 from collections import Counter, defaultdict
@@ -433,3 +434,110 @@ def asset_inventory_export(stage: Any, attributes: Any = None, csv_path: Any = N
     target.write_text(buffer.getvalue(), encoding="utf-8", newline="")
     result.update({"dry_run": False, "written": str(target)})
     return result
+
+
+# ------------------------------------------------------------------------------------------------ units check
+_UNIT_NAMES = {1.0: "m", 0.01: "cm", 0.001: "mm"}
+
+
+def _unit_name(mpu: float) -> str:
+    return next((name for value, name in _UNIT_NAMES.items() if abs(mpu - value) < 1e-12), f"{mpu:g} m")
+
+
+def _asset_layer_of(prim: Any) -> Any:
+    """Root layer of the first reference/payload authored on this prim in the scene's own layers (None if none)."""
+    from pxr import Pcp
+
+    for arc in Usd.PrimCompositionQuery(prim).GetCompositionArcs():
+        if arc.GetArcType() not in (Pcp.ArcTypeReference, Pcp.ArcTypePayload):
+            continue
+        if not arc.IsIntroducedInRootLayerStack() or arc.GetIntroducingPrimPath() != prim.GetPath():
+            continue
+        stack = arc.GetTargetNode().layerStack
+        layer = stack.identifier.rootLayer if stack.identifier.rootLayer else (stack.layers[0] if stack.layers else None)
+        if layer is not None and layer != prim.GetStage().GetRootLayer():
+            return layer
+    return None
+
+
+def _likely_units(size_in_asset_units: float) -> list[dict[str, Any]]:
+    """Which label would make this geometry a believable object (5 cm .. 200 m), most typical (about 2 m) first."""
+    options = []
+    for mpu, name in _UNIT_NAMES.items():
+        metres = size_in_asset_units * mpu
+        if 0.05 <= metres <= 200:
+            options.append((abs(math.log10(metres / 2)), {"unit": name, "metersPerUnit": mpu, "size_m": round(metres, 3)}))
+    return [option for _, option in sorted(options, key=lambda item: item[0])]
+
+
+def units_check(stage: Any, prim: Any = None) -> dict[str, Any]:
+    """The course's units trap, checked: for every referenced/payloaded asset in the scene, the asset's units label
+    (metersPerUnit, upAxis) vs the scene's, the xformOp:scale:unitsResolve / rotateX:unitsResolve that Composer's
+    Metrics Assembler wrote (or did not write), and the asset's REAL size in metres. A machine 1.7 km across or 2 mm
+    small means the label is wrong (e.g. mm geometry labelled metres): the answer lists which label would make it
+    believable. prim= limits it to one subtree. Read-only."""
+
+    stage_mpu = float(UsdGeom.GetStageMetersPerUnit(stage))
+    stage_up = str(UsdGeom.GetStageUpAxis(stage))
+    start = stage.GetPrimAtPath(prim) if isinstance(prim, str) and prim else stage.GetPseudoRoot()
+    if not start:
+        return {"ok": False, "error": f"No prim at {prim!r}"}
+    cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_], useExtentsHint=True)
+    rows, counts = [], Counter()
+    walk = iter(Usd.PrimRange(start))
+    for item in walk:
+        if counts["prims"] >= MAX_PRIMS:
+            break
+        counts["prims"] += 1
+        if not (item.HasAuthoredReferences() or item.HasAuthoredPayloads()):
+            continue
+        layer = _asset_layer_of(item)
+        if layer is None:
+            continue
+        walk.PruneChildren()  # nested assets inside this one are the asset's own business
+        info = layer.pseudoRoot
+        asset_mpu = float(info.GetInfo("metersPerUnit")) if info.HasInfo("metersPerUnit") else 0.01
+        asset_up = str(info.GetInfo("upAxis")) if info.HasInfo("upAxis") else "Y"
+        scale_attr = item.GetAttribute("xformOp:scale:unitsResolve")
+        rotate_attr = item.GetAttribute("xformOp:rotateX:unitsResolve")
+        scale = scale_attr.Get() if scale_attr and scale_attr.HasAuthoredValue() else None
+        factor = float(scale[0]) if scale is not None else 1.0
+        rotate = float(rotate_attr.Get()) if rotate_attr and rotate_attr.HasAuthoredValue() else 0.0
+        expected = asset_mpu / stage_mpu
+        expected_rotate = 0.0 if asset_up == stage_up else (-90.0 if asset_up == "Z" else 90.0)
+        box = cache.ComputeWorldBound(item).ComputeAlignedRange()
+        real = None if box.IsEmpty() else max(box.GetSize()) * stage_mpu
+        problems = []
+        if abs(factor - expected) > 1e-6 * max(1.0, expected):
+            problems.append(f"scaled x{factor:g} but the labels need x{expected:g} ({_unit_name(asset_mpu)} -> "
+                            f"{_unit_name(stage_mpu)})" + ("" if scale is not None else ": no unitsResolve scale yet"))
+        if abs(rotate - expected_rotate) > 1e-6:
+            problems.append(f"rotateX:unitsResolve is {rotate:g}, {asset_up}-up into {stage_up}-up needs {expected_rotate:g}")
+        likely = []
+        if real is not None and not 0.005 <= real <= 500:
+            own_units = real / stage_mpu / factor  # the geometry's size in the asset's own numbers
+            likely = [option for option in _likely_units(own_units) if abs(option["metersPerUnit"] - asset_mpu) > 1e-12]
+            problems.append(f"{real:,.4g} m across: not a believable object, so the asset's label "
+                            f"({_unit_name(asset_mpu)}) is probably wrong" +
+                            (f"; its numbers fit {likely[0]['unit']} ({likely[0]['size_m']} m): then "
+                             f"xformOp:scale:unitsResolve should be {likely[0]['metersPerUnit'] / stage_mpu:g}"
+                             if likely else ""))
+            for option in likely:
+                option["fix_scale"] = round(option["metersPerUnit"] / stage_mpu, 9)
+        counts["with_problems" if problems else "ok"] += 1
+        if len(rows) < 50:
+            rows.append({"prim": str(item.GetPath()), "asset": Path(layer.realPath or layer.identifier).name,
+                         "asset_units": _unit_name(asset_mpu), "asset_up": asset_up,
+                         "units_resolve_scale": factor if scale is not None else None,
+                         "units_resolve_rotateX": rotate if rotate_attr and rotate_attr.HasAuthoredValue() else None,
+                         "expected_scale": expected, "real_size_m": None if real is None else round(real, 4),
+                         "likely_label": likely[:2], "problems": problems})
+    worst = next((row for row in rows if row["problems"]), None)
+    return {"ok": True, "read_only": True, "stage_units": _unit_name(stage_mpu), "stage_up": stage_up,
+            "assets_checked": counts["ok"] + counts["with_problems"], "with_problems": counts["with_problems"],
+            "assets": rows, "rows_truncated": counts["ok"] + counts["with_problems"] > len(rows),
+            "next_step": (f"{worst['prim']}: {worst['problems'][0]}. If the label is wrong, fix the ASSET (its "
+                          "metersPerUnit) or override the scale on this prim; then re-run units_check."
+                          if worst else "Every asset's units match the scene and every size is believable."),
+            "how_to_read": "Composer's Metrics Assembler trusts the label: scale = asset metersPerUnit / scene "
+                           "metersPerUnit. A believable label + matching scale = fine."}
