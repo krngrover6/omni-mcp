@@ -147,6 +147,9 @@ _add("usda_explain", "usda_explain:explain_usda", "local", "Learning Python & ho
 _add("click_watch", "click_snapshot click_changes", "stage", "Live insight")
 _add("extension_check", "extension_check:check_extension", "local", "Knowledge & docs")
 _add("mdl_info", "mdl_info", "local", "Knowledge & docs")
+_add("asset_structure", "asset_scaffold", "local", "Assets & physics", "asset_scaffold")
+_add("asset_structure", "mesh_check", "stage", "Live insight")
+_add("asset_structure", "scene_set_pivot scene_scatter", "stage", "Scene: change safely", "scene_set_pivot scene_scatter")
 _add("spec_builder", "look_presets", "local", "Knowledge & docs")
 _add("usda_quiz", "usda_quiz:make_quiz usda_quiz_answer:answer_quiz", "local", "Learning Python & homework")
 _add("spec_builder", "scene_build_from_spec:build_from_spec", "stage", "Scene: change safely",
